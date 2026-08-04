@@ -155,6 +155,24 @@ public sealed class NpcChooserBsaProviderAdapter : IBsaArchiveProvider
         }
     }
 
+    /// <summary>
+    /// Broadcast lookup across every indexed archive, resolved by LOAD ORDER
+    /// rather than by whichever archive happened to be indexed first.
+    ///
+    /// <para>Candidates are ranked in two tiers. <b>Tier 1</b> — the owning
+    /// plugin is in the load order: the LATEST-loading one wins, matching the
+    /// conventional "later archive wins" rule and staying consistent with how
+    /// records and the renderer's own scope chain resolve conflicts elsewhere.
+    /// <b>Tier 2</b> — the owning plugin is not in the load order (an NPC2 mod
+    /// the user has not enabled): load order cannot rank these, so they only
+    /// apply when no tier-1 candidate exists, preserving the historical
+    /// first-indexed behavior for callers whose mod isn't active. Dropping
+    /// tier 2 outright would regress those.</para>
+    ///
+    /// <para>Callers that need a specific mod's copy should not be here at all
+    /// — the renderer's strict scope chain (<see cref="TryLocateInScopedBsa"/>)
+    /// answers that question and runs first.</para>
+    /// </summary>
     public bool TryLocateInBsa(string subpath, out string? containingBsaPath)
     {
         containingBsaPath = null;
@@ -164,15 +182,9 @@ public sealed class NpcChooserBsaProviderAdapter : IBsaArchiveProvider
             Trace($"TryLocateInBsa: NO INDEXED BSA KEYS — file=[{subpath}]");
             return false;
         }
-        bool hit = _bsa.FileExists(subpath, keys, out _, out containingBsaPath);
-        if (hit)
-        {
-            // Log the exact BSA file path the lookup resolved to. Useful for
-            // confirming the right archive is being consulted (e.g. mod's
-            // BSA vs. vanilla BSA when both contain the same relative path).
-            Trace($"TryLocateInBsa: HIT — file=[{subpath}] in [{containingBsaPath}]");
-        }
-        else
+
+        var candidates = _bsa.LocateAllInBsas(subpath);
+        if (candidates.Count == 0)
         {
             // Renderer fell through here after vanilla loose + mod-folder
             // (AdditionalDataFolders) checks both failed — definitive
@@ -181,8 +193,77 @@ public sealed class NpcChooserBsaProviderAdapter : IBsaArchiveProvider
             // this miss against that block to verify the expected archive is
             // actually indexed.
             Trace($"TryLocateInBsa: MISS — file=[{subpath}] (scanned {_bsa.GetIndexedBsaPaths().Count} indexed BSA file(s) across {keys.Count} mod key(s); see EnsureAllArchivesOpened inventory)");
+            return false;
         }
-        return hit;
+
+        var best = SelectByLoadOrder(candidates, _env.LoadOrderModKeys);
+        if (best != null)
+        {
+            string winner = best.Value.BsaPath;
+            containingBsaPath = winner;
+            // Log the exact BSA file path the lookup resolved to, plus the
+            // field it beat, so a surprising winner can be checked against the
+            // load order without re-running.
+            Trace($"TryLocateInBsa: HIT (load order #{best.Value.LoadOrderIndex}, {candidates.Count} candidate(s)) — " +
+                  $"file=[{subpath}] in [{winner}] modKey=[{best.Value.ModKey.FileName}]" +
+                  (candidates.Count > 1
+                      ? $"; also in [{string.Join(" | ", candidates.Where(c => c.BsaPath != winner).Select(c => c.BsaPath))}]"
+                      : string.Empty));
+            return true;
+        }
+
+        // Tier 2: nothing in the load order carries it. Fall back to the first
+        // indexed match so an inactive-but-indexed mod still resolves the way
+        // it always did.
+        containingBsaPath = candidates[0].BsaPath;
+        Trace($"TryLocateInBsa: HIT (no load-order candidate; first of {candidates.Count} indexed) — " +
+              $"file=[{subpath}] in [{containingBsaPath}] modKey=[{candidates[0].ModKey.FileName}]");
+        return true;
+    }
+
+    /// <summary>
+    /// Tier-1 selection for <see cref="TryLocateInBsa"/>: of the archives holding
+    /// the file, the one whose owning plugin loads LATEST. Candidates whose plugin
+    /// is absent from <paramref name="loadOrder"/> are not ranked here — load order
+    /// says nothing about them — and yield null when they are the only ones, which
+    /// is the caller's signal to fall back.
+    ///
+    /// <para><paramref name="loadOrder"/> is expected in ascending (ListedOrder)
+    /// form, earliest plugin first.</para>
+    ///
+    /// <para>Pure and static so the precedence rule is testable without a game
+    /// install, a BSA index, or a resolved environment.</para>
+    /// </summary>
+    public static (ModKey ModKey, string BsaPath, int LoadOrderIndex)? SelectByLoadOrder(
+        IReadOnlyList<(ModKey ModKey, string BsaPath)> candidates,
+        IEnumerable<ModKey> loadOrder)
+    {
+        if (candidates == null || candidates.Count == 0 || loadOrder == null) return null;
+
+        var loadOrderIndex = new Dictionary<ModKey, int>();
+        int i = 0;
+        foreach (var mk in loadOrder)
+        {
+            // First listing wins if a key somehow repeats — the position a
+            // duplicate would occupy is not meaningful either way.
+            if (!loadOrderIndex.ContainsKey(mk)) loadOrderIndex[mk] = i;
+            i++;
+        }
+
+        (ModKey ModKey, string BsaPath, int LoadOrderIndex)? best = null;
+        foreach (var candidate in candidates)
+        {
+            if (!loadOrderIndex.TryGetValue(candidate.ModKey, out int idx)) continue;
+            // Strictly greater: among archives owned by the SAME plugin, the
+            // first enumerated stays the winner. Load order cannot separate
+            // them, so there is nothing to prefer.
+            if (best == null || idx > best.Value.LoadOrderIndex)
+            {
+                best = (candidate.ModKey, candidate.BsaPath, idx);
+            }
+        }
+
+        return best;
     }
 
     public bool TryExtractToDisk(string containingBsaPath, string subpath, string destPath, out string? error)

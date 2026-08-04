@@ -1331,6 +1331,15 @@ public class NpcMeshResolver
         if (outfitDisplay.OutfitFormKey is { } effectiveOutfitKey)
         {
             var outfitContext = outfitDisplay.UseModScopedResolution ? context : null;
+            // Asset resolution follows the same split as the record resolution above.
+            // Mod-scoped = the appearance mod's own donor outfit, whose assets the
+            // render's scope chain already covers. NOT mod-scoped = the load-order
+            // winner, or a SkyPatcher / SPID distribution: the record comes from the
+            // link cache (which spans the load order) and its armors can belong to any
+            // mod at all — one that contributes no scope, so its NIFs and textures were
+            // unreachable and the outfit rendered as nothing. Let those fall back to the
+            // load-order-ranked archive lookup, which reproduces what the game resolves.
+            bool outfitAssetsOutsideScope = !outfitDisplay.UseModScopedResolution;
             var outfit = ResolveRecord<IOutfitGetter>(effectiveOutfitKey.ToLink<IOutfitGetter>(), linkCache, outfitContext);
             if (outfitDisplay.Source != OutfitDisplaySource.AppearanceMod)
             {
@@ -1363,7 +1372,8 @@ public class NpcMeshResolver
                 {
                     AppendArmorMeshOverrides(armor, source, sex, npcRaceKey, armorRaceKey, linkCache, outfitContext,
                         includeBody: includeDefaultOutfit, includeHeadgear: includeHeadgear,
-                        hairCountsAsHeadgear: true, result, seenOverrideKeys);
+                        hairCountsAsHeadgear: true, result, seenOverrideKeys,
+                        allowLoadOrderFallback: outfitAssetsOutsideScope);
                 }
             }
             else
@@ -1661,11 +1671,16 @@ public class NpcMeshResolver
     /// (<see cref="MeshOverrideKind.Headgear"/>). <paramref name="includeBody"/> /
     /// <paramref name="includeHeadgear"/> gate which classes are emitted. The Key
     /// combines slot(s) + ARMA FormKey so it's stable and unique per piece.</summary>
+    /// <param name="allowLoadOrderFallback">Stamped onto every emitted override (see
+    /// <see cref="MeshOverride.AllowLoadOrderFallback"/>). Set it when these armors come from
+    /// somewhere other than the appearance mod, so their assets may live in a mod that
+    /// contributes no render scope.</param>
     private void AppendArmorMeshOverrides(IArmorGetter armor, string source, Sex sex, FormKey? npcRaceKey,
         FormKey? armorRaceKey,
         ILinkCache linkCache, NpcResolutionContext? context, bool includeBody, bool includeHeadgear,
         bool hairCountsAsHeadgear, List<MeshOverride> result, HashSet<string> seenKeys,
-        WigPieceClass wigPiece = WigPieceClass.None, IReadOnlySet<FormKey>? suppressArmaKeys = null)
+        WigPieceClass wigPiece = WigPieceClass.None, IReadOnlySet<FormKey>? suppressArmaKeys = null,
+        bool allowLoadOrderFallback = false)
     {
         if (armor.Armature == null) return;
         foreach (var armaLink in armor.Armature)
@@ -1811,9 +1826,11 @@ public class NpcMeshResolver
                 Kind = kind,
                 Textures = textures,
                 AlternateTextures = alternateTextures,
+                AllowLoadOrderFallback = allowLoadOrderFallback,
             });
             LogVerbose("CharacterViewer: attire override '" + key + "' mesh=" + meshPath
-                + " slots=" + slots + " kind=" + kind + " src=" + source);
+                + " slots=" + slots + " kind=" + kind + " src=" + source
+                + (allowLoadOrderFallback ? " (load-order asset fallback enabled)" : ""));
         }
     }
 

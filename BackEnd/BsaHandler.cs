@@ -377,6 +377,43 @@ public class BsaHandler : OptionalUIModule
         }
     }
 
+    /// <summary>
+    /// Every indexed archive that contains <paramref name="path"/>, as
+    /// (owning ModKey, BSA path) pairs. The <c>out</c>-style overloads above
+    /// stop at the first hit, which forces the caller to accept dictionary
+    /// enumeration order as the winner; this returns the full candidate set so
+    /// a caller can apply its own precedence rule (see
+    /// <see cref="CharacterViewerHost.Adapters.NpcChooserBsaProviderAdapter.TryLocateInBsa"/>,
+    /// which ranks by load order). Order of the returned list is unspecified —
+    /// rank it, don't index it.
+    /// </summary>
+    public IReadOnlyList<(ModKey ModKey, string BsaPath)> LocateAllInBsas(string path, bool convertSlashes = true)
+    {
+        if (convertSlashes)
+        {
+            path = path.Replace('/', '\\');
+        }
+
+        var matches = new List<(ModKey, string)>();
+        lock (_bsaContentsLock)
+        {
+            foreach (var modEntry in _bsaContents)
+            {
+                foreach (var archive in modEntry.Value)
+                {
+                    // The inner sets are built with OrdinalIgnoreCase, so this
+                    // is an O(1) case-insensitive probe (unlike the LINQ
+                    // Contains overload above, which is O(n) per archive).
+                    if (archive.Value.Contains(path))
+                    {
+                        matches.Add((modEntry.Key, archive.Key));
+                    }
+                }
+            }
+        }
+        return matches;
+    }
+
     public bool TryGetFileFromReaders(string subpath, HashSet<IArchiveReader> bsaReaders, out IArchiveFile? file)
     {
         file = null;
