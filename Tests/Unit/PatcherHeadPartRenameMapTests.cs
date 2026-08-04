@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using FluentAssertions;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
@@ -227,6 +228,120 @@ public class PatcherHeadPartRenameMapTests
         npc.HeadParts.Add(a.FormKey);
 
         Collect(fx, npc).Should().HaveCount(2);
+    }
+
+    // ── Race defaults ───────────────────────────────────────────────────────────
+
+    /// <summary>Points an NPC at a race in the output plugin carrying <paramref name="defaults"/>
+    /// as its male head data — what Include As New leaves behind once it has minted the race and
+    /// remapped its head-part links to the duplicates.</summary>
+    private static void GiveMintedRace(Fixture fx, Npc npc, params IHeadPartGetter[] defaults)
+    {
+        var race = fx.OutputMod.Races.AddNew();
+        race.HeadData = new GenderedItem<HeadData?>(MaleHeadData(defaults), null);
+        npc.Race.SetTo(race.FormKey);
+    }
+
+    private static HeadData MaleHeadData(params IHeadPartGetter[] parts)
+    {
+        var headData = new HeadData();
+        foreach (var part in parts)
+        {
+            var hpRef = new HeadPartReference();
+            hpRef.Head.SetTo(part.FormKey);
+            headData.HeadParts.Add(hpRef);
+        }
+
+        return headData;
+    }
+
+    [Fact]
+    public void RaceDefaultHeadPart_IsRenamedToo()
+    {
+        // The Kayd/Alesan/Francois specimen: RS Children's children carry only brows and eyes and
+        // take their hair from the race, so walking the NPC's own list alone left the minted race
+        // naming 'HairMaleRedguardChild01_RSkyrimChildren.esm' over a mesh still carrying
+        // 'HairMaleRedguardChild01'. All three dark-faced in game.
+        var fx = Build();
+        var brows = MintDuplicate(fx, "0RCOChildBrows09");
+        var raceHair = MintDuplicate(fx, "HairMaleRedguardChild01");
+
+        var npc = NewNpc(fx);
+        npc.HeadParts.Add(brows.FormKey); // no hair of his own
+        GiveMintedRace(fx, npc, raceHair);
+
+        Collect(fx, npc).Should().BeEquivalentTo(new Dictionary<string, string>
+        {
+            ["0RCOChildBrows09"] = "0RCOChildBrows09_RSkyrimChildren.esm",
+            ["HairMaleRedguardChild01"] = "HairMaleRedguardChild01_RSkyrimChildren.esm",
+        });
+    }
+
+    [Fact]
+    public void RaceDefaultExtraParts_AreWalked()
+    {
+        // Francois' half of the specimen: the race default hair owns the hairline, and both were
+        // minted. Same rule as the NPC-owned case — the hairline is never a top-level entry.
+        var fx = Build();
+        var raceHair = MintDuplicate(fx, "HairMaleImperialChild01");
+        var raceHairLine = MintDuplicate(fx, "HairLineMaleImperialChild01");
+        raceHair.ExtraParts.Add(raceHairLine.FormKey);
+
+        var npc = NewNpc(fx);
+        GiveMintedRace(fx, npc, raceHair);
+
+        Collect(fx, npc).Should().BeEquivalentTo(new Dictionary<string, string>
+        {
+            ["HairMaleImperialChild01"] = "HairMaleImperialChild01_RSkyrimChildren.esm",
+            ["HairLineMaleImperialChild01"] = "HairLineMaleImperialChild01_RSkyrimChildren.esm",
+        });
+    }
+
+    [Fact]
+    public void RaceOutsideTheOutputPlugin_ContributesNothing()
+    {
+        // A race this run did not mint still names the records the mesh was baked against —
+        // RemapLinks only rewrites records the run wrote. Renaming off it would CREATE a mismatch.
+        var fx = Build();
+        var vanillaRace = fx.SourceMod.Races.AddNew();
+        var sourceHair = fx.SourceMod.HeadParts.AddNew();
+        sourceHair.EditorID = "HairMaleRedguardChild01";
+        vanillaRace.HeadData = new GenderedItem<HeadData?>(MaleHeadData(sourceHair), null);
+
+        var npc = NewNpc(fx);
+        npc.Race.SetTo(vanillaRace.FormKey);
+
+        Collect(fx, npc).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void FemaleNpc_ReadsTheFemaleHeadData()
+    {
+        // Mirrors FaceGenConsistencyAnalyzer, which grades the result: the wrong gender's defaults
+        // are parts this NPC never wears.
+        var fx = Build();
+        var maleOnly = MintDuplicate(fx, "HairMaleRedguardChild01");
+
+        var npc = NewNpc(fx);
+        npc.Configuration.Flags |= NpcConfiguration.Flag.Female;
+        GiveMintedRace(fx, npc, maleOnly); // male head data only
+
+        Collect(fx, npc).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void RaceDefaultSharedWithTheNpcsOwnPart_IsMappedOnce()
+    {
+        // Include As New remaps every link to a given source, so an NPC and its race can arrive at
+        // the same duplicate. The FormKey visit guard has to hold across both walks.
+        var fx = Build();
+        var hair = MintDuplicate(fx, "HairMaleImperialChild01");
+
+        var npc = NewNpc(fx);
+        npc.HeadParts.Add(hair.FormKey);
+        GiveMintedRace(fx, npc, hair);
+
+        Collect(fx, npc).Should().HaveCount(1);
     }
 
     [Fact]

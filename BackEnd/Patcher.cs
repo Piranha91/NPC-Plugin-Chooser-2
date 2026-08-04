@@ -2547,9 +2547,10 @@ public class Patcher : OptionalUIModule
     }
 
     /// <summary>
-    /// Old shape name -> new shape name for every head part on <paramref name="patchNpc"/> that
-    /// this run duplicated into the output under a CHANGED EditorID. Empty for the overwhelming
-    /// majority of NPCs (nothing was duplicated, or the EditorID survived).
+    /// Old shape name -> new shape name for every head part <paramref name="patchNpc"/> effectively
+    /// wears — its own, their Extra Parts, and its race's defaults — that this run duplicated into
+    /// the output under a CHANGED EditorID. Empty for the overwhelming majority of NPCs (nothing
+    /// was duplicated, or the EditorID survived).
     ///
     /// <para>The engine pairs an NPC's head parts to its baked FaceGen geometry by name —
     /// <c>GetObjectByName(headPart-&gt;formEditorID)</c> — so a duplicate minted under
@@ -2596,6 +2597,35 @@ public class Patcher : OptionalUIModule
         }
 
         foreach (var hp in patchNpc.HeadParts) Walk(hp);
+
+        // The race's defaults are walked too, because a slot the NPC leaves unset is filled from
+        // its RACE and baked into the FaceGen exactly like one of its own parts. RS Children's
+        // children are the specimen: Kayd, Alesan and Francois Beaufort carry only brows/eyes and
+        // take their hair from the race, so when Include As New minted the race its defaults named
+        // 'HairMaleRedguardChild01_RSkyrimChildren.esm' while their meshes still carried
+        // 'HairMaleRedguardChild01'. All three dark-faced in game; the NPCs of the same mod that
+        // own their hair outright were fine, which is exactly the shape of this gap.
+        //
+        // Only a race in the OUTPUT plugin can name renamed duplicates — RemapLinks rewrites only
+        // records this run wrote, so an unminted race still points at the originals the mesh
+        // already matches, and there is nothing to do.
+        //
+        // Deliberately NOT mirroring FaceGenConsistencyAnalyzer's skip of slots the NPC overrides:
+        // that test needs every part's Type, and the NPC's own parts routinely live in appearance
+        // plugins outside the load order, so it could only be answered for some of them. The
+        // asymmetry settles it — a missed rename is a dark face, while a surplus one names a shape
+        // the mesh does not carry and does nothing (and RenameShapesByName refuses to rename onto
+        // a name already present, which is the one case that could do harm).
+        if (!patchNpc.Race.IsNull &&
+            outputMod.Races.TryGetValue(patchNpc.Race.FormKey, out var mintedRace) &&
+            mintedRace is IRaceGetter race)
+        {
+            var headData = Auxilliary.IsFemale(patchNpc) ? race.HeadData?.Female : race.HeadData?.Male;
+            if (headData?.HeadParts != null)
+            {
+                foreach (var hpRef in headData.HeadParts) Walk(hpRef.Head);
+            }
+        }
 
         return renames;
     }
