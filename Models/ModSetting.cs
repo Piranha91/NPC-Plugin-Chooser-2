@@ -100,6 +100,21 @@ public class ModSetting
     public string MergeInToolTip { get; set; } = DefaultMergeInTooltip;
 
     public RecordOverrideHandlingMode? ModRecordOverrideHandlingMode { get; set; } = RecordOverrideHandlingMode.Ignore;
+
+    /// <summary>
+    /// Which NPC fields the override-discovery walk may start from for this mod (the "Override
+    /// Roots" dialog). Null means "use <see cref="Settings.DefaultOverrideTraversalRoots"/>", so a
+    /// mod that was never customised keeps following the global default as it changes — the same
+    /// contract <see cref="PluginMergeInOverrides"/> uses for merge-in.
+    ///
+    /// <para>Roots only: a checked field is followed to unlimited depth through any record type.
+    /// Discovery used to root on every link the NPC record carried, which walked out through AI
+    /// packages into cells, placed references and quests and copied their whole ancestry into the
+    /// output as private duplicates. The default set is appearance-only; anything a specific mod
+    /// genuinely needs beyond that can be ticked back on here rather than guessed at globally.</para>
+    /// </summary>
+    public HashSet<NpcRootField>? OverrideTraversalRoots { get; set; } = null;
+
     public int MaxNestedIntervalDepth { get; set; } = 2;
     public bool IncludeAllOverrides { get; set; } = false;
     public HashSet<ModKey> PluginsWithOverrideRecords { get; set; } = new();

@@ -176,9 +176,9 @@ public class SkyPatcherInterface : OptionalUIModule
 
     /// <summary>
     /// The appearance fields the surrogate exists to carry. Everything else on it is incidental
-    /// cargo from the <c>DeepCopyIn</c>. Mirrors <c>Patcher.GetAppearanceFormLinks</c> (and
-    /// <see cref="Auxilliary.CopyInheritedAppearance"/>), which already scope SkyPatcher override
-    /// discovery to "appearance records, not packages/factions/items/AI data".
+    /// cargo from the <c>DeepCopyIn</c>. Mirrors <see cref="Auxilliary.CopyInheritedAppearance"/>.
+    /// Related but distinct from <c>NpcRootFieldCatalog</c>, which says where override DISCOVERY
+    /// may start (user-configurable per mod); this decides what the surrogate itself carries.
     ///
     /// <para><c>Template</c> is kept: an inherited face resolves through it, and the flattening
     /// above depends on it. <c>DefaultOutfit</c> is conditional and handled separately.</para>

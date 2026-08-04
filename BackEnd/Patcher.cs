@@ -1060,25 +1060,30 @@ public class Patcher : OptionalUIModule
                                               "never worn in game.", false, true);
                                 }
 
-                                // In SkyPatcher mode the surrogate is the donor appearance NPC; restrict override
-                                // discovery to its appearance-descended links (computed from the original donor
-                                // record, before CopyAppearanceData redirects them to merged-in output records) so
-                                // non-appearance overrides are never pulled into the output as masters.
+                                // Where override discovery may START. Computed from the ORIGINAL donor record,
+                                // before CopyAppearanceData redirects its links at merged-in output records.
                                 //
-                                // The outfit link is ALWAYS included for discovery here (note includeOutfit: true),
-                                // independent of the user's includeOutfit choice. An appearance mod that overrides an
-                                // outfit-reachable record in place - e.g. RS Children Overhaul's edit of ChildClothes01
-                                // (0006D92C), part of Dorthe's default outfit - must still have that override carried
-                                // into the plugin, exactly as the non-SkyPatcher Include path (which traverses patchNpc's
-                                // full EnumerateFormLinks) and IncludeAsNew (which traverses the donor's full
-                                // EnumerateFormLinks) already do - both always include DefaultOutfit. includeOutfit only
-                                // governs whether the SkyPatcher SetOutfit *directive* is emitted (see
-                                // ApplySkyPatcherDirectives); it must not gate dependent-override *discovery*. Gating
-                                // discovery on includeOutfit previously skipped the ChildClothes01 edit in
-                                // SkyPatcher+Include mode while every other combination wrote it.
-                                List<IFormLinkGetter>? skyPatcherAppearanceLinks = _settings.UseSkyPatcherMode
-                                    ? GetAppearanceFormLinks(appearanceNpcRecord, includeOutfit: true).ToList()
-                                    : null;
+                                // Every mode uses the same per-mod field selection now (Override Roots dialog,
+                                // NpcRootFieldCatalog). It used to be SkyPatcher-only: the record modes rooted at
+                                // the NPC's entire EnumerateFormLinks(), so AI packages were roots, and from a
+                                // package the walk reached placed references, cells, quests and other NPCs —
+                                // anything genuinely overridden down there dragged its whole ancestry in as
+                                // private duplicates. A measured run repointed six NPCs' package links at copies
+                                // of vanilla packages referencing copies of DB01 and SolitudeOpening.
+                                //
+                                // The default set is appearance-only, but it is the USER'S list, not a fixed one:
+                                // no allowlist can be proven complete (appearance hides in oblique places, and
+                                // the previous hardcoded one had already needed three ad-hoc additions), so a mod
+                                // that genuinely needs another field can have it ticked back on.
+                                //
+                                // DefaultOutfit is a default root and is NOT gated on the user's includeOutfit
+                                // choice: an appearance mod that edits an outfit-reachable record in place — RS
+                                // Children's ChildClothes01 (0006D92C), part of Dorthe's outfit — must still have
+                                // that override carried in. includeOutfit governs whether the outfit is DELIVERED
+                                // (the SkyPatcher SetOutfit directive / the written record), never discovery.
+                                var discoveryRootFields = NpcRootFieldCatalog.Resolve(appearanceModSetting, _settings);
+                                List<IFormLinkGetter> discoveryRootLinks =
+                                    NpcRootFieldCatalog.GetRootLinks(appearanceNpcRecord, discoveryRootFields);
 
                                 // Null unless the user opted into own-copy template handling AND the
                                 // donor's chain resolved — see ResolveAppearanceTerminusRecord.
@@ -1312,21 +1317,17 @@ public class Patcher : OptionalUIModule
                                                 }
                                                 else
                                                 {
+                                                    // Roots come from the mod's Override Roots selection in every
+                                                    // mode now; the record paths used to walk the NPC's whole link
+                                                    // set, which is how AI packages became discovery roots.
                                                     dependencyContexts = await Task.Run(() =>
-                                                        skyPatcherAppearanceLinks != null
-                                                            ? _recordHandler.DeepGetOverriddenDependencyRecords(
-                                                                skyPatcherAppearanceLinks,
-                                                                appearanceModSetting.CorrespondingModKeys,
-                                                                searchedOverrideFormKeysForGroup,
-                                                                currentModFolderPaths,
-                                                                maxNestedIntervalDepth,
-                                                                ct)
-                                                            : _recordHandler.DeepGetOverriddenDependencyRecords(patchNpc,
-                                                                appearanceModSetting.CorrespondingModKeys,
-                                                                searchedOverrideFormKeysForGroup,
-                                                                currentModFolderPaths,
-                                                                maxNestedIntervalDepth,
-                                                                ct));
+                                                        _recordHandler.DeepGetOverriddenDependencyRecords(
+                                                            discoveryRootLinks,
+                                                            appearanceModSetting.CorrespondingModKeys,
+                                                            searchedOverrideFormKeysForGroup,
+                                                            currentModFolderPaths,
+                                                            maxNestedIntervalDepth,
+                                                            ct));
                                                 }
 
                                                 List<MajorRecord> deltaPatchedRecords = new();
@@ -1519,12 +1520,17 @@ public class Patcher : OptionalUIModule
                                                             appearanceNpcRecord.DefaultOutfit.FormKey);
                                                     }
 
-                                                    if (!winningNpcOverride.SleepingOutfit.IsNull)
+                                                    // Each substitution follows its own Override Roots checkbox: it
+                                                    // exists to redirect a root the donor would have supplied, so
+                                                    // switching that root off has to switch the substitute off too.
+                                                    if (discoveryRootFields.Contains(NpcRootField.SleepingOutfit) &&
+                                                        !winningNpcOverride.SleepingOutfit.IsNull)
                                                     {
                                                         additionalRootLinks.Add(winningNpcOverride.SleepingOutfit);
                                                     }
 
-                                                    if (!includeOutfit)
+                                                    if (!includeOutfit &&
+                                                        discoveryRootFields.Contains(NpcRootField.DefaultOutfit))
                                                     {
                                                         if (!winningNpcOverride.DefaultOutfit.IsNull)
                                                         {
@@ -1579,8 +1585,17 @@ public class Patcher : OptionalUIModule
                                                 }
                                                 else
                                                 {
-                                                    mergedInRecords = _recordHandler.DuplicateInOverrideRecords(
-                                                        appearanceNpcRecord, patchNpc,
+                                                    // Explicit roots: the mod's Override Roots selection, minus the
+                                                    // donor links the written record will not carry, plus the
+                                                    // recipient substitutes. Was DuplicateInOverrideRecords, which
+                                                    // derived its roots from the donor's whole EnumerateFormLinks().
+                                                    var overrideRoots = discoveryRootLinks
+                                                        .Where(l => excludedDonorRootKeys?.Contains(l.FormKey) != true)
+                                                        .Concat(additionalRootLinks ?? Enumerable.Empty<IFormLinkGetter>())
+                                                        .ToList();
+
+                                                    mergedInRecords = _recordHandler.DuplicateInOverrideRecordsFromLinks(
+                                                        overrideRoots, patchNpc,
                                                         appearanceModSetting.CorrespondingModKeys,
                                                         appearanceModKey.Value, patchNpc.FormKey.ModKey,
                                                         appearanceModSetting.HandleInjectedRecords,
@@ -1588,9 +1603,7 @@ public class Patcher : OptionalUIModule
                                                         currentModFolderPaths,
                                                         ref overrideExceptionStrings,
                                                         searchedOverrideFormKeysForGroup,
-                                                        ct,
-                                                        additionalRootLinks,
-                                                        excludedDonorRootKeys);
+                                                        ct);
                                                 }
 
                                                 if (overrideExceptionStrings.Any())
@@ -1737,21 +1750,17 @@ public class Patcher : OptionalUIModule
                                                 }
                                                 else
                                                 {
+                                                    // Roots come from the mod's Override Roots selection in every
+                                                    // mode now; the record paths used to walk the NPC's whole link
+                                                    // set, which is how AI packages became discovery roots.
                                                     dependencyContexts = await Task.Run(() =>
-                                                        skyPatcherAppearanceLinks != null
-                                                            ? _recordHandler.DeepGetOverriddenDependencyRecords(
-                                                                skyPatcherAppearanceLinks,
-                                                                appearanceModSetting.CorrespondingModKeys,
-                                                                searchedOverrideFormKeysForGroup,
-                                                                currentModFolderPaths,
-                                                                maxNestedIntervalDepth,
-                                                                ct)
-                                                            : _recordHandler.DeepGetOverriddenDependencyRecords(patchNpc,
-                                                                appearanceModSetting.CorrespondingModKeys,
-                                                                searchedOverrideFormKeysForGroup,
-                                                                currentModFolderPaths,
-                                                                maxNestedIntervalDepth,
-                                                                ct));
+                                                        _recordHandler.DeepGetOverriddenDependencyRecords(
+                                                            discoveryRootLinks,
+                                                            appearanceModSetting.CorrespondingModKeys,
+                                                            searchedOverrideFormKeysForGroup,
+                                                            currentModFolderPaths,
+                                                            maxNestedIntervalDepth,
+                                                            ct));
                                                 }
 
                                                 foreach (var ctx in dependencyContexts)
@@ -1868,12 +1877,17 @@ public class Patcher : OptionalUIModule
                                                             appearanceNpcRecord.DefaultOutfit.FormKey);
                                                     }
 
-                                                    if (!winningNpcOverride.SleepingOutfit.IsNull)
+                                                    // Each substitution follows its own Override Roots checkbox: it
+                                                    // exists to redirect a root the donor would have supplied, so
+                                                    // switching that root off has to switch the substitute off too.
+                                                    if (discoveryRootFields.Contains(NpcRootField.SleepingOutfit) &&
+                                                        !winningNpcOverride.SleepingOutfit.IsNull)
                                                     {
                                                         additionalRootLinks.Add(winningNpcOverride.SleepingOutfit);
                                                     }
 
-                                                    if (!includeOutfit)
+                                                    if (!includeOutfit &&
+                                                        discoveryRootFields.Contains(NpcRootField.DefaultOutfit))
                                                     {
                                                         if (!winningNpcOverride.DefaultOutfit.IsNull)
                                                         {
@@ -1928,8 +1942,17 @@ public class Patcher : OptionalUIModule
                                                 }
                                                 else
                                                 {
-                                                    mergedInRecords = _recordHandler.DuplicateInOverrideRecords(
-                                                        appearanceNpcRecord, patchNpc,
+                                                    // Explicit roots: the mod's Override Roots selection, minus the
+                                                    // donor links the written record will not carry, plus the
+                                                    // recipient substitutes. Was DuplicateInOverrideRecords, which
+                                                    // derived its roots from the donor's whole EnumerateFormLinks().
+                                                    var overrideRoots = discoveryRootLinks
+                                                        .Where(l => excludedDonorRootKeys?.Contains(l.FormKey) != true)
+                                                        .Concat(additionalRootLinks ?? Enumerable.Empty<IFormLinkGetter>())
+                                                        .ToList();
+
+                                                    mergedInRecords = _recordHandler.DuplicateInOverrideRecordsFromLinks(
+                                                        overrideRoots, patchNpc,
                                                         appearanceModSetting.CorrespondingModKeys,
                                                         appearanceModKey.Value, patchNpc.FormKey.ModKey,
                                                         appearanceModSetting.HandleInjectedRecords,
@@ -1937,9 +1960,7 @@ public class Patcher : OptionalUIModule
                                                         currentModFolderPaths,
                                                         ref overrideExceptionStrings,
                                                         searchedOverrideFormKeysForGroup,
-                                                        ct,
-                                                        additionalRootLinks,
-                                                        excludedDonorRootKeys);
+                                                        ct);
                                                 }
 
                                                 if (overrideExceptionStrings.Any())
@@ -3079,13 +3100,12 @@ public class Patcher : OptionalUIModule
             true, true);
     }
 
-    // Same set as GetAppearanceFormLinks, but carrying the record field each link came from
-    // so a bad reference can be reported as "Race=..." / "HeadParts[2]=..." rather than as a
-    // bare FormKey. Diagnostics only.
+    // The written appearance set, carrying the record field each link came from so a bad reference
+    // can be reported as "Race=..." / "HeadParts[2]=..." rather than as a bare FormKey.
+    // Diagnostics only.
     //
-    // Template is included here although GetAppearanceFormLinks omits it: that method scopes
-    // SkyPatcher's dependent-OVERRIDE discovery (where following a template would import records
-    // for an NPC the user never selected), whereas this one asks the narrower question "what is
+    // Deliberately NOT the same question as NpcRootFieldCatalog, which says where dependent-
+    // OVERRIDE discovery may start (user-configurable per mod). This one asks "what is
     // written to the record, and can the output legally reference it". TPLT is written — by
     // SyncTemplateInheritance in record mode and by the surrogate's DeepCopyIn in SkyPatcher mode —
     // and a TPLT into a plugin outside the load order fails the save exactly like a head part does.
@@ -3106,19 +3126,6 @@ public class Patcher : OptionalUIModule
 
         if (includeOutfit && !npc.DefaultOutfit.IsNull) yield return ("DefaultOutfit", npc.DefaultOutfit.FormKey);
         if (npc.Template is { IsNull: false }) yield return ("Template", npc.Template.FormKey);
-    }
-
-    // The appearance-descended FormLinks of an NPC — the exact set CopyAppearanceData
-    // transfers from the donor. Used to scope SkyPatcher override discovery so only
-    // appearance records (not packages/factions/items/AI data) can be pulled into the output.
-    private static IEnumerable<IFormLinkGetter> GetAppearanceFormLinks(INpcGetter npc, bool includeOutfit)
-    {
-        if (!npc.WornArmor.IsNull) yield return npc.WornArmor;
-        if (!npc.HeadTexture.IsNull) yield return npc.HeadTexture;
-        if (!npc.Race.IsNull) yield return npc.Race;
-        if (!npc.HairColor.IsNull) yield return npc.HairColor;
-        foreach (var hp in npc.HeadParts.Where(x => !x.IsNull)) yield return hp;
-        if (includeOutfit && !npc.DefaultOutfit.IsNull) yield return npc.DefaultOutfit;
     }
 
     // Emits the SkyPatcher .ini directives for the appearance delta between the recipient

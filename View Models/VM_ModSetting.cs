@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Collections.Generic;
@@ -146,6 +146,14 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     [Reactive] public int MaxNestedIntervalDepth { get; set; } = 2;
     [Reactive] public bool IsMaxNestedIntervalDepthVisible { get; set; }
     [Reactive] public bool IncludeAllOverrides { get; set; } = false;
+
+    // Which NPC fields the override search may start from for this mod. Null = follow the global
+    // default, which is how a mod the user never opened the dialog for keeps tracking it.
+    [Reactive] public HashSet<NpcRootField>? OverrideTraversalRoots { get; set; }
+
+    /// <summary>Button caption, e.g. "Override Roots (8/31)" — surfaces a non-default selection
+    /// without making the user open the dialog to discover it.</summary>
+    [ObservableAsProperty] public string OverrideTraversalRootsSummary { get; }
 
     // Wig/antler detection + per-mod handling modes (see Models.ModSetting /
     // Models.WigHandlingMode / Models.AntlerHandlingMode). Each dropdown is shown
@@ -348,6 +356,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     public ReactiveCommand<string, Unit> RemoveMugshotFolderPathCommand { get; }
     public ReactiveCommand<Unit, Unit> UnlinkMugshotDataCommand { get; }
     public ReactiveCommand<Unit, Unit> SetResourcePluginsCommand { get; }
+    public ReactiveCommand<Unit, Unit> SetOverrideTraversalRootsCommand { get; }
     public ReactiveCommand<Unit, Unit> SetKeywordsCommand { get; }
     public ReactiveCommand<Unit, Unit> DeleteCommand { get; }
     public ReactiveCommand<Unit, Unit> RefreshCommand { get; }
@@ -396,6 +405,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         OverrideRecordOverrideHandlingMode = model.ModRecordOverrideHandlingMode;
         IncludeAllOverrides = model.IncludeAllOverrides;
         MaxNestedIntervalDepth = model.MaxNestedIntervalDepth;
+        OverrideTraversalRoots = model.OverrideTraversalRoots == null ? null : new HashSet<NpcRootField>(model.OverrideTraversalRoots);
         DetectedWigArmors = new HashSet<FormKey>(model.DetectedWigArmors ?? new HashSet<FormKey>());
         DetectedWigArmatures = new HashSet<FormKey>(model.DetectedWigArmatures ?? new HashSet<FormKey>());
         DetectedAntlerArmors = new HashSet<FormKey>(model.DetectedAntlerArmors ?? new HashSet<FormKey>());
@@ -725,6 +735,17 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         SetResourcePluginsCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.ShowError($"Error refreshing mod '{DisplayName}': {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
+        SetOverrideTraversalRootsCommand = ReactiveCommand.Create(SetOverrideTraversalRoots).DisposeWith(_disposables);
+        SetOverrideTraversalRootsCommand.ThrownExceptions
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error setting override roots for mod '{DisplayName}': {ExceptionLogger.GetExceptionStack(ex)}"))
+            .DisposeWith(_disposables);
+
+        // Recomputed whenever the selection changes so the button caption never lags the dialog.
+        this.WhenAnyValue(x => x.OverrideTraversalRoots)
+            .Select(_ => BuildOverrideTraversalRootsSummary())
+            .ToPropertyEx(this, x => x.OverrideTraversalRootsSummary)
+            .DisposeWith(_disposables);
+
         SetKeywordsCommand = ReactiveCommand.Create(SetKeywords).DisposeWith(_disposables);
         SetKeywordsCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.ShowError($"Error setting keywords for mod '{DisplayName}': {ExceptionLogger.GetExceptionStack(ex)}"))
@@ -1086,6 +1107,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             HandleInjectedOverridesToolTip = HandleInjectedOverridesToolTip,
             ModRecordOverrideHandlingMode = OverrideRecordOverrideHandlingMode,
             MaxNestedIntervalDepth = MaxNestedIntervalDepth,
+            OverrideTraversalRoots = OverrideTraversalRoots == null ? null : new HashSet<NpcRootField>(OverrideTraversalRoots),
             DetectedWigArmors = new HashSet<FormKey>(DetectedWigArmors),
             DetectedWigArmatures = new HashSet<FormKey>(DetectedWigArmatures),
             DetectedAntlerArmors = new HashSet<FormKey>(DetectedAntlerArmors),
@@ -3082,6 +3104,40 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     /// Opens a dialog for the user to select which plugins should be treated as resource-only.
     /// If the selection changes, triggers a refresh of the mod setting.
     /// </summary>
+    /// <summary>The set actually in force: this mod's selection, else the global default, else the
+    /// catalog's appearance set. Same precedence the patcher applies.</summary>
+    private IReadOnlySet<NpcRootField> ResolveEffectiveOverrideTraversalRoots() =>
+        OverrideTraversalRoots
+        ?? _lazySettingsVm.Value.DefaultOverrideTraversalRoots
+        ?? NpcRootFieldCatalog.Defaults;
+
+    private string BuildOverrideTraversalRootsSummary() =>
+        $"Override Roots ({ResolveEffectiveOverrideTraversalRoots().Count}/{NpcRootFieldCatalog.All.Count})";
+
+    /// <summary>
+    /// Opens the per-mod Override Roots dialog. The selection is persisted as null while it matches
+    /// the catalog defaults, so a mod the user merely looked at keeps following the global default
+    /// rather than freezing today's default into its settings.
+    /// </summary>
+    private void SetOverrideTraversalRoots()
+    {
+        var selectorVm = new VM_OverrideRootSelector(
+            ResolveEffectiveOverrideTraversalRoots(), DisplayName);
+
+        var window = new OverrideRootSelectorWindow
+        {
+            DataContext = selectorVm,
+            ViewModel = selectorVm
+        };
+        window.Owner = System.Windows.Application.Current.Windows.OfType<Window>().SingleOrDefault(x => x.IsActive);
+        window.ShowDialog();
+
+        if (selectorVm.HasChanged)
+        {
+            OverrideTraversalRoots = selectorVm.IsAtDefaults ? null : selectorVm.GetSelection();
+        }
+    }
+
     private void SetResourcePlugins()
     {
         // The dialog's Merge In defaults come from the same resolver the patcher uses, which
@@ -3376,4 +3432,4 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     }
 
     #endregion
-}
+}

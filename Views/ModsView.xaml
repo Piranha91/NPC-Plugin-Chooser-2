@@ -869,6 +869,27 @@
                                                       Margin="5,0,0,0"
                                                       ToolTip="If checked, grabs ALL override records from the plugins instead of traversing from NPC records. Use with caution - this may include irrelevant overrides."/>
                                         </StackPanel>
+
+                                        <!-- Which NPC fields the override search starts from. Hidden under
+                                             "Include All", which does not traverse from the NPC at all. -->
+                                        <Button Content="{Binding OverrideTraversalRootsSummary}"
+                                                Command="{Binding SetOverrideTraversalRootsCommand}"
+                                                Margin="10,0,0,0" Padding="6,1"
+                                                VerticalAlignment="Center"
+                                                Visibility="{Binding IsMaxNestedIntervalDepthVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <Button.ToolTip>
+                                                <ToolTip>
+                                                    <TextBlock TextWrapping="Wrap" Width="320">
+                                                        Choose which fields of an NPC record the search for this mod's overridden
+                                                        records may start from.
+                                                        <LineBreak/><LineBreak/>
+                                                        A selected field is followed as deep as it goes, through any kind of record.
+                                                        This does not limit which record types can be merged in — only where the
+                                                        search begins. Defaults to the fields that carry appearance.
+                                                    </TextBlock>
+                                                </ToolTip>
+                                            </Button.ToolTip>
+                                        </Button>
                                     </StackPanel>
 
                                      <Button Grid.Row="9" Grid.Column="0"

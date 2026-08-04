@@ -339,6 +339,17 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public bool IsDefaultOverrideHandlingControlsVisible { get; set; }
     [Reactive] public bool IsDefaultMaxNestedIntervalDepthVisible { get; set; }
 
+    /// <summary>
+    /// The global Override Roots default, which every mod entry follows unless it sets its own
+    /// (per-mod ?? this ?? catalog appearance set). Null means the catalog default and is the
+    /// value for anyone who has not deliberately changed it — including settings files written
+    /// before the option existed, which is how existing installs adopt the narrowed roots.
+    /// </summary>
+    [Reactive] public HashSet<NpcRootField>? DefaultOverrideTraversalRoots { get; set; }
+
+    [ObservableAsProperty] public string DefaultOverrideTraversalRootsSummary { get; }
+    public ReactiveCommand<Unit, Unit> SetDefaultOverrideTraversalRootsCommand { get; }
+
     public IEnumerable<RecordOverrideHandlingMode> RecordOverrideHandlingModes { get; } =
         Enum.GetValues(typeof(RecordOverrideHandlingMode)).Cast<RecordOverrideHandlingMode>();
 
@@ -825,6 +836,9 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         SelectedWigBlockScope = _model.ManualWigBlockScope;
         PublishForwardedOutfitsToDistributors = _model.PublishForwardedOutfitsToDistributors;
         DefaultMaxNestedIntervalDepth = _model.DefaultMaxNestedIntervalDepth;
+        DefaultOverrideTraversalRoots = _model.DefaultOverrideTraversalRoots == null
+            ? null
+            : new HashSet<NpcRootField>(_model.DefaultOverrideTraversalRoots);
         DefaultIncludeAllOverrides = _model.DefaultIncludeAllOverrides;
         UpdateDefaultOverrideVisibility(); // Initialize visibility state
         AddMissingNpcsOnUpdate = _model.AddMissingNpcsOnUpdate;
@@ -921,6 +935,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             AutogenMugshotsFolder = Settings.GetDefaultAutogenMugshotsFolder();
         }).DisposeWith(_disposables);
         SelectMO2ModlistCommand = ReactiveCommand.Create(SelectMO2Modlist).DisposeWith(_disposables);
+        SetDefaultOverrideTraversalRootsCommand =
+            ReactiveCommand.Create(SetDefaultOverrideTraversalRoots).DisposeWith(_disposables);
         ToggleInternalShowPreviewCommand = ReactiveCommand.Create(
             () => { InternalShowPreview = !InternalShowPreview; }).DisposeWith(_disposables);
         SelectInternalBackgroundColorCommand = ReactiveCommand.Create(SelectInternalBackgroundColor).DisposeWith(_disposables);
@@ -1503,6 +1519,18 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         this.WhenAnyValue(x => x.DefaultMaxNestedIntervalDepth)
             .Skip(1)
             .Subscribe(value => _model.DefaultMaxNestedIntervalDepth = value)
+            .DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.DefaultOverrideTraversalRoots)
+            .Skip(1)
+            .Subscribe(value => _model.DefaultOverrideTraversalRoots =
+                value == null ? null : new HashSet<NpcRootField>(value))
+            .DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.DefaultOverrideTraversalRoots)
+            .Select(v => $"Override Roots ({(v ?? NpcRootFieldCatalog.Defaults).Count}" +
+                         $"/{NpcRootFieldCatalog.All.Count})")
+            .ToPropertyEx(this, x => x.DefaultOverrideTraversalRootsSummary)
             .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.DefaultIncludeAllOverrides)
@@ -2186,6 +2214,33 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             {
                 await splashScreen.CloseSplashScreenAsync();
             }
+        }
+    }
+
+    /// <summary>
+    /// Opens the Override Roots dialog for the GLOBAL default — the set every mod entry follows
+    /// unless it has its own. Stored as null while it matches the catalog defaults, so an install
+    /// that merely looked at the dialog keeps tracking the shipped default rather than freezing
+    /// today's copy of it.
+    /// </summary>
+    private void SetDefaultOverrideTraversalRoots()
+    {
+        var selectorVm = new VM_OverrideRootSelector(
+            DefaultOverrideTraversalRoots ?? NpcRootFieldCatalog.Defaults,
+            "all mods (default)");
+
+        var window = new OverrideRootSelectorWindow
+        {
+            DataContext = selectorVm,
+            ViewModel = selectorVm
+        };
+        window.Owner = System.Windows.Application.Current.Windows
+            .OfType<System.Windows.Window>().SingleOrDefault(x => x.IsActive);
+        window.ShowDialog();
+
+        if (selectorVm.HasChanged)
+        {
+            DefaultOverrideTraversalRoots = selectorVm.IsAtDefaults ? null : selectorVm.GetSelection();
         }
     }
 

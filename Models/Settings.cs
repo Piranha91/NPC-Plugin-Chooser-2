@@ -141,6 +141,18 @@ public class Settings
     // Default Overrideable Settings
 
     public RecordOverrideHandlingMode DefaultRecordOverrideHandlingMode { get; set; } = RecordOverrideHandlingMode.Ignore;
+
+    /// <summary>
+    /// The NPC fields override discovery starts from for any mod that has not overridden it
+    /// (<see cref="ModSetting.OverrideTraversalRoots"/>). Null — including a settings file written
+    /// before this option existed — means <c>NpcRootFieldCatalog.Defaults</c>, the appearance set.
+    /// That is deliberately how existing installs pick up the narrowed roots without a migration:
+    /// the old behaviour (rooting at every link the NPC record carries) is the bug being fixed, so
+    /// upgrading into the fix is the intent. An EMPTY set is honoured literally as "root at
+    /// nothing" and is distinct from null.
+    /// </summary>
+    public HashSet<NpcRootField>? DefaultOverrideTraversalRoots { get; set; } = null;
+
     public int DefaultMaxNestedIntervalDepth { get; set; } = 2;
     public bool DefaultIncludeAllOverrides { get; set; } = false;
     // Default None ("Leave As Is") — wig handling is opt-in per mod; the patcher

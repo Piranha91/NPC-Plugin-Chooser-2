@@ -417,10 +417,32 @@
                                      PreviewTextInput="IntegerTextBox_PreviewTextInput"
                                      DataObject.Pasting="IntegerTextBox_Pasting"
                                      Visibility="{Binding IsDefaultMaxNestedIntervalDepthVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                            <CheckBox Content="Include All" 
+                            <CheckBox Content="Include All"
                                       IsChecked="{Binding DefaultIncludeAllOverrides, Mode=TwoWay}"
                                       VerticalAlignment="Center" Margin="15,0,0,0"
                                       ToolTip="If checked, grabs ALL override records from the plugins rather than searching by NPC dependencies. Use with caution."/>
+
+                            <!-- Default for every mod that has not set its own. Hidden under
+                                 "Include All", which does not traverse from the NPC at all. -->
+                            <Button Content="{Binding DefaultOverrideTraversalRootsSummary}"
+                                    Command="{Binding SetDefaultOverrideTraversalRootsCommand}"
+                                    Margin="15,0,0,0" Padding="6,1"
+                                    VerticalAlignment="Center"
+                                    Visibility="{Binding IsDefaultMaxNestedIntervalDepthVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <Button.ToolTip>
+                                    <ToolTip>
+                                        <TextBlock TextWrapping="Wrap" Width="320">
+                                            The default choice of which NPC-record fields the search for a mod's
+                                            overridden records may start from. Individual mods can override this
+                                            from their own "Override Roots" button.
+                                            <LineBreak/><LineBreak/>
+                                            A selected field is followed as deep as it goes, through any kind of
+                                            record. This does not limit which record types can be merged in — only
+                                            where the search begins.
+                                        </TextBlock>
+                                    </ToolTip>
+                                </Button.ToolTip>
+                            </Button>
                         </StackPanel>
                     </StackPanel>
 

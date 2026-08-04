@@ -117,6 +117,25 @@ to a path via the mod's folders, then falls back to the game Data folder),
 `BsaHandler`/`PluginArchiveIndex` (BSA reading), `Validator` (pre-patch screening
 of masters/races), `SkyPatcherInterface`, `EasyNpcTranslator` (profile import/export).
 
+**Override-discovery roots (`BackEnd/NpcRootFieldCatalog.cs`).** Under Include /
+Include As New the patcher searches for records the appearance mod overrides by
+walking outward from the NPC record. It roots that walk only at the NPC *fields*
+the user has ticked in the per-mod **Override Roots** dialog — defaulting to the
+appearance set (RNAM/WNAM/FTST/HCLF/PNAM/DOFT/SOFT/TPLT). **Roots, not record
+types:** a ticked field is followed to unlimited depth through any record type.
+It used to root at every link on the record, so AI packages were roots — and from
+a package the walk reaches placed references, cells, quests and other NPCs, whose
+whole ancestry then got copied in as private duplicates (a measured run repointed
+six NPCs' package links at copies of vanilla packages referencing copies of `DB01`
+and `SolitudeOpening`). The catalog is the single source of truth for both the
+dialog and the walk; `NpcRootFieldCatalogTests` asserts by reflection that every
+FormLink-bearing field of `INpcGetter` has an entry, so a missing field fails CI
+rather than silently becoming unreachable. Precedence: per-mod
+`ModSetting.OverrideTraversalRoots` ?? `Settings.DefaultOverrideTraversalRoots` ??
+catalog defaults — null at both levels (including settings files predating the
+option) resolves to the appearance set, which is how existing installs pick up the
+narrowed roots with no migration.
+
 ### Mugshot generation (`BackEnd/CharacterViewerHost/`)
 `InternalMugshotGenerator` / `BatchMugshotGenerator` drive the `IOffscreenRenderer`
 from `CharacterViewer.Rendering`. NPC2's services are bound behind the renderer's
