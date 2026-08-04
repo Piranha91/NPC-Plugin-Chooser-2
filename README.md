@@ -150,6 +150,7 @@ Here you control the files that N.P.C.2 generates.
     * *Use the template's appearance* (default) — templated NPCs keep showing the other NPC's face in game, and any appearance you pick for them is ignored (their mugshot still shows your pick, but the game won't).
     * *Give each NPC its own copy* — your choice is applied to each templated NPC individually, so NPCs that share a template can look different from each other. Costs one extra copy of the face files per templated NPC. NPCs whose face the game picks at random from a levelled list have no fixed face to copy and keep inheriting either way.
 * **Auto-ESLify If Possible**: Flags the output plugin as ESL (light) when it qualifies, so it doesn’t consume a full load-order slot.
+* **Auto-split if over the master limit**: If the output plugin would exceed Skyrim’s 255-master limit, it is automatically split into multiple files (`MyPatch.esp`, `MyPatch_2.esp`, …) instead of failing. A normal-sized patch stays a single plugin; when a split does happen, **all** of the resulting plugins must be enabled in your load order. Also applies per-plugin when Split Output (below) is on.
 * **Split Output**: Splits your output into multiple plugins instead of one. You can split *by Gender*, *by Race*, and/or by a *Max # NPCs* per plugin. This is useful for dodging “Too Many Masters” errors without switching to SkyPatcher mode.
 
 #### Head Editing (wigs & antlers)
@@ -164,9 +165,23 @@ These settings apply in **Create and Patch** mode and in **SkyPatcher** mode. Th
 
 * **Default Wig Handling Mode**:
     * *Forward To Skin* — an outfit wig is moved into the NPC’s skin, so it shows no matter what outfit they end up wearing. (Falls back to *Forward To Outfit* if the appearance plugin assigns no worn armor.) A wig that’s already skin-carried is left alone.
-    * *Forward To Outfit* — the outfit the NPC actually wears in game is duplicated and the wig added to the duplicate. A skin-carried wig is moved into that outfit as a generated wig armor.
+    * *Forward To Outfit* — the outfit the NPC actually wears in game is duplicated and the wig added to the duplicate. A skin-carried wig is moved into that outfit as a generated wig armor. **Avoid this mode in SkyPatcher output mode** — N.P.C.2 warns you if you combine them. SkyPatcher assigns the outfit but never drives the engine's equip pass, so some affected NPCs spawn naked with the outfit sitting unequipped in their inventory, and nothing in the output distinguishes an NPC that will work from one that won't. *Forward To Skin* and *Convert To Headparts* ride on record fields SkyPatcher handles fine.
     * *Convert To Headparts* (**EXPERIMENTAL**) — the wig armor is thrown away and the wig becomes the NPC’s *hair*: N.P.C.2 generates head part records and bakes the wig mesh into the FaceGen file (HDT-SMP physics is preserved). The wig then survives outfit changes completely, and helmets hide it the way they hide normal hair. Selecting this pops a confirmation, because it rewrites the face mesh — verify the result by spawning the affected NPCs and checking for the dark face bug. If a bake would be unsafe for a particular NPC (e.g. the appearance mod ships no baked hair to replace), that NPC quietly falls back to *Forward To Skin*. The wig’s hair color is handled too — see **Converted Wig Hair Color** below.
     * *Leave As Is* (default) — wigs get no special treatment: an outfit wig is forwarded only if Include Outfits is on, and a skin-carried wig stays in the skin.
+
+    **Choosing between them** comes down to what *else* in your load order touches your NPCs, because each delivery vehicle can be overwritten by a different kind of mod:
+
+    | Mode | Outfit distributors (SPID, SkyPatcher) | Skin-swapping mods (e.g. Racial Skin Variance) |
+    |---|---|---|
+    | *Forward To Skin* | ✔ Unaffected | ✘ A mod that replaces the NPC's skin takes the wig with it |
+    | *Forward To Outfit* | ✘ A distributed outfit replaces the one carrying the wig | ✔ Unaffected |
+    | *Convert To Headparts* | ✔ Unaffected | ✔ Unaffected |
+    | *Leave As Is* | Depends on how the mod author shipped each wig — you inherit whichever weakness above applies | |
+
+    Notes on the table:
+    * **SynthEBD is not a threat to *Forward To Skin*** — it changes skins but deliberately patches around wigs.
+    * *Forward To Outfit*'s weakness is partly defended by **Publish forwarded outfits to SkyPatcher/SPID** (below), which fights back through the distributor's own config — but a config N.P.C.2 can't beat still wins, so *Forward To Skin* is the safer default in a SPID-heavy load order.
+    * *Convert To Headparts* is robust to both, and would be the obvious pick if it weren't still a **beta feature**. One specific concern you may read elsewhere: that converting a wig to head parts disrupts HDT-SMP physics. In the author's testing (the FoxGlove Auri mod, a full SMP wig) physics survived the conversion intact — but treat that as one data point, not a guarantee, and spot-check your own results in game.
 * **Converted Wig Hair Color**: Only applies to *Convert To Headparts*, and it exists because of a quirk worth understanding — see [Why converted wigs need a hair color](#why-converted-wigs-need-a-hair-color) below. **Auto (placeholder tints only)** is the default: recolor a converted wig with the NPC’s own hair color, but only when the wig was shipped with a placeholder tint; wigs whose textures the author already colored are left alone. **Always use NPC’s hair color** recolors every converted wig, exactly as RaceMenu would have done to the original worn wig. **Keep the wig’s own color** leaves the baked color untouched.
 * **Preview worn wigs the way RaceMenu tints them** (on by default): Affects **mugshots and the 3D preview only — never the patch output**. It makes previews of *unconverted* worn wigs use the NPC’s hair color, matching what you actually see in game with RaceMenu installed. Without it, mods like High Poly NPC Overhaul render every NPC black-haired in the gallery, which makes them impossible to judge. Uncheck it if you don’t use RaceMenu — then the black hair shown here is the truth.
 * **Manual Wig Designation Scope**: The 3D preview’s **Set Wig Meshes** button lets you mark a skin-carried hair mesh as a wig (or un-mark a false positive). This dropdown controls how far that decision reaches: **All NPCs (any mod)** (default), **Same mod only**, or **Specific NPC(s) only**. It only controls *scope* — a wig is still only converted when its mod’s Wig Handling Mode says so.
@@ -401,6 +416,8 @@ Two lists that control N.P.C.2’s analysis of your mod folder, plus a viewer fo
 * **Ignored Mods**: A list you control of mod folders to skip entirely during import. Use **Add Folder(s)...** to add them; remove a mod from the list to allow it back in.
 * **Rejected NPCs**: Individual NPCs that *were* found in your mods but didn’t make it into the NPCs menu — no FaceGen, a template chain ending in a Leveled NPC, a race that isn’t a playable-style NPC race, and so on. Expand this panel for a Mod → NPC tree; click a mod to see the breakdown of reasons for that mod, or an NPC to see its exact reason plus its EditorID / FormKey. The filter box searches mod names, NPC names, EditorIDs, FormKeys, and reason text, so you can answer “why isn’t *this* NPC in the list?” directly. This reads the **`Rejected NPCs`** folder next to the .exe, which is rewritten when your mods are analyzed — after a re-scan, click **Refresh**.
 
+![Rejected NPCs viewer](docs/Screenshots/Settings/Rejected_NPCs_Viewer.png)
+
 
 ### Spawn Bat File Options
 
@@ -436,6 +453,10 @@ This is where you actually choose each NPC’s appearance. The left panel lists 
 ![NPCs Menu](docs/Screenshots/NPCs/Full_Menu.png)
 
 The toolbar across the top is grouped into sections, covered below. Each group is collapsible: click its caption and the contents fold away, leaving just the caption and reclaiming the width. That matters on smaller or scaled displays — collapsing **Show** alone is usually enough to keep the whole toolbar on a single row at 1920×1080 with 150% scaling, where it would otherwise wrap. Your collapsed groups are remembered between sessions, as is the position of the splitter between the NPC list and the gallery (in this tab and in the Mods tab).
+
+![NPCs toolbar with most groups collapsed](docs/Screenshots/NPCs/Full_Menu_Collapsed.png)
+
+*The same toolbar with every group but NPC Groups collapsed — the whole bar fits one row.*
 
 ### NPC Groups
 
@@ -620,6 +641,8 @@ Mugshots can carry small icons in their corners that flag special states. Hover 
 
 * **“!” template indicator** — this NPC inherits its face from another NPC via Skyrim’s template system. Its colour tells you whether that matters: **red** means your selection genuinely won’t apply — the game will show the template’s face no matter what you pick here — while **amber** means the [Templated NPCs](#output-settings) setting is on *Give each NPC its own copy*, so the mod you choose really will be used for this NPC. Hover it either way; the tooltip is written for the situation you’re actually in. Chains ending in a levelled list stay red in both modes, because the game picks the actor at runtime and there is no fixed face to copy. The badge is drawn when tiles are built, so switching modes repaints it the next time you select an NPC.
 
+![Amber template badge tooltip](docs/Screenshots/NPCs/Template_Badge_Amber_Tooltip.png)
+
     These NPCs used to show nothing but a helmet placeholder, since they own no face of their own for the renderer to draw. N.P.C.2 now follows the template chain and renders the face the NPC will actually wear, resolved through each tile’s own mod — so two mods can legitimately disagree if one of them re-points the template. Only chains that can’t be followed (a levelled-list terminus, a broken link, a loop) still fall back to the placeholder.
 
 * **“No NPC record” icon** — this mod ships a FaceGen file for the NPC but no plugin record for it. N.P.C.2 still offers the appearance: it inherits the record from the NPC’s original plugin and applies just this mod’s face mesh and textures. Worth hovering, because it can also mean the mod author forgot to include the record — and if the FaceGen was built against different head parts than the original record specifies, the face can come out wrong in game.
@@ -629,6 +652,8 @@ Mugshots can carry small icons in their corners that flag special states. Hover 
 * **“Has Wig” badge** (top-left) — this NPC wears a wig supplied by this mod, either in its skin/worn armor or in its Default Outfit. It tells you the face you’re looking at includes a wig, which is what the [Head Editing](#head-editing-wigs--antlers) settings act on. The tooltip names each wig record it found. Mugshots always *show* an outfit wig, whatever the Wig Handling Mode and whatever the Include Headgear setting — a wig is the character’s hair, not a hat you’d want toggled away.
     * **Crossed out with a red X** — that wig won’t make it into your output. This happens when the mod’s Wig Handling Mode is *Leave As Is* **and** Include Outfits is off for the NPC, so nothing carries the wig across; in game they’d have their own hair instead of the face you’re looking at. The tooltip says how to keep it: pick a Wig Handling Mode, or turn on Include Outfits. (In plain *Create* output mode wig handling can’t run at all, so the tooltip points you at the output mode instead.) Skin-carried wigs travel with the appearance and are never crossed out.
 
+![Crossed-out Has Wig badge tooltip](docs/Screenshots/NPCs/Has_Wig_Badge_Tooltip_Crossed.png)
+
 ![Has Wig badge tooltip](docs/Screenshots/NPCs/Has_Wig_Badge_Tooltip.png)
 
 * **“No Antlers” badge** (top-left) — this mod’s Antler Handling Mode is *Remove* and this NPC actually carries antlers that the patch will strip, so the picture you’re looking at is showing you the antler-free result. With any other mode, mugshots always *show* an outfit’s antlers, whatever the Include Outfit and Include Headgear settings — like a wig, antlers are part of the face the mod gives the NPC rather than a hat you’d want toggled away.
@@ -636,6 +661,8 @@ Mugshots can carry small icons in their corners that flag special states. Hover 
 ![No Antlers badge tooltip](docs/Screenshots/NPCs/No_Antlers_Badge_Tooltip.png)
 
 * **Orange ⚠ outfit-conflict badge** — the outfit you asked N.P.C.2 to include for this NPC will be overridden at runtime by a SkyPatcher or SPID config in your load order (or, in SkyPatcher Mode, N.P.C.2’s own outfit entry loses to a later-loading config). The tooltip names the winning config file and line. See [Which outfit does the preview wear?](#which-outfit-does-the-preview-wear) for the full resolution rules.
+
+![Runtime outfit conflict badge tooltip](docs/Screenshots/NPCs/Runtime_Outfit_Conflict_Badge_Tooltip.png)
 
 * **Share badge** — marks an appearance involved in [sharing](#sharing-an-appearance-between-npcs). The same silhouette appears in two colors, one for each direction. One color means the appearance was **shared *to* this NPC** from another — selecting it applies that look, and the tooltip names the donor. The other color means this mugshot’s appearance has been **shared *out* to another NPC** — hovering names the recipient.
 
@@ -678,6 +705,10 @@ When **Show NPC Descriptions** is on, a short bio of the selected NPC appears at
 The **Show 3D Preview** option (or Ctrl+Shift+RClick on a mugshot) opens an interactive 3D render of the NPC as that appearance mod would make them. You can spin the model and tune lighting, camera FOV, color grading, and skin shading — the same controls described under [Auto-Generation](#auto-generation-built-in-3d-renderer) — and toggle whether they’re shown in their default outfit and/or headgear, to inspect the appearance far more closely than a static mugshot allows.
 
 With the outfit toggle on, the preview dresses the NPC in the outfit they’ll *actually wear in game* given your patching mode, the Include Outfit setting, and any SkyPatcher/SPID outfit distribution in your load order — see [Which outfit does the preview wear?](#which-outfit-does-the-preview-wear). If a runtime config defeats an outfit you asked N.P.C.2 to include, a warning banner in the preview names the config responsible; otherwise the status line at the bottom notes where a distributed outfit came from. Banners in the top-right corner likewise flag missing outfit assets and antler removal, matching the [badges](#mugshot-symbols) on the mugshot tile.
+
+![3D preview with a runtime outfit override banner](docs/Screenshots/NPCs/Render_Include_Outfit_Overwrite_Warning.png)
+
+*The banner at the bottom names the SPID config (file and line) that will override the Include Outfit request at runtime — the preview is already dressed in the outfit that actually wins.*
 
 The preview also reflects [Head Editing](#head-editing-wigs--antlers): a wig that will be forwarded or converted is shown the way the patched NPC will look, and antlers that *Remove* will strip are hidden. Outfit antlers under any other mode follow the same split as wigs — the preview treats them as the ordinary outfit piece they are (so they obey Include Headgear), while the mugshot tile draws them regardless.
 
@@ -805,8 +836,16 @@ Add the missing folder under **Corresponding Mod Folder Paths**, and the assets 
 A small number of appearance mods (e.g. RS Children Overhaul) also modify *non-NPC* records — like Races — and don’t work right without those changes. The **Record Override Handling Mode** dropdown controls this per-mod:
 
 * **Ignore** — don’t carry the overrides (the default, and correct for almost every mod). If an NPC’s appearance actually relies on one of these overridden records, ignoring it can leave that NPC looking wrong in-game — for example a dark face bug — which is your cue to switch this mod to *Include*.
-* **Include** — incorporate the changes (delta-patched into your winning records in *Create and Patch* mode, or copied directly in *Create* mode). Selecting **Include** reveals extra controls — **Max Nested Search Layers** (how deep to follow record references) and **Include All**.
+* **Include** — incorporate the changes (delta-patched into your winning records in *Create and Patch* mode, or copied directly in *Create* mode). Selecting **Include** reveals extra controls, described below.
 * **Include As New** — copy the modified record as a brand-new record and point the NPC at it, avoiding conflicts with other mods that touch the original.
+
+With *Include* or *Include As New* selected, three controls appear that shape the search for the mod's overridden records:
+
+* **Max Nested Search Layers** — how long the search keeps going through records the mod *doesn't* override before giving up on that branch. It is **not** a total depth limit: the counter resets every time one of the mod's records is found, so a continuous chain of the mod's edits is always followed all the way down. The default of 2 is what lets the search cross one unrelated record (say, a vanilla outfit) to reach the mod's edits beneath it. Higher values find more obscure overrides but take exponentially longer.
+* **Include All** — skip the search entirely and grab *every* override record in the mod's plugins, related to your NPCs or not. Use with caution.
+* **Override Roots** — which *fields* of the NPC record the search is allowed to start from. By default these are the appearance-carrying fields (race, skin, face texture, hair color, head parts, outfits, template), and for almost every mod the default is right. The reason this is exposed: the search used to start from *every* link on the NPC record, including its AI packages — and from an AI package the walk reaches cells, quests, and other NPCs, so an appearance patch could end up quietly duplicating AI and quest data into your output. Rooting at the appearance fields stops that. A ticked field is still followed to unlimited depth through *any* record type, so this controls where the search begins, never what it may merge. If a mod's overrides live somewhere unusual, tick the extra field here (per mod, or set the global default next to the Settings tab's Override Handling Mode dropdown); if you see AI packages or quests showing up in your output's [Record Provenance](#logging) log, untick what you don't want followed.
+
+![Override Roots dialog](docs/Screenshots/Mods/Override_Roots_Dialog.png)
 
 Override handling is slow and can crash the patcher on big base mods, so **only enable it for the specific mods that visibly need it** (an NPC looks bugged in-game). See the FAQ for a deeper explanation of the trade-offs.
 
@@ -847,13 +886,13 @@ The log pane itself is colour-coded by severity — warnings in yellow, errors i
 
 ### Validation Prompt
 
-When you run patch generation, N.P.C.2 **first** checks that every selected mod is actually installed and provides the NPC you chose it for. Any selections that fail (mod missing, or NPC not in the mod) are listed, and you’re asked whether to abort, or skip those NPCs and continue with the valid selections. Screening warnings always appear in the log, whether or not Verbose Logging is on — a skipped selection is something you need to see.
+When you run patch generation, N.P.C.2 **first** checks that every selected mod is actually installed and provides the NPC you chose it for. Any selections that fail (mod missing, or NPC not in the mod) are shown in a dialog — grouped by *reason*, then by mod, so fifty NPCs skipped for the same cause read as one entry rather than fifty — and you’re asked whether to abort, or skip those NPCs and continue with the valid selections. Screening warnings always appear in the log, whether or not Verbose Logging is on — a skipped selection is something you need to see.
 
 One case worth knowing about in advance: **SkyPatcher mode cannot apply an appearance to a templated NPC** while [Templated NPCs](#output-settings) is set to *Use the template's appearance*. Such an NPC has no face of its own — the game resolves it through the template chain and draws the face at the end of it — so a SkyPatcher directive aimed at the NPC never reaches the record that renders, and the NPC dark-faces. Those selections are listed and skipped, and the fix is to set Templated NPCs to *Give each NPC its own copy* (globally, or just for the mod in question) so each NPC owns its face.
 
 ![Validator warning](docs/Screenshots/Run/Validator_Warning.png)
 
-Once you continue, the patcher runs; the output pane reports progress and finishes with a performance summary, the saved plugin path, and asset-copy verification:
+Once you continue, the patcher runs; the output pane reports progress and finishes with a performance summary, the saved plugin path, and asset-copy verification. Any per-NPC warnings the run produced are collected and repeated at the end, grouped by type with a short explanation of what each type means — so they can be read as a checklist instead of fished out of the scroll:
 
 ![Patching completed](docs/Screenshots/Run/Patching_Completed.png)
 
@@ -861,7 +900,7 @@ Once you continue, the patcher runs; the output pane reports progress and finish
 
 The **Validate Output** tool inspects an *already-generated* output against your selections to confirm the deployed result really matches what you picked — invaluable when something in your load order might be overwriting N.P.C.2’s output.
 
-> **Important — refresh your mod manager first.** Validation reads the output exactly as your mod manager deploys it, so the freshly-generated files must be present in the mod manager’s virtual file system. After generating output you need to: **(1)** close N.P.C.2; **(2)** in your mod manager, enable the output mod and its plugin(s) (if you didn’t already in a previous session); and **(3)** relaunch N.P.C.2 **through your mod manager**, so it rebuilds the virtual file system with the new output included. If you validate immediately after generating without doing this, the check runs against a stale virtual file system that doesn’t contain your latest output, and the results will be misleading.
+> **Important — refresh your mod manager first.** Validation reads the output exactly as your mod manager deploys it, so the freshly-generated files must be present in the mod manager’s virtual file system. After generating output you need to: **(1)** close N.P.C.2; **(2)** in your mod manager, enable the output mod and its plugin(s) (if you didn’t already in a previous session); and **(3)** relaunch N.P.C.2 **through your mod manager**, so it rebuilds the virtual file system with the new output included. If you validate immediately after generating without doing this, the check runs against a stale virtual file system that doesn’t contain your latest output, and the results will be misleading. N.P.C.2 enforces this for you: clicking **Validate Output** after running the patcher in the same session pops a confirmation explaining exactly this, so you can’t stumble into a misleading report by accident.
 
 First, choose whether to validate every NPC with a selection or a hand-picked subset:
 
