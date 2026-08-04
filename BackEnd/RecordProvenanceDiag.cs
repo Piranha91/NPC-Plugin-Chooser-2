@@ -20,8 +20,10 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 /// <c>OutputFormKey</c> is the record's FormKey in the generated plugin; <c>SourceFormKey</c> is
 /// the record it was copied from (identical for overrides; empty for generated records).
 /// <c>Type</c> is the record type's registration name (e.g. Armor, ArmorAddon, TextureSet).
-/// <c>Kind</c> is one of MergedAsNew, Override, DeltaPatchedOverride, BulkOverrideImport, or
-/// Generated. <c>ProvenanceHistory</c> is a single cell of the form
+/// <c>Kind</c> is one of MergedAsNew, BridgeParent, Override, DeltaPatchedOverride,
+/// BulkOverrideImport, or Generated — MergedAsNew is a record the mod itself carries, while
+/// BridgeParent is one it does not, copied only to keep an overridden descendant reachable.
+/// <c>ProvenanceHistory</c> is a single cell of the form
 /// <c>FormKey (EditorID) -> FormKey (EditorID) -> ... -> FormKey (EditorID)</c> — the reference
 /// chain from the root NPC being patched, through each intermediate record, down to this record
 /// (last element). All history FormKeys/EditorIDs are SOURCE-side identities (what the traversal
@@ -153,7 +155,29 @@ public static class RecordProvenanceDiag
     /// NPC) so the history always starts at the root NPC record.
     /// </summary>
     public static void RecordMergedAsNew(FormKey sourceFormKey, string? sourceEditorId,
-        string? recordType, FormKey outputFormKey, IReadOnlyList<Node>? parentChain)
+        string? recordType, FormKey outputFormKey, IReadOnlyList<Node>? parentChain) =>
+        RecordDuplicatedAsNew(sourceFormKey, sourceEditorId, recordType, outputFormKey, parentChain,
+            "MergedAsNew");
+
+    /// <summary>
+    /// Records a BRIDGE parent: a record the selected mod does NOT override, copied only because
+    /// an overridden descendant needs a reachable private chain (the vanilla Outfit above RS
+    /// Children's ArmorAddons is the canonical case — see the bridge branch in
+    /// <c>RecordHandler.TraverseAndDuplicateInOverrideRecords</c>).
+    ///
+    /// <para>Distinguished from <see cref="RecordMergedAsNew"/> because the two answer different
+    /// questions and used to be indistinguishable in the report. A MergedAsNew row is something the
+    /// mod actually carries; a BridgeParent row is collateral the traversal decided it needed. When
+    /// a run pulls in records that look unrelated to appearance, this column is what tells you which
+    /// of the two happened without cross-referencing the mod's plugins by hand.</para>
+    /// </summary>
+    public static void RecordBridgeParent(FormKey sourceFormKey, string? sourceEditorId,
+        string? recordType, FormKey outputFormKey, IReadOnlyList<Node>? parentChain) =>
+        RecordDuplicatedAsNew(sourceFormKey, sourceEditorId, recordType, outputFormKey, parentChain,
+            "BridgeParent");
+
+    private static void RecordDuplicatedAsNew(FormKey sourceFormKey, string? sourceEditorId,
+        string? recordType, FormKey outputFormKey, IReadOnlyList<Node>? parentChain, string kind)
     {
         if (!IsEnabled || sourceFormKey.IsNull || outputFormKey.IsNull) return;
         lock (_lock)
@@ -161,7 +185,7 @@ public static class RecordProvenanceDiag
             if (_rowsByOutput.ContainsKey(outputFormKey)) return;
             var chain = BuildChain(parentChain, sourceFormKey, sourceEditorId);
             _rowsByOutput[outputFormKey] = new Row(outputFormKey, sourceFormKey, sourceEditorId,
-                recordType, "MergedAsNew", string.Join(" -> ", chain));
+                recordType, kind, string.Join(" -> ", chain));
             _chainByFormKey.TryAdd(sourceFormKey, chain);
             _chainByFormKey.TryAdd(outputFormKey, chain);
         }

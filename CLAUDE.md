@@ -156,8 +156,12 @@ immediate flush, so a crashed/hung session still leaves a renderable file:
   merged into the output plugin and the reference chain that pulled it in. One CSV row per
   output record, first discovery wins (columns: `OutputFormKey, SourceFormKey, EditorID, Type,
   Kind, ProvenanceHistory`). `Type` is the record type's registration name (Armor, ArmorAddon,
-  TextureSet, ...); `Kind` is MergedAsNew / Override / DeltaPatchedOverride /
-  BulkOverrideImport / Generated; `ProvenanceHistory` is a single cell of source-side
+  TextureSet, ...); `Kind` is MergedAsNew / BridgeParent / Override / DeltaPatchedOverride /
+  BulkOverrideImport / Generated — **MergedAsNew is a record the selected mod itself carries,
+  BridgeParent is one it does not**, copied only to keep an overridden descendant reachable
+  (the vanilla Outfit above RS Children's ArmorAddons), so that column is what tells you whether
+  a surprising record was really edited by the mod or just walked through;
+  `ProvenanceHistory` is a single cell of source-side
   `FormKey (EditorID) -> ... -> FormKey (EditorID)` from the root NPC down to the record
   (bulk 'Include All' imports get a placeholder — nothing was traversed). Patched NPC records
   themselves are excluded, but an NPC pulled in as a NEW record (e.g. via a Template chain) IS

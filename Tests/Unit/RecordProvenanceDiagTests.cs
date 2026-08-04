@@ -103,6 +103,44 @@ public sealed class RecordProvenanceDiagTests : IDisposable
             "the walk already roots at the current NPC, so no extra prepend");
     }
 
+    /// <summary>
+    /// A bridge parent is a record the mod does NOT carry, copied only so an overridden descendant
+    /// stays reachable. It used to share the MergedAsNew kind, which made the report unable to
+    /// answer the one question people ask of it — "did the mod actually change this, or did the
+    /// traversal just walk through it?" — without intersecting the CSV against the mod's plugins by
+    /// hand. Everything else about the row (chain, identities) is deliberately identical.
+    /// </summary>
+    [Fact]
+    public void BridgeParent_IsItsOwnKind_ButKeepsMergedAsNewChainSemantics()
+    {
+        RecordProvenanceDiag.SetCurrentNpc(Npc, "Lydia");
+        var parents = new List<RecordProvenanceDiag.Node>
+        {
+            new(Npc, "Lydia"),
+            new(SrcArmor, "SkinArmor"),
+        };
+        RecordProvenanceDiag.RecordBridgeParent(SrcArma, "SkinArma", "ArmorAddon", OutArma, parents);
+
+        var row = SingleRowFor(OutArma);
+
+        Cells(row)[Kind].Should().Be("BridgeParent");
+        Cells(row)[SrcFk].Should().Be(SrcArma.ToString());
+        Cells(row)[RecType].Should().Be("ArmorAddon");
+        Cells(row)[History].Should().Be(
+            $"{Npc} (Lydia) -> {SrcArmor} (SkinArmor) -> {SrcArma} (SkinArma)");
+    }
+
+    [Fact]
+    public void BridgeParent_SharesTheFirstDiscoveryWinsRule()
+    {
+        RecordProvenanceDiag.SetCurrentNpc(Npc, "Lydia");
+        RecordProvenanceDiag.RecordBridgeParent(SrcArmor, "SkinArmor", "Armor", OutArmor, null);
+        RecordProvenanceDiag.RecordMergedAsNew(SrcTexSet, "Later", "TextureSet", OutArmor, null);
+
+        Cells(SingleRowFor(OutArmor))[Kind].Should().Be("BridgeParent",
+            "one row per output record, first discovery wins — same as every other kind");
+    }
+
     [Fact]
     public void MergedAsNew_WalkNotRootedAtNpc_PrependsCurrentNpc()
     {

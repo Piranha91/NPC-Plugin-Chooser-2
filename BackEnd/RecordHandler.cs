@@ -1519,7 +1519,7 @@ public class RecordHandler
                     RecordMergedRecordOrigin(formLinkGetter.FormKey, duplicate.FormKey, traversedModRecord.EditorID);
                     if (provenanceChain != null)
                     {
-                        RecordProvenanceDiag.RecordMergedAsNew(formLinkGetter.FormKey, sourceEditorId,
+                        RecordProvenanceDiag.RecordBridgeParent(formLinkGetter.FormKey, sourceEditorId,
                             traversedModRecord.Registration.Name, (FormKey)duplicate.FormKey, provenanceChain);
                     }
                     duplicate.EditorID = (duplicate.EditorID ?? "NoEditorID") + "_" + formLinkGetter.FormKey.ModKey;
@@ -1529,9 +1529,25 @@ public class RecordHandler
                 }
                 else
                 {
-                    exceptionStrings.Add(Auxilliary.GetLogString(traversedModRecord, _settings.LocalizationLanguage) + ": " + exceptionString);
+                    // The bridge could not be built, so nothing below it is deliverable: the private
+                    // copies down there stay unreachable no matter what we do above. Report that
+                    // upward as "do not merge my parent" — otherwise the failure is swallowed and
+                    // every ancestor gets bridged anyway, minting copies whose chain is already
+                    // severed. Measured on RS Children: an NPC's AI package reaches a Cell, the
+                    // Cell's bridge fails (Cells and placed references have no top-level group to
+                    // duplicate into), and 24 Packages, 5 Quests, a DialogTopic and a Faction were
+                    // minted above it as pure waste — plus one Error line per failure.
+                    //
+                    // Not an error: the only way TryDuplicateGenericRecordAsNew fails is
+                    // GetTopLevelGroup rejecting the type, which is structural and expected for
+                    // world records. It stays out of exceptionStrings (which the patcher surfaces as
+                    // CRITICAL) and is recorded in the per-NPC diagnostic instead.
+                    parentRecordShouldBeMergedIn = false;
                     if (NpcDiagnosticLogger.IsActive)
-                        NpcDiagnosticLogger.Log($"  Override merge failed for {formLinkGetter.FormKey}: {exceptionString}");
+                        NpcDiagnosticLogger.Log($"  Bridge parent {formLinkGetter.FormKey} " +
+                            $"({Auxilliary.GetLogString(traversedModRecord, _settings.LocalizationLanguage)}) " +
+                            $"cannot be duplicated ({exceptionString}); its subtree is not " +
+                            "deliverable, so no ancestor is bridged for it.");
                 }
             }
         }
