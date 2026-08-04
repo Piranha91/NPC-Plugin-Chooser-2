@@ -769,6 +769,18 @@ public class WigRouteTwoModeTests
         var outSkin = run.Output.Armors.Single(a => a.FormKey == outNpc.WornArmor.FormKey);
         ArmatureEditorIds(run, outSkin).Should().BeEquivalentTo(new[] { "NPC2Route_BodyAA" },
             "the converter's superseded skin wig armature is stripped from the duplicate");
+
+        // ...and the copy of it that the appearance merge made anyway is gone. The merge walks the
+        // ORIGINAL WornArmor (the seeded duplicate mapping stops the armor itself from being copied,
+        // not the traversal of its links), so the stripped ARMA is copied and then referenced by
+        // nothing — 129 of them in one measured run. Suppressing the walk instead is NOT safe (the
+        // same record can be reachable from another copy, which would then point into a plugin
+        // outside the load order and Mutagen refuses to write at all), so the sweep judges the
+        // finished output: see Patcher.PruneAndLogOrphanedDuplicates.
+        run.Output.ArmorAddons.Should().NotContain(a => a.EditorID == "NPC2Route_SkinWigAA",
+            "a private copy of the superseded wig armature is referenced by nothing and must not ship");
+        run.Output.ArmorAddons.Should().Contain(a => a.EditorID == "NPC2Route_BodyAA",
+            "the body armature is still worn, so its copy stays");
     }
 
     // =============================================================================================
@@ -845,6 +857,15 @@ public class WigRouteTwoModeTests
             ?? $"(not in output: {l.FormKey})").ToList();
         headPartEids.Should().NotContain("NPC2Route_AntlerHP", "the antler head part is removed");
         headPartEids.Should().Contain("NPC2Route_DonorHair", "the NPC's real hair is untouched");
+
+        // Each removal leaves behind the private copy the merge had already made of it, referenced
+        // by nothing once the record that pointed at it was rewritten. The orphan sweep removes
+        // them, transitively — the donor outfit copy goes, and with it the antler ARMO copy that
+        // only it referenced (see Patcher.PruneAndLogOrphanedDuplicates).
+        run.Output.HeadParts.Should().NotContain(h => h.EditorID == "NPC2Route_AntlerHP",
+            "the removed antler head part's copy is referenced by nothing");
+        run.Output.ArmorAddons.Should().NotContain(a => a.EditorID == "NPC2Route_AntlerAA",
+            "and neither is the stripped antler armature's");
     }
 
     // =============================================================================================

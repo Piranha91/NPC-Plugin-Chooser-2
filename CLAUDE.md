@@ -136,6 +136,22 @@ catalog defaults — null at both levels (including settings files predating the
 option) resolves to the appearance set, which is how existing installs pick up the
 narrowed roots with no migration.
 
+**Orphan sweep (`Patcher.PruneAndLogOrphanedDuplicates`).** Just before the save, any output
+record nothing references — no FormLink in the plugin, no SkyPatcher directive, no generated
+SPID assignment — is dead cargo. Records **duplicated from a source** are removed (repeating to
+a fixpoint, since dropping a copy orphans the sub-records only it referenced); records this run
+**authored** and NPC records are only reported, in case a future channel delivers one by FormID.
+The population is mostly wig handling: it strips a converted ArmorAddon out of the WornArmor
+duplicate, but the appearance merge still walks the ORIGINAL WornArmor — the seeded duplicate
+mapping stops the armor itself from being copied, not the traversal of its links — so every
+superseded child is copied and then pointed at by nothing (measured: 135, of which 129
+`HighPoly_WigAA_*`). **Do not "fix" this by suppressing the walk instead**: that was tried and
+is unsafe, because the same record can still be reachable from another copy the run makes, and
+skipping it leaves that copy pointing into a donor plugin that may not be in the load order —
+Mutagen then refuses to write the plugin at all (`Route5_AntlerRemove_AllThreeSources` reproduces
+it). Judging the finished output cannot make that mistake. Pinned end-to-end by Routes 4 and 5 in
+`WigRouteTwoModeTests`.
+
 ### Mugshot generation (`BackEnd/CharacterViewerHost/`)
 `InternalMugshotGenerator` / `BatchMugshotGenerator` drive the `IOffscreenRenderer`
 from `CharacterViewer.Rendering`. NPC2's services are bound behind the renderer's
@@ -189,7 +205,8 @@ immediate flush, so a crashed/hung session still leaves a renderable file:
   to the exe force-enables it as a dev fallback. Chain capture lives in the merge walkers
   (`PatcherExtensions.DuplicateFromOnlyReferencedGetters`, `RecordHandler`'s override
   traversals); the Patcher sets the per-NPC root context and flushes alongside
-  `AssetProvenanceDiag`.
+  `AssetProvenanceDiag` — after the orphan sweep below, so the CSV describes the plugin that
+  was actually written.
 - **`RenderLogs/`** — per-NPC mugshot render traces (asset resolution paths).
 - **`Rejected NPCs/`** — logs why each discarded NPC was excluded from the menu.
 

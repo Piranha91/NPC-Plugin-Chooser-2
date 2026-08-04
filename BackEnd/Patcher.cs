@@ -2145,6 +2145,15 @@ public class Patcher : OptionalUIModule
                         ApplyPendingHeadPartRenames();
                     }, ct);
 
+                    // Any record minted under a new FormKey that nothing references is dead cargo:
+                    // copies are removed, anything this run authored is reported (neutral note, not
+                    // a warning) — see PruneAndLogOrphanedDuplicates. Must run after every NPC (and
+                    // every rollback) has finished touching the output; BEFORE the record-provenance
+                    // flush below, so the CSV describes the plugin that actually gets written; and
+                    // before the save, whose ESL compaction should not have to find FormIDs for
+                    // records nothing uses.
+                    PruneAndLogOrphanedDuplicates();
+
                     // Opt-in asset-provenance report (AssetProvenance.csv): why each file was copied
                     // and which NPCs/mods/records pulled it in. No-op unless enabled (Settings
                     // checkbox or the LogAssetProvenance.txt dev trigger).
@@ -2170,11 +2179,6 @@ public class Patcher : OptionalUIModule
                     // (which Record Override Handling Mode to recommend) depends on the whole
                     // run's selections; convert them to warnings now, before the reporter flushes.
                     FlushRaceDriftFindings();
-
-                    // Any record minted under a new FormKey that nothing references is dead
-                    // cargo — see LogOrphanedDuplicates (neutral note, not a warning). Must run
-                    // after every NPC (and every rollback) has finished touching the output.
-                    LogOrphanedDuplicates();
 
                     // Per-NPC warnings (suspect origin meshes, missing tints, textureless
                     // shapes), grouped by type with one explanation per group — see
@@ -3223,48 +3227,66 @@ public class Patcher : OptionalUIModule
     }
 
     /// <summary>
-    /// Post-run tripwire for 'Include As New' and dependency merge-in: any record minted into
-    /// the output under a NEW FormKey that nothing references — no FormLink on any output record
-    /// and no FormKey-valued SkyPatcher directive — is dead cargo. The game cannot resolve it,
-    /// and the edits it carries silently miss the NPCs it was duplicated for. Exactly the failure
-    /// that shipped RS Children's outfit chain orphaned for months
-    /// (docs/SkyPatcher-IncludeAsNew-Outfit-Records.md); the check keeps the next delivery gap
-    /// from being invisible. Only chain HEADS surface: a duplicate referenced solely by another
-    /// orphan is delivered or stranded together with its head, so listing it separately is noise.
+    /// Post-run sweep for 'Include As New' and dependency merge-in: a record minted into the
+    /// output under a NEW FormKey that nothing references — no FormLink on any output record, no
+    /// FormKey-valued SkyPatcher directive, no generated SPID assignment — is dead cargo. The game
+    /// cannot resolve it, and the edits it carries silently miss the NPCs it was duplicated for.
+    ///
+    /// <para><b>Copies are pruned; anything else is reported.</b> The measured population was 135
+    /// records in one run: the wig pipeline strips a converted ArmorAddon out of the WornArmor
+    /// duplicate, but the appearance merge still walks the ORIGINAL WornArmor — the seeded
+    /// duplicate mapping stops the armor itself from being copied, not the traversal of its links
+    /// — so every superseded child was copied and then pointed at by nothing (129
+    /// <c>HighPoly_WigAA_*</c> ArmorAddons, 5 skin Armors, a replaced hair HeadPart). Suppressing
+    /// the walk instead was tried and is NOT safe: the same record can still be reachable from
+    /// another copy the run makes, and skipping it leaves that copy pointing into a donor plugin
+    /// that may not be in the load order — Mutagen then refuses to write the plugin at all. Judging
+    /// the finished output cannot make that mistake: a record nothing references can always go.
+    /// Pruning also runs before ESL compaction, so the freed FormIDs are freed where it counts.</para>
+    ///
+    /// <para>Removal repeats to a fixpoint — dropping a copy orphans the sub-records only it
+    /// referenced (a wig ArmorAddon's TextureSet) — and is limited to records duplicated from a
+    /// source (<see cref="RecordHandler.TryGetMergedRecordOrigin"/>). Records this run AUTHORED
+    /// (minted head parts, generated outfits) and NPC records are left alone and merely reported:
+    /// they are the product rather than transport, and a future feature could deliver one by
+    /// FormID through a channel this scan does not know about.</para>
     ///
     /// <para>Deliberately NOT a <see cref="NpcWarningReporter"/> warning (user standard,
     /// 2026-08-02): colored WARNINGs are reserved for issues the user notices in game, and an
-    /// unreferenced record is inert there — dead weight in the plugin, nothing more. A neutral
-    /// one-line note goes to the run log (details at verbose), which is enough for the
-    /// maintainer-facing tripwire purpose without crying wolf at users.</para>
+    /// unreferenced record is inert there — dead weight in the plugin, nothing more. What was
+    /// PRUNED is verbose-only in full (summary included): it is housekeeping the user does not need
+    /// told about every run. What was LEFT behind still gets a forced neutral one-line note, which
+    /// is the maintainer-facing tripwire, with the per-record list at verbose.</para>
     /// </summary>
-    private void LogOrphanedDuplicates()
+    private void PruneAndLogOrphanedDuplicates()
     {
         var outputMod = _environmentStateProvider.OutputMod;
         var outputKey = outputMod.ModKey;
 
-        var referenced = new HashSet<FormKey>();
-        foreach (var record in outputMod.EnumerateMajorRecords())
+        // Referenced from OUTSIDE the plugin: the emitted SkyPatcher ini and the generated SPID
+        // ini name output records by FormID, so no FormLink in the plugin points at them.
+        var externallyReferenced = new HashSet<FormKey>(_skyPatcherInterface.EnumerateDirectiveFormKeys());
+        externallyReferenced.UnionWith(_forwardedOutfitDistributor.EnumerateSpidReferencedFormKeys());
+
+        HashSet<FormKey> CollectReferenced()
         {
-            foreach (var link in record.EnumerateFormLinks())
+            var referenced = new HashSet<FormKey>(externallyReferenced);
+            foreach (var record in outputMod.EnumerateMajorRecords())
             {
-                if (link.FormKey.ModKey == outputKey)
+                foreach (var link in record.EnumerateFormLinks())
                 {
-                    referenced.Add(link.FormKey);
+                    if (link.FormKey.ModKey == outputKey)
+                    {
+                        referenced.Add(link.FormKey);
+                    }
                 }
             }
+
+            return referenced;
         }
 
-        referenced.UnionWith(_skyPatcherInterface.EnumerateDirectiveFormKeys());
-
-        var orphanLines = new List<string>();
-        foreach (var record in outputMod.EnumerateMajorRecords())
+        string DescribeOrphan(IMajorRecordGetter record)
         {
-            if (record.FormKey.ModKey != outputKey || referenced.Contains(record.FormKey))
-            {
-                continue;
-            }
-
             string sourceNote = _recordHandler.TryGetMergedRecordOrigin(record.FormKey, out var origin)
                 ? $"copied from {origin.SourceEditorId ?? "(no EditorID)"} ({origin.SourceFormKey})"
                 : "authored by this run";
@@ -3281,19 +3303,84 @@ public class Patcher : OptionalUIModule
                             (mods.Count > 0 ? $" from {string.Join(", ", mods)}" : string.Empty);
             }
 
-            orphanLines.Add($"  - {record.EditorID ?? "(no EditorID)"} [{record.Registration.Name}] " +
-                            $"{record.FormKey}: {sourceNote}{ownerNote}");
+            return $"  - {record.EditorID ?? "(no EditorID)"} [{record.Registration.Name}] " +
+                   $"{record.FormKey}: {sourceNote}{ownerNote}";
         }
 
+        var prunedLines = new List<string>();
+        // Records that refused to be removed, so a failure is reported once instead of being
+        // retried (and re-listed) on every pass — it stays unreferenced, so it stays a candidate.
+        var removalFailures = new HashSet<FormKey>();
+
+        // The fixpoint terminates on its own (each pass removes at least one record or stops); the
+        // cap is a pure safety net so a future bug cannot spin here at the end of a long run.
+        for (int pass = 0; pass < 32; pass++)
+        {
+            var referenced = CollectReferenced();
+            var doomed = outputMod.EnumerateMajorRecords()
+                .Where(r => r.FormKey.ModKey == outputKey
+                            && r is not INpcGetter
+                            && !referenced.Contains(r.FormKey)
+                            && !removalFailures.Contains(r.FormKey)
+                            && _recordHandler.TryGetMergedRecordOrigin(r.FormKey, out _))
+                .ToList();
+            if (doomed.Count == 0) break;
+
+            foreach (var record in doomed)
+            {
+                try
+                {
+                    outputMod.Remove(record.FormKey, record.Registration.GetterType);
+                    RecordProvenanceDiag.RemoveOutputRecord(record.FormKey);
+                    prunedLines.Add(DescribeOrphan(record));
+                }
+                catch (Exception ex)
+                {
+                    // Not every record type can be removed by FormKey (Cells and placed references
+                    // live inside groups). Leaving it in place is harmless — it was inert anyway.
+                    removalFailures.Add(record.FormKey);
+                    prunedLines.Add($"  - (could not be removed) {record.FormKey}: {ex.Message}");
+                }
+            }
+        }
+
+        if (prunedLines.Count > 0)
+        {
+            int removedCount = prunedLines.Count - removalFailures.Count;
+
+            // Verbose-only, summary included: removing dead weight is housekeeping, not something
+            // the user needs told about on every run. Neutral phrasing on purpose besides — no
+            // WARNING:/ERROR: marker, so RunLogClassifier leaves it uncolored.
+            AppendLog($"Note: removed {removedCount} private record cop" +
+                      $"{(removedCount == 1 ? "y" : "ies")} that nothing in the output referenced " +
+                      "(created by 'Include As New' / dependency merge-in, then superseded — most often " +
+                      "by wig handling rewriting the record that used to point at them). They were inert " +
+                      "in game; removing them keeps the plugin and its FormID space clean. If an NPC that " +
+                      "should have received a mod's non-NPC edits looks wrong, the list below is the " +
+                      "place to start.", false);
+            foreach (var line in prunedLines)
+            {
+                AppendLog(line, false);
+            }
+        }
+
+        // Whatever is STILL unreferenced was authored by this run (or could not be removed), so it
+        // is deliberately left in place — but it is exactly the delivery-gap tripwire this check
+        // exists for (RS Children's outfit chain shipped orphaned for months;
+        // docs/SkyPatcher-IncludeAsNew-Outfit-Records.md).
+        var remaining = CollectReferenced();
+        var orphanLines = outputMod.EnumerateMajorRecords()
+            .Where(r => r.FormKey.ModKey == outputKey && !remaining.Contains(r.FormKey))
+            .Where(r => r is not INpcGetter)
+            .Select(DescribeOrphan)
+            .ToList();
         if (orphanLines.Count == 0) return;
 
-        // Neutral phrasing on purpose — no WARNING:/ERROR: marker, so RunLogClassifier leaves it
-        // uncolored. Summary is forced; the per-record list only appears in a verbose log.
-        AppendLog($"Note: {orphanLines.Count} private record cop{(orphanLines.Count == 1 ? "y" : "ies")} " +
-                  "created by 'Include As New' / dependency merge-in ended up unreferenced by the output. " +
-                  "These are inert in game (unused records; no visible effect). If an NPC that should have " +
-                  "received a mod's non-NPC edits looks wrong, this list (in the verbose log) is the place " +
-                  "to start.", false, true);
+        AppendLog($"Note: {orphanLines.Count} record{(orphanLines.Count == 1 ? "" : "s")} ended up " +
+                  "unreferenced by the output and were left in place — records this run authored may be " +
+                  "delivered by FormID rather than by a link. These are inert in game (unused records; no " +
+                  "visible effect). If an NPC that should have received a mod's non-NPC edits looks wrong, " +
+                  "this list (in the verbose log) is the place to start.", false, true);
         foreach (var line in orphanLines)
         {
             AppendLog(line, false);

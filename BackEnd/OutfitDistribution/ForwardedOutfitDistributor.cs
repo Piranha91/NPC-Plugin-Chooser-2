@@ -88,6 +88,21 @@ public class ForwardedOutfitDistributor : OptionalUIModule
 
     public bool HasSpidEntries => _spidAssignments.Count > 0;
 
+    /// <summary>Output FormKeys the generated SPID ini names — each published outfit and the NPC it
+    /// is assigned to. They are referenced from a FILE, not from a FormLink in the plugin, so
+    /// anything that judges an output record by whether the plugin points at it must treat these as
+    /// referenced (see <c>Patcher.PruneAndLogOrphanedDuplicates</c>). Outfits published through
+    /// SkyPatcher instead are covered by
+    /// <see cref="SkyPatcherInterface.EnumerateDirectiveFormKeys"/>.</summary>
+    public IEnumerable<FormKey> EnumerateSpidReferencedFormKeys()
+    {
+        foreach (var assignment in _spidAssignments)
+        {
+            yield return assignment.OutfitFormKey;
+            yield return assignment.NpcFormKey;
+        }
+    }
+
     /// <summary>
     /// Clears the per-run queue and deletes the stale generated ini, so a run that ends
     /// up publishing nothing does not leave the previous run's file behind. Called for
