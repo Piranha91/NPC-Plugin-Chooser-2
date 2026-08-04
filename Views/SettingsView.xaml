@@ -413,7 +413,7 @@
                                        Visibility="{Binding IsDefaultMaxNestedIntervalDepthVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                             <TextBox Text="{Binding DefaultMaxNestedIntervalDepth, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
                                      Width="40" VerticalAlignment="Center"
-                                     ToolTip="How many levels of nested record references to search. Higher values find more dependencies but take exponentially longer."
+                                     ToolTip="How many layers deep to keep searching for overridden records between finding relevant ones. This is not a total depth limit — the count resets every time a record from the mod is found, so a continuous chain of the mod's records is always followed all the way down. Default is 2, which is what lets the search cross one unrelated record (e.g. a vanilla outfit) to reach the mod's edits below it. Higher values find more obscure overrides but take exponentially longer."
                                      PreviewTextInput="IntegerTextBox_PreviewTextInput"
                                      DataObject.Pasting="IntegerTextBox_Pasting"
                                      Visibility="{Binding IsDefaultMaxNestedIntervalDepthVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>

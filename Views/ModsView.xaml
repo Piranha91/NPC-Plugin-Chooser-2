@@ -842,9 +842,11 @@
                                                         <TextBlock TextWrapping="Wrap" Width="300">
                                                             Controls how many layers deep the patcher will search for overridden records between finding relevant records.
                                                             <LineBreak/><LineBreak/>
-                                                            Higher values may find more obscure overrides but will significantly increase patching time.
+                                                            This is not a total depth limit. The count resets every time a record from this mod is found, so a continuous chain of the mod's records is always followed all the way down.
                                                             <LineBreak/><LineBreak/>
-                                                            Leave blank to use the default. Set to 0 to only check direct dependencies.
+                                                            The default of 2 is what lets the search cross one unrelated record (e.g. a vanilla outfit) to reach the mod's edits below it. Higher values may find more obscure overrides but will significantly increase patching time.
+                                                            <LineBreak/><LineBreak/>
+                                                            Leave blank to use the default. Set to 1 to only check direct dependencies; 0 disables the search entirely.
                                                         </TextBlock>
                                                     </ToolTip>
                                                 </TextBlock.ToolTip>
