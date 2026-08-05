@@ -70,6 +70,17 @@ public class AssetHandler : OptionalUIModule
     /// NPC using it, so without this one broken shape would be reported for every NPC.</summary>
     private readonly ConcurrentDictionary<string, byte> _reportedTextureless = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Destination-relative paths of FaceGen NIF copies whose baked face-tint path this
+    /// run re-pointed (<see cref="RewriteCopiedFaceTintPath"/>). The Patcher folds these into the
+    /// run token's EditedFaceGen so the output validator's byte-identity check treats the edit as
+    /// deliberate delivery rather than a lost conflict. Keyed like
+    /// <see cref="Auxilliary.GetFaceGenSubPathStrings"/> renders paths (regularized, lowercase).</summary>
+    private readonly ConcurrentDictionary<string, byte> _rewrittenFaceGenNifPaths = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>See <see cref="_rewrittenFaceGenNifPaths"/>. Complete only after
+    /// <see cref="MonitorAndWaitForAllTasks"/> has returned.</summary>
+    public IReadOnlyCollection<string> RewrittenFaceGenNifPaths => (IReadOnlyCollection<string>)_rewrittenFaceGenNifPaths.Keys;
+
 
     // ADD THIS FIELD:
     // This semaphore limits how many NIFs we process at the same time.
@@ -99,6 +110,7 @@ public class AssetHandler : OptionalUIModule
         _processedAssetTasks.Clear();
         _claimedDestinations.Clear();
         _reportedTextureless.Clear();
+        _rewrittenFaceGenNifPaths.Clear();
         NpcWarningReporter.Reset(); // per-run, like the diag resets below
         AssetProvenanceDiag.Reset(); // opt-in per-run asset provenance report (no-op unless enabled)
         FaceGenLadderDiag.Reset();   // opt-in per-run FaceGen ladder report (no-op unless enabled)
@@ -516,7 +528,13 @@ public class AssetHandler : OptionalUIModule
     /// texture references — instead of the standard source-side scan, which would schedule the
     /// mod's textures back onto their shared paths.
     /// </param>
-    private Task RequestAssetCopyAsync(string relativePath, ModSetting modSetting, string outputBasePath, string faceTintSubPath, AssetRequestContext ctx, string? overrideDestinationRelativePath = null, string? explicitSourceAbsolutePath = null, string? isolationModTag = null)
+    /// <param name="destinationFaceTintSubPath">
+    /// For a FaceGen NIF whose destination NPC differs from the NPC it was baked for (appearance
+    /// share, SkyPatcher surrogate, flattened Traits template), the tint path this run delivers
+    /// beside it — the copied NIF's baked tint slot is re-pointed there after the copy lands
+    /// (<see cref="RewriteCopiedFaceTintPath"/>). Null (the default) for everything else.
+    /// </param>
+    private Task RequestAssetCopyAsync(string relativePath, ModSetting modSetting, string outputBasePath, string faceTintSubPath, AssetRequestContext ctx, string? overrideDestinationRelativePath = null, string? explicitSourceAbsolutePath = null, string? isolationModTag = null, string? destinationFaceTintSubPath = null)
     {
         // FIX: Create a composite key to uniquely identify an asset *within the context of its source mod*.
         // This prevents a failed lookup from one mod from blocking a successful lookup from another mod for the same relative path.
@@ -646,16 +664,25 @@ public class AssetHandler : OptionalUIModule
                             else if (modSetting.CopyAssets)
                             {
                                 // Create two tasks: one for copying, one for analyzing the source file.
-                                Task copyTask = PerformLooseCopyAsync(sourcePath, destPath);
+                                Task<bool> copyTask = PerformLooseCopyAsync(sourcePath, destPath);
                                 Task analysisTask = PostProcessCopiedFile(sourcePath, modSetting, outputBasePath,
                                     faceTintSubPath, ctx);
 
                                 // Await both tasks to run them in parallel.
                                 await Task.WhenAll(copyTask, analysisTask);
+                                if (copyTask.Result)
+                                {
+                                    RewriteAndRecordFaceTint(destPath, destRel, faceTintSubPath,
+                                        destinationFaceTintSubPath);
+                                }
                             }
                             else
                             {
-                                await PerformLooseCopyAsync(sourcePath, destPath);
+                                if (await PerformLooseCopyAsync(sourcePath, destPath))
+                                {
+                                    RewriteAndRecordFaceTint(destPath, destRel, faceTintSubPath,
+                                        destinationFaceTintSubPath);
+                                }
                             }
 
                             break;
@@ -675,6 +702,11 @@ public class AssetHandler : OptionalUIModule
                                 {
                                     await PostProcessCopiedFile(destPath, modSetting, outputBasePath, faceTintSubPath, ctx);
                                 }
+
+                                // After the destination-side analysis above, so the texture scan
+                                // reads the tint slot as the source mod baked it.
+                                RewriteAndRecordFaceTint(destPath, destRel, faceTintSubPath,
+                                    destinationFaceTintSubPath);
                             }
                             else if (extractError != null &&
                                      extractError.StartsWith(BsaHandler.SharingViolationPrefix, StringComparison.Ordinal))
@@ -751,6 +783,68 @@ public class AssetHandler : OptionalUIModule
             // Log all other types of exceptions immediately.
             AppendLog($"Failed to copy file from {sourcePath} to {destPath}: {ExceptionLogger.GetExceptionStack(ex)}", true, true);
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Re-points a copied FaceGen NIF's baked face-tint slot at the tint file this run delivers
+    /// beside it. The engine reads the tint texture's path from the NIF (the CK bakes it in), not
+    /// from the FormID naming convention — so a mesh delivered under a DIFFERENT NPC's FormKey
+    /// (appearance share, SkyPatcher surrogate, flattened Traits template) still names the source
+    /// NPC's tint, a path this run deliberately does not ship (writing another NPC's path is the
+    /// cross-NPC contamination removed in f047216, and "no pass writes another NPC's path" is now
+    /// an invariant). Editing the destination copy is the only fix compatible with that invariant.
+    /// Matching tolerates slash/asset-root spelling differences via regularization; the remap is
+    /// keyed by the exact spelling stored in the NIF. Returns the number of slots rewritten.
+    /// </summary>
+    internal static int RewriteCopiedFaceTintPath(string copiedNifPath, string sourceFaceTintSubPath,
+        string? destinationFaceTintSubPath, Action<string>? log = null)
+    {
+        if (string.IsNullOrWhiteSpace(destinationFaceTintSubPath) ||
+            !copiedNifPath.EndsWith(".nif", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(sourceFaceTintSubPath, destinationFaceTintSubPath,
+                StringComparison.OrdinalIgnoreCase) ||
+            !Auxilliary.TryRegularizePath(sourceFaceTintSubPath, out var regularizedSource) ||
+            string.IsNullOrWhiteSpace(regularizedSource))
+        {
+            return 0;
+        }
+
+        var remap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (_, texturePaths, _) in NifHandler.GetTexturesByShape(copiedNifPath))
+        {
+            foreach (var storedPath in texturePaths)
+            {
+                if (Auxilliary.TryRegularizePath(storedPath, out var regularizedStored) &&
+                    string.Equals(regularizedStored, regularizedSource, StringComparison.OrdinalIgnoreCase))
+                {
+                    remap[storedPath] = destinationFaceTintSubPath;
+                }
+            }
+        }
+
+        return remap.Count == 0 ? 0 : NifHandler.RewriteTexturePaths(copiedNifPath, remap, log);
+    }
+
+    /// <summary>
+    /// <see cref="RewriteCopiedFaceTintPath"/> plus bookkeeping: a rewritten copy can no longer be
+    /// byte-identical to the selected mod's file, so its destination path is recorded for the run
+    /// token's EditedFaceGen (via <see cref="RewrittenFaceGenNifPaths"/>) to keep the output
+    /// validator's delivery check from reporting the edit as a lost conflict. No-op (without
+    /// touching the file) for the overwhelmingly common null-destination case.
+    /// </summary>
+    private void RewriteAndRecordFaceTint(string copiedNifDestPath, string destRelativePath,
+        string sourceFaceTintSubPath, string? destinationFaceTintSubPath)
+    {
+        if (string.IsNullOrWhiteSpace(destinationFaceTintSubPath)) return;
+
+        int rewritten = RewriteCopiedFaceTintPath(copiedNifDestPath, sourceFaceTintSubPath,
+            destinationFaceTintSubPath, msg => AppendLog("      " + msg, true, true));
+        if (rewritten > 0)
+        {
+            _rewrittenFaceGenNifPaths[destRelativePath] = 0;
+            AppendLog($"      Re-pointed {rewritten} face-tint slot(s) in " +
+                      $"{Path.GetFileName(copiedNifDestPath)} at '{destinationFaceTintSubPath}'.");
         }
     }
 
@@ -1392,9 +1486,11 @@ public class AssetHandler : OptionalUIModule
         // selection, because its pass owns that shared path" — is gone: nothing writes to another
         // NPC's path any more, so there is no contention left to arbitrate.
         ScheduleFaceGenHalf(faceGenDecision.NifChoice, subjectMeshRelPath, destMeshRelPath,
-            appearanceModSetting, outputBasePath, faceTexRelativePath, faceGenCtx, npcIdentifier);
+            appearanceModSetting, outputBasePath, faceTexRelativePath, destTexRelPath, faceGenCtx,
+            npcIdentifier);
         ScheduleFaceGenHalf(faceGenDecision.DdsChoice, subjectTexRelPath, destTexRelPath,
-            appearanceModSetting, outputBasePath, faceTexRelativePath, faceGenCtx, npcIdentifier);
+            appearanceModSetting, outputBasePath, faceTexRelativePath, destTexRelPath, faceGenCtx,
+            npcIdentifier);
 
         // 2. Non-FaceGen Assets (Only if CopyExtraAssets is true)
         // When the AssetProvenance diag is on, assetProv accumulates path -> referencing-record so the
@@ -1441,13 +1537,14 @@ public class AssetHandler : OptionalUIModule
     private void ScheduleFaceGenHalf(
         FaceGenSourceChoice choice, string sourceRelPath, string destRelPath,
         ModSetting appearanceModSetting, string outputBasePath, string faceTintSubPath,
-        AssetRequestContext ctx, string npcIdentifier)
+        string destinationFaceTintSubPath, AssetRequestContext ctx, string npcIdentifier)
     {
         switch (choice)
         {
             case FaceGenSourceChoice.AppearanceMod:
                 RequestAssetCopyAsync(sourceRelPath, appearanceModSetting, outputBasePath,
-                    faceTintSubPath, ctx, overrideDestinationRelativePath: destRelPath);
+                    faceTintSubPath, ctx, overrideDestinationRelativePath: destRelPath,
+                    destinationFaceTintSubPath: destinationFaceTintSubPath);
                 break;
 
             case FaceGenSourceChoice.Origin:
@@ -1461,7 +1558,8 @@ public class AssetHandler : OptionalUIModule
                 }
 
                 RequestAssetCopyAsync(sourceRelPath, origin, outputBasePath,
-                    faceTintSubPath, ctx.WithReason("FaceGenFromOrigin"), overrideDestinationRelativePath: destRelPath);
+                    faceTintSubPath, ctx.WithReason("FaceGenFromOrigin"), overrideDestinationRelativePath: destRelPath,
+                    destinationFaceTintSubPath: destinationFaceTintSubPath);
                 break;
             }
 
@@ -1479,7 +1577,8 @@ public class AssetHandler : OptionalUIModule
                 RequestAssetCopyAsync(sourceRelPath, appearanceModSetting, outputBasePath,
                     faceTintSubPath, ctx.WithReason("FaceGenFromWinner"),
                     overrideDestinationRelativePath: destRelPath,
-                    explicitSourceAbsolutePath: absolute);
+                    explicitSourceAbsolutePath: absolute,
+                    destinationFaceTintSubPath: destinationFaceTintSubPath);
                 break;
             }
 

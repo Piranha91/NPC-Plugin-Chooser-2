@@ -2131,6 +2131,16 @@ public class Patcher : OptionalUIModule
                     // Verify any cached file access errors to see if they were actual failures.
                     _assetHandler.LogTrueCopyFailures();
 
+                    // FaceGen copies whose baked tint path the asset handler re-pointed (appearance
+                    // share, SkyPatcher surrogates, flattened Traits templates) are no longer
+                    // byte-identical to the selected mod's file; record them like the wig/rename
+                    // edits below so the output validator treats the delivery as ours (see
+                    // NoteFaceGenEdited).
+                    foreach (var rel in _assetHandler.RewrittenFaceGenNifPaths)
+                    {
+                        _editedFaceGenPaths[rel.ToLowerInvariant()] = 0;
+                    }
+
                     // CPU-bound NIF edits over potentially thousands of files (one per
                     // wig-wearing NPC); without Task.Run they resume on the UI thread's
                     // sync context after the await above and freeze the window.

@@ -151,6 +151,18 @@ public class PatcherGoldenOutputTests : IClassFixture<GoldenEnvFixture>
                                           $"tolerated {relocated} relocated + {isolatedExtra} isolated-extra file(s).");
                 }
 
+                if (GoldenCombos.IsStaleForSharedTintRewriteFix(combo))
+                {
+                    // Byte-verifying: each tolerated file must equal the reference with ONLY the
+                    // tint rewrite applied — anything else that drifted still fails below.
+                    int tinted = combo.UseSkyPatcher
+                        ? TintRewriteTolerance.ApplySkyPatcher(outDir, assetRefDir, assetMissing, assetExtra)
+                        : TintRewriteTolerance.ApplyPathStable(outDir, assetRefDir, assets.HashMismatches);
+                    if (tinted > 0)
+                        _output.WriteLine($"NOTE: '{combo.FolderName}' reference predates the shared-FaceGen " +
+                                          $"tint rewrite; verified + tolerated {tinted} re-pointed NIF(s).");
+                }
+
                 if (assetMissing.Count > 0 || assets.HashMismatches.Count > 0
                     || (!stale && assetExtra.Count > 0))
                 {

@@ -52,4 +52,17 @@ internal static class GoldenCombos
     /// </summary>
     public static bool IsStaleForRootDeliveryFix(GoldenCombo combo) =>
         combo.UseSkyPatcher && combo.OverrideMode == RecordOverrideHandlingMode.IncludeAsNew;
+
+    /// <summary>
+    /// Whether a combo's reference set predates the 2026-08 shared/surrogate FaceGen tint rewrite
+    /// (<see cref="NPC_Plugin_Chooser_2.BackEnd.AssetHandler.RewriteCopiedFaceTintPath"/>): a
+    /// FaceGen NIF delivered under a different NPC's FormKey (guest appearance in the
+    /// CreateAndPatch combos, every surrogate delivery in the SkyPatcher combos) now has its baked
+    /// tint slot re-pointed at the tint delivered beside it, so it no longer hash-matches a
+    /// reference captured as a straight donor copy. All current references predate the fix; the
+    /// tolerance (<see cref="TintRewriteTolerance"/>) byte-verifies each deviation, so combos
+    /// without affected NPCs (the Create trio) pass through it untouched. Flip per combo as its
+    /// reference set is regenerated.
+    /// </summary>
+    public static bool IsStaleForSharedTintRewriteFix(GoldenCombo combo) => true;
 }
