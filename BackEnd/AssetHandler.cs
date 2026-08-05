@@ -516,7 +516,11 @@ public class AssetHandler : OptionalUIModule
     /// texture references — instead of the standard source-side scan, which would schedule the
     /// mod's textures back onto their shared paths.
     /// </param>
-    private Task RequestAssetCopyAsync(string relativePath, ModSetting modSetting, string outputBasePath, string faceTintSubPath, AssetRequestContext ctx, string? overrideDestinationRelativePath = null, string? explicitSourceAbsolutePath = null, string? isolationModTag = null)
+    /// <param name="destinationFaceTintSubPath">
+    /// For a FaceGen copy whose destination NPC differs from its subject, the target NPC's tint
+    /// path that must replace <paramref name="faceTintSubPath"/> inside the copied NIF.
+    /// </param>
+    private Task RequestAssetCopyAsync(string relativePath, ModSetting modSetting, string outputBasePath, string faceTintSubPath, AssetRequestContext ctx, string? overrideDestinationRelativePath = null, string? explicitSourceAbsolutePath = null, string? isolationModTag = null, string? destinationFaceTintSubPath = null)
     {
         // FIX: Create a composite key to uniquely identify an asset *within the context of its source mod*.
         // This prevents a failed lookup from one mod from blocking a successful lookup from another mod for the same relative path.
@@ -646,16 +650,27 @@ public class AssetHandler : OptionalUIModule
                             else if (modSetting.CopyAssets)
                             {
                                 // Create two tasks: one for copying, one for analyzing the source file.
-                                Task copyTask = PerformLooseCopyAsync(sourcePath, destPath);
+                                Task<bool> copyTask = PerformLooseCopyAsync(sourcePath, destPath);
                                 Task analysisTask = PostProcessCopiedFile(sourcePath, modSetting, outputBasePath,
                                     faceTintSubPath, ctx);
 
                                 // Await both tasks to run them in parallel.
                                 await Task.WhenAll(copyTask, analysisTask);
+                                if (copyTask.Result)
+                                {
+                                    RewriteCopiedFaceTintPath(destPath, faceTintSubPath,
+                                        destinationFaceTintSubPath,
+                                        msg => AppendLog("      " + msg, true, true));
+                                }
                             }
                             else
                             {
-                                await PerformLooseCopyAsync(sourcePath, destPath);
+                                if (await PerformLooseCopyAsync(sourcePath, destPath))
+                                {
+                                    RewriteCopiedFaceTintPath(destPath, faceTintSubPath,
+                                        destinationFaceTintSubPath,
+                                        msg => AppendLog("      " + msg, true, true));
+                                }
                             }
 
                             break;
@@ -675,6 +690,9 @@ public class AssetHandler : OptionalUIModule
                                 {
                                     await PostProcessCopiedFile(destPath, modSetting, outputBasePath, faceTintSubPath, ctx);
                                 }
+                                RewriteCopiedFaceTintPath(destPath, faceTintSubPath,
+                                    destinationFaceTintSubPath,
+                                    msg => AppendLog("      " + msg, true, true));
                             }
                             else if (extractError != null &&
                                      extractError.StartsWith(BsaHandler.SharingViolationPrefix, StringComparison.Ordinal))
@@ -752,6 +770,44 @@ public class AssetHandler : OptionalUIModule
             AppendLog($"Failed to copy file from {sourcePath} to {destPath}: {ExceptionLogger.GetExceptionStack(ex)}", true, true);
             return false;
         }
+    }
+
+    /// <summary>
+    /// Re-points a copied FaceGen NIF from the donor/subject's tint to the tint copied beside the
+    /// destination NPC. Face swaps and SkyPatcher surrogates change both output filenames, but the
+    /// donor NIF still contains its original DDS path until this post-copy rewrite.
+    /// </summary>
+    internal static int RewriteCopiedFaceTintPath(string copiedNifPath, string sourceFaceTintSubPath,
+        string? destinationFaceTintSubPath, Action<string>? log = null)
+    {
+        if (!copiedNifPath.EndsWith(".nif", StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(sourceFaceTintSubPath) ||
+            string.IsNullOrWhiteSpace(destinationFaceTintSubPath) ||
+            string.Equals(sourceFaceTintSubPath, destinationFaceTintSubPath,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return 0;
+        }
+
+        Auxilliary.TryRegularizePath(sourceFaceTintSubPath, out var regularizedSource);
+        var remap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (_, texturePaths) in NifHandler.GetTexturesByShape(copiedNifPath))
+        {
+            foreach (var storedPath in texturePaths)
+            {
+                Auxilliary.TryRegularizePath(storedPath, out var regularizedStored);
+                if (string.Equals(regularizedStored, regularizedSource,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    // Key by the exact spelling stored in the NIF; comparison above deliberately
+                    // tolerates slash and optional asset-root differences.
+                    remap[storedPath] = destinationFaceTintSubPath;
+                }
+            }
+        }
+        if (remap.Count == 0) return 0;
+
+        return NifHandler.RewriteTexturePaths(copiedNifPath, remap, log);
     }
 
     /// <summary>
@@ -1378,9 +1434,11 @@ public class AssetHandler : OptionalUIModule
         // selection, because its pass owns that shared path" — is gone: nothing writes to another
         // NPC's path any more, so there is no contention left to arbitrate.
         ScheduleFaceGenHalf(faceGenDecision.NifChoice, subjectMeshRelPath, destMeshRelPath,
-            appearanceModSetting, outputBasePath, faceTexRelativePath, faceGenCtx, npcIdentifier);
+            appearanceModSetting, outputBasePath, faceTexRelativePath, destTexRelPath, faceGenCtx,
+            npcIdentifier);
         ScheduleFaceGenHalf(faceGenDecision.DdsChoice, subjectTexRelPath, destTexRelPath,
-            appearanceModSetting, outputBasePath, faceTexRelativePath, faceGenCtx, npcIdentifier);
+            appearanceModSetting, outputBasePath, faceTexRelativePath, destTexRelPath, faceGenCtx,
+            npcIdentifier);
 
         // 2. Non-FaceGen Assets (Only if CopyExtraAssets is true)
         // When the AssetProvenance diag is on, assetProv accumulates path -> referencing-record so the
@@ -1427,13 +1485,14 @@ public class AssetHandler : OptionalUIModule
     private void ScheduleFaceGenHalf(
         FaceGenSourceChoice choice, string sourceRelPath, string destRelPath,
         ModSetting appearanceModSetting, string outputBasePath, string faceTintSubPath,
-        AssetRequestContext ctx, string npcIdentifier)
+        string destinationFaceTintSubPath, AssetRequestContext ctx, string npcIdentifier)
     {
         switch (choice)
         {
             case FaceGenSourceChoice.AppearanceMod:
                 RequestAssetCopyAsync(sourceRelPath, appearanceModSetting, outputBasePath,
-                    faceTintSubPath, ctx, overrideDestinationRelativePath: destRelPath);
+                    faceTintSubPath, ctx, overrideDestinationRelativePath: destRelPath,
+                    destinationFaceTintSubPath: destinationFaceTintSubPath);
                 break;
 
             case FaceGenSourceChoice.Origin:
@@ -1447,7 +1506,8 @@ public class AssetHandler : OptionalUIModule
                 }
 
                 RequestAssetCopyAsync(sourceRelPath, origin, outputBasePath,
-                    faceTintSubPath, ctx.WithReason("FaceGenFromOrigin"), overrideDestinationRelativePath: destRelPath);
+                    faceTintSubPath, ctx.WithReason("FaceGenFromOrigin"), overrideDestinationRelativePath: destRelPath,
+                    destinationFaceTintSubPath: destinationFaceTintSubPath);
                 break;
             }
 
@@ -1465,7 +1525,8 @@ public class AssetHandler : OptionalUIModule
                 RequestAssetCopyAsync(sourceRelPath, appearanceModSetting, outputBasePath,
                     faceTintSubPath, ctx.WithReason("FaceGenFromWinner"),
                     overrideDestinationRelativePath: destRelPath,
-                    explicitSourceAbsolutePath: absolute);
+                    explicitSourceAbsolutePath: absolute,
+                    destinationFaceTintSubPath: destinationFaceTintSubPath);
                 break;
             }
 

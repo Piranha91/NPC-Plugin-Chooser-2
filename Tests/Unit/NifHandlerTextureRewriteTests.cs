@@ -71,4 +71,48 @@ public class NifHandlerTextureRewriteTests
             File.Delete(temp);
         }
     }
+
+    [Fact]
+    public void RewriteCopiedFaceTintPath_RepointsDonorTintToTargetNpc()
+    {
+        if (!File.Exists(SpecimenNif)) return; // specimen not installed on this machine
+
+        string temp = Path.Combine(Path.GetTempPath(), "npc2-facetintrewrite-" + Guid.NewGuid().ToString("N") + ".nif");
+        File.Copy(SpecimenNif, temp);
+        try
+        {
+            string donorTint = NifHandler.GetTexturesByShape(temp)
+                .SelectMany(s => s.TexturePaths)
+                .Single(p => p.Contains(@"\facegendata\facetint\", StringComparison.OrdinalIgnoreCase));
+            string targetTint = Path.Combine(Path.GetDirectoryName(donorTint)!, "00013b99.dds");
+            string storedDonorTint = donorTint.Replace('\\', '/');
+            NifHandler.RewriteTexturePaths(temp,
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [donorTint] = storedDonorTint,
+                }).Should().BeGreaterThan(0);
+
+            AssetHandler.RewriteCopiedFaceTintPath(temp, donorTint, targetTint)
+                .Should().BeGreaterThan(0, "equivalent slash spellings must still identify the donor tint");
+
+            var after = NifHandler.GetTexturesByShape(temp)
+                .SelectMany(s => s.TexturePaths)
+                .ToList();
+            after.Should().Contain(p => string.Equals(p, targetTint, StringComparison.OrdinalIgnoreCase));
+            after.Should().NotContain(p => string.Equals(p, storedDonorTint, StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            File.Delete(temp);
+        }
+    }
+
+    [Fact]
+    public void RewriteCopiedFaceTintPath_SameSourceAndDestination_IsNoOp()
+    {
+        const string tint = @"textures\actors\character\facegendata\facetint\skyrim.esm\000a2c8e.dds";
+
+        AssetHandler.RewriteCopiedFaceTintPath("missing.nif", tint, tint)
+            .Should().Be(0, "an NPC keeping its own FaceGen path needs no NIF load or save");
+    }
 }
