@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using CharacterViewer.Rendering;
 using CharacterViewer.Rendering.Offscreen;
+using NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost.Adapters;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.View_Models;
 using OpenTK.Graphics.OpenGL4;
@@ -30,6 +31,11 @@ public partial class UC_InternalMugshotPreview : UserControl
     private bool _glStarted;
     private bool _manualHandlersAttached;
     private CameraModeWatcher? _cameraModeWatcher;
+
+    // Installed on the bound viewer so its off-render-callback GL work runs
+    // against THIS control's context (see InstallContextPinningMarshaller).
+    // One per control — it only closes over GlControl, which never changes.
+    private GlContextPinningMarshaller? _pinningMarshaller;
 
     // Auto-mode drag-to-rotate throttle. WPF MouseMove can fire 100+ Hz; the
     // refit is cheap but visible camera "jitter" can creep in if Distance
@@ -149,6 +155,10 @@ public partial class UC_InternalMugshotPreview : UserControl
 
         _vm = DataContext as VM_InternalMugshotPreview;
         _viewer = _vm?.Viewer;
+
+        // The DataContext can arrive either side of GL start; this covers the
+        // late-VM order, TryStartGl covers the late-GL one.
+        InstallContextPinningMarshaller();
 
         if (_vm != null)
         {
@@ -675,11 +685,38 @@ public partial class UC_InternalMugshotPreview : UserControl
         };
         GlControl.Start(settings);
         _glStarted = true;
+        InstallContextPinningMarshaller();
 
         // GLWpfControl bug workaround: visibility-toggle to force the
         // CompositionTarget.Rendering subscription to register.
         GlControl.Visibility = Visibility.Collapsed;
         GlControl.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>
+    /// Points the bound viewer's render-thread marshaller at THIS control's GL
+    /// context, so any GL work the VM performs outside <see cref="GlControl_OnRender"/>
+    /// is pinned to the context that owns the objects it touches.
+    ///
+    /// Without it the VM inherits the container's plain dispatch-only
+    /// <c>WpfDispatcherMarshaller</c>, which gets the thread right but not the
+    /// context: each popup mints a private context, GLWpfControl leaves its own
+    /// current after rendering, and GL names collide across contexts — so a
+    /// delete issued between render callbacks lands on whichever popup drew
+    /// last. See <see cref="GlContextPinningMarshaller"/> and
+    /// <see cref="ShutdownGl"/>, which fixed the same hazard for the teardown
+    /// path in 2.2.3.
+    ///
+    /// Re-installed whenever the control or the bound VM changes: the
+    /// Settings-tab viewer VM is cached on VM_Settings and outlives its UC, so
+    /// after WPF recreates that UC the VM must be re-pointed at the new
+    /// control's context.
+    /// </summary>
+    private void InstallContextPinningMarshaller()
+    {
+        if (_viewer == null || !_glStarted) return;
+        _viewer.RenderThreadMarshaller =
+            _pinningMarshaller ??= new GlContextPinningMarshaller(GlControl);
     }
 
     // "Set Antler Head Parts" selector: hovering a row highlights the matching

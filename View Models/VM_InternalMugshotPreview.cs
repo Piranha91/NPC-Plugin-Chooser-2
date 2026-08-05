@@ -253,6 +253,12 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         // reflects the real apply result.
         Viewer.SceneCommitted += OnViewerSceneCommitted;
 
+        // ...and again on an override-only apply, which has no scene commit to
+        // ride in on. ApplyMeshOverrides is a queue for interactive hosts (the
+        // GL work has to wait for the render callback that owns our context), so
+        // the warning surface can only be read once the renderer says it landed.
+        Viewer.MeshOverridesApplied += OnViewerMeshOverridesApplied;
+
         // Push saved render-pipeline params into the lib viewer once so the
         // shared UC_CharacterViewerRenderPanel (bound to Viewer) shows the
         // user's persisted values from app start, not the lib defaults.
@@ -373,9 +379,12 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
 
     /// <summary>Pushes the combined attire/headgear override set through the
     /// renderer's replace-on-reapply mesh channel (one call, full current set),
-    /// then refreshes the warning surface. The apply queues behind an in-flight
-    /// load and drains on <c>SceneCommitted</c>, where the warning is refreshed
-    /// again.</summary>
+    /// then refreshes the warning surface. The apply is always deferred to a
+    /// render callback — behind an in-flight load if there is one, otherwise to
+    /// the next tick — so this refresh only reflects the PREVIOUS set. The real
+    /// one happens on <c>MeshOverridesApplied</c> (and <c>SceneCommitted</c>
+    /// after a load); this call just clears the surface promptly when the
+    /// renderer isn't going to report anything.</summary>
     private void ApplyAttireOverrides(IReadOnlyList<MeshOverride> overrides)
     {
         Viewer.ApplyMeshOverrides(overrides);
@@ -432,6 +441,17 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         MissingOutfitAssetsText = sb.ToString();
     }
 
+    /// <summary>Mirrors the renderer's post-apply warning set onto this VM's
+    /// badges. Marshalled because the event is raised from the render callback.</summary>
+    private void OnViewerMeshOverridesApplied()
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher != null && !dispatcher.CheckAccess())
+            dispatcher.BeginInvoke(new Action(UpdateMeshOverrideWarning));
+        else
+            UpdateMeshOverrideWarning();
+    }
+
     private void OnViewerSceneCommitted()
     {
         // Snapshot the session generation on the event (render) thread; the
@@ -455,9 +475,19 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     }
 
     /// <summary>Re-applies the attire/headgear overrides after a toggle flip.
-    /// Goes through a full reload (the renderer's mesh-override apply does GL work
-    /// and is only safe to run via the queue/drain path that a load triggers), so
-    /// the new toggle state is picked up by <c>LoadAsync</c>'s attire resolve.</summary>
+    /// Goes through the load path so the new toggle state is picked up by
+    /// <c>LoadAsync</c>'s attire resolve. Note the reload itself usually
+    /// short-circuits inside the renderer — same NPC, same identity, no head
+    /// override — so what actually changes the scene is the
+    /// <c>ApplyMeshOverrides</c> call that follows.
+    ///
+    /// <para>That apply does GL work and must not run here: it would land in
+    /// whichever preview popup's context was current on the UI thread, which is
+    /// the sibling's as often as ours. CV.R 2.7.0 makes the call a queue for
+    /// interactive hosts and drains it on the render callback, so this method
+    /// deliberately does NOT force a rebuild to get the queueing behaviour (the
+    /// antler / wig designation paths call ForceRebuildNextLoad because their
+    /// change is applied at mesh-install time, which is a different reason).</para></summary>
     private async void ReapplyAttireAfterToggle()
     {
         try { await ReloadCurrentAsync().ConfigureAwait(false); }
@@ -1077,6 +1107,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     {
         Viewer.GlContextReset -= OnViewerGlContextReset;
         Viewer.SceneCommitted -= OnViewerSceneCommitted;
+        Viewer.MeshOverridesApplied -= OnViewerMeshOverridesApplied;
         ClearAntlerSelectorItems();
         _renderLogCaptureScope?.Dispose();
         _renderLogCaptureScope = null;
