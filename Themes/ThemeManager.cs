@@ -18,6 +18,43 @@ namespace NPC_Plugin_Chooser_2.Themes
         private static readonly string ThemesFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Themes");
 
         /// <summary>
+        /// Resource key holding the width (in device-independent units) beyond which a tooltip
+        /// wraps instead of running off the screen. The themes' ToolTip style consumes it via
+        /// DynamicResource.
+        /// </summary>
+        public const string ToolTipMaxWidthKey = "ToolTipMaxWidth";
+
+        /// <summary>
+        /// Fraction of the screen width a tooltip is allowed to occupy.
+        /// </summary>
+        private const double ToolTipScreenFraction = 0.25;
+
+        /// <summary>
+        /// Floor for the cap: several tooltips are hand-authored around a fixed-width TextBlock
+        /// (the widest is 460 units plus padding and border), and a cap below that would clip
+        /// them on a narrow screen rather than wrap.
+        /// </summary>
+        private const double ToolTipMinMaxWidth = 480;
+
+        /// <summary>
+        /// Publishes <see cref="ToolTipMaxWidthKey"/> into the application resources so the
+        /// themes' ToolTip style can cap tooltip width at a share of the screen.
+        /// SystemParameters reports screen size in device-independent units, which is the same
+        /// space WPF lays tooltips out in, so no DPI correction is needed.
+        /// </summary>
+        public static void PublishToolTipMetrics()
+        {
+            if (Application.Current == null)
+                return;
+
+            double maxWidth = Math.Max(
+                ToolTipMinMaxWidth,
+                Math.Round(SystemParameters.PrimaryScreenWidth * ToolTipScreenFraction));
+
+            Application.Current.Resources[ToolTipMaxWidthKey] = maxWidth;
+        }
+
+        /// <summary>
         /// Returns the display names (file names without extension) of all available themes.
         /// </summary>
         public static List<string> GetAvailableThemes()
@@ -37,6 +74,8 @@ namespace NPC_Plugin_Chooser_2.Themes
         /// </summary>
         public static void ApplyTheme(string themeName)
         {
+            PublishToolTipMetrics();
+
             var themeDictionaries = Application.Current.Resources.MergedDictionaries;
 
             // Remove any previously applied theme dictionary (tagged via our attached marker)

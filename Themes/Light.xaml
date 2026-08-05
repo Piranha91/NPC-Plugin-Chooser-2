@@ -1,6 +1,7 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:reactiveui="http://reactiveui.net">
+                    xmlns:reactiveui="http://reactiveui.net"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
 
     <!-- Backgrounds -->
     <SolidColorBrush x:Key="PrimaryBackground" Color="#FFFFFF"/>
@@ -213,6 +214,16 @@
         <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
         <Setter Property="Foreground" Value="{StaticResource PrimaryForeground}"/>
         <Setter Property="BorderThickness" Value="1"/>
+        <!-- Cap plain-text tooltips at a share of the screen (ThemeManager publishes
+             ToolTipMaxWidth) and wrap them, so long text can't run off the edge.
+             The template applies to string content only; tooltips built from elements
+             keep whatever layout they author. -->
+        <Setter Property="MaxWidth" Value="{DynamicResource ToolTipMaxWidth}"/>
+        <Style.Resources>
+            <DataTemplate DataType="{x:Type sys:String}">
+                <TextBlock Text="{Binding}" TextWrapping="Wrap"/>
+            </DataTemplate>
+        </Style.Resources>
     </Style>
     
     <Style x:Key="ScrollBarThumb" TargetType="{x:Type Thumb}">
