@@ -33,7 +33,7 @@ using Splat; // For Locator
 
 namespace NPC_Plugin_Chooser_2.View_Models;
 
-public class VM_Mods : ReactiveObject
+public class VM_Mods : ReactiveObject, ISearchFilterHost
 {
     private readonly Settings _settings;
     private readonly EnvironmentStateProvider _environmentStateProvider;
@@ -3488,6 +3488,21 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             Debug.WriteLine("Initial corresponding-folder cleanup warnings:" + Environment.NewLine +
                             string.Join(Environment.NewLine, warnings));
         }
+    }
+
+    /// <summary>
+    /// Ctrl+Shift+C — blanks all three filter boxes. See
+    /// <see cref="ISearchFilterHost.ClearSearchFilters"/> for what is deliberately left alone;
+    /// here that is <see cref="SelectedNpcSearchType"/> (the field the NPC box searches, which
+    /// filters nothing on its own once the box is empty) and <see cref="ShowMugshotOnlyMods"/>
+    /// (a display toggle). The setters feed the throttled pipeline in the constructor, so this
+    /// coalesces into one <see cref="ApplyFilters"/> pass.
+    /// </summary>
+    public void ClearSearchFilters()
+    {
+        NameFilterText = string.Empty;
+        PluginFilterText = string.Empty;
+        NpcSearchText = string.Empty;
     }
 
     // Filtering Logic (Left Panel)

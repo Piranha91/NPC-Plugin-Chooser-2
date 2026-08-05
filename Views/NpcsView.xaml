@@ -269,7 +269,7 @@
                         <Grid Margin="0,0,0,5">
                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                            <CheckBox Grid.Column="0" Content="Not" Margin="0,0,5,0" VerticalAlignment="Center" IsChecked="{Binding SearchInversion1, Mode=TwoWay, Converter={StaticResource FilterInversionConverter}}" ToolTip="Unchecked: keep NPCs matching this filter.&#x0a;Checked: keep NPCs that do NOT match it."/>
-                           <ComboBox Grid.Column="1" MinWidth="80" Margin="0,0,3,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource NpcSearchTypeEnumValues}}" SelectedItem="{Binding SearchType1, Mode=TwoWay}" ToolTip="Select search field 1">
+                           <ComboBox Grid.Column="1" MinWidth="80" Margin="0,0,3,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource NpcSearchTypeEnumValues}}" SelectedItem="{Binding SearchType1, Mode=TwoWay}" ToolTip="Select search field 1&#x0a;Ctrl+Shift+C clears all search filters">
                                <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
                            </ComboBox>
                            <Grid Grid.Column="2">
@@ -325,7 +325,7 @@
                         <Grid Margin="0,0,0,5">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                             <CheckBox Grid.Column="0" Content="Not" Margin="0,0,5,0" VerticalAlignment="Center" IsChecked="{Binding SearchInversion2, Mode=TwoWay, Converter={StaticResource FilterInversionConverter}}" ToolTip="Unchecked: keep NPCs matching this filter.&#x0a;Checked: keep NPCs that do NOT match it."/>
-                            <ComboBox Grid.Column="1" MinWidth="80" Margin="0,0,3,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource NpcSearchTypeEnumValues}}" SelectedItem="{Binding SearchType2, Mode=TwoWay}" ToolTip="Select search field 2">
+                            <ComboBox Grid.Column="1" MinWidth="80" Margin="0,0,3,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource NpcSearchTypeEnumValues}}" SelectedItem="{Binding SearchType2, Mode=TwoWay}" ToolTip="Select search field 2&#x0a;Ctrl+Shift+C clears all search filters">
                                 <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
                             </ComboBox>
                             <Grid Grid.Column="2">
@@ -382,7 +382,7 @@
                         <Grid Margin="0,0,0,5">
                              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                              <CheckBox Grid.Column="0" Content="Not" Margin="0,0,5,0" VerticalAlignment="Center" IsChecked="{Binding SearchInversion3, Mode=TwoWay, Converter={StaticResource FilterInversionConverter}}" ToolTip="Unchecked: keep NPCs matching this filter.&#x0a;Checked: keep NPCs that do NOT match it."/>
-                             <ComboBox Grid.Column="1" MinWidth="80" Margin="0,0,3,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource NpcSearchTypeEnumValues}}" SelectedItem="{Binding SearchType3, Mode=TwoWay}" ToolTip="Select search field 3">
+                             <ComboBox Grid.Column="1" MinWidth="80" Margin="0,0,3,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource NpcSearchTypeEnumValues}}" SelectedItem="{Binding SearchType3, Mode=TwoWay}" ToolTip="Select search field 3&#x0a;Ctrl+Shift+C clears all search filters">
                                 <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
                              </ComboBox>
                               <Grid Grid.Column="2">

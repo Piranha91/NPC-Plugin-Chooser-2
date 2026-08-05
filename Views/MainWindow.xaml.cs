@@ -52,6 +52,12 @@ namespace NPC_Plugin_Chooser_2.Views
             // All bindings & subscriptions live here
             this.WhenActivated(disposables =>
             {
+                // Ctrl+Shift+C clears the search filters of whichever tab is on screen.
+                // Resolved per keypress off CurrentViewModel, so it follows the active tab
+                // without any per-view wiring; tabs whose VM has no search menu ignore it.
+                SearchFilterHotkey.Attach(this, () => ViewModel?.CurrentViewModel as ISearchFilterHost)
+                    .DisposeWith(disposables);
+
                 // 1) Host your inner view
                 this.OneWayBind(ViewModel,
                                 vm => vm.CurrentViewModel,

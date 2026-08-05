@@ -527,6 +527,8 @@ The filter rows above the NPC list let you narrow down which NPCs are shown. Eac
 * **Race** — the NPC’s race, taken from its conflict-winning record. This one gets an editable dropdown listing every race present in your NPC list as `Name (EditorID)`; pick an entry, or type your own text. Matching is partial by default and checks the race’s Name *and* EditorID, so `nord` catches every Nord variant. Append `~` for an exact whole-string match — `NordRace~` matches only `NordRace`, excluding `NordRaceVampire`.
 * **Uniqueness** / **Gender** / **Group** / **Template** — other categorizations.
 
+Press **Ctrl+Shift+C** at any time to clear the filters and get the whole list back. It works from anywhere in the window, including while the caret is still in a search box, and it clears whichever search menu is on screen — the NPCs tab, the [Mods tab](#filtering), or the [Favorite Faces window](#favorite-faces). Your field dropdowns and the AND/OR choice are left as you set them, so only the values are wiped. The exception is a row set to **Selection State**, **Shared/Guest Appearance** or **Template**: every option in those dropdowns is a real filter with no "any" setting, so such a row also reverts to its default field — otherwise "clear" would leave the list still filtered.
+
 ### The NPC List
 
 The left panel is your list of NPCs. Hover an entry to see its full details (name, EditorID, FormKey, FormID, and group membership):
@@ -736,7 +738,7 @@ The **Favorites** button (under Submenus) opens your library of bookmarked faces
 
 Once the library gets big, the boxes at the top make it manageable — they’re the same controls as the NPCs tab, adapted to saved faces:
 
-* **Filter**: three configurable search rows combined with **AND (Match All)** or **OR (Match Any)**, plus a **Clear** button. Each row has the same per-row **Not** checkbox as the [NPC filter](#searching--filtering). The fields are the ones that mean something for a saved face: **Name**, **EditorID**, **FormKey**, **Mod**, **Race** (with the same editable dropdown and `~` exact-match syntax as the NPC filter), **Gender**, **Uniqueness**, and **Group**.
+* **Filter**: three configurable search rows combined with **AND (Match All)** or **OR (Match Any)**, plus a **Clear** button (or **Ctrl+Shift+C**, as on the [NPCs tab](#searching--filtering) — the button and the shortcut do the same thing). Each row has the same per-row **Not** checkbox as the [NPC filter](#searching--filtering). The fields are the ones that mean something for a saved face: **Name**, **EditorID**, **FormKey**, **Mod**, **Race** (with the same editable dropdown and `~` exact-match syntax as the NPC filter), **Gender**, **Uniqueness**, and **Group**.
 * **Favorite Groups**: named groups for your favorites, with **Add**/**Remove Current** and **Add**/**Remove Visible** buttons that work exactly like the [NPC Groups](#npc-groups) box. These are a separate namespace from NPC groups and are keyed per favorite, so the same NPC favorited from two different mods can be grouped independently — handy for sorting a big library into “Nord women I like”, “candidates for bandits”, and so on.
 * **Batch Actions**: **Add**/**Remove All From Mod** opens a small picker listing your installed mods, and favorites (or un-favorites) every appearance that mod provides in one step. Each entry shows how many appearances the mod has and how many are already favorited; the **Remove** picker lists only mods you actually have favorites from. Handy for pulling a whole appearance pack into the library to browse and share from, without clicking every tile.
 
@@ -779,6 +781,8 @@ Click a mod’s **name** to load its NPCs’ mugshots in the right panel (this c
 * **Filter Name** / **Filter Plugin** — narrow the list by mod display name or plugin filename.
 * **Filter NPC** — show only mods that provide a particular NPC.
 * **Show Mugshot-Only Mods** — include mods that supply only mugshots (no resource folders).
+
+**Ctrl+Shift+C** empties all three filter boxes at once, exactly as it does on the [NPCs tab](#searching--filtering).
 
 ### Per-Mod Settings
 

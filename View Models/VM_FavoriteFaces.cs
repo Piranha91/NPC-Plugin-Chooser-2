@@ -23,7 +23,7 @@ using Splat;
 
 namespace NPC_Plugin_Chooser_2.View_Models;
 
-public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposable
+public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposable, ISearchFilterHost
 {
     public delegate VM_FavoriteFaces Factory(FavoriteFacesMode mode, VM_NpcsMenuSelection? targetNpcForApply);
     
@@ -232,26 +232,9 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
         RemoveAllFavoritesFromModCommand =
             ReactiveCommand.Create(() => RunBatchModFavoriteAction(FavoriteBatchAction.Remove)).DisposeWith(_disposables);
 
-        // Clear Filters Command — resets the filter *values*, leaving the chosen
-        // search-field types in place.
-        ClearFiltersCommand = ReactiveCommand.Create(() =>
-        {
-            SearchText1 = string.Empty;
-            SearchText2 = string.Empty;
-            SearchText3 = string.Empty;
-            SelectedGroupFilter1 = null;
-            SelectedGroupFilter2 = null;
-            SelectedGroupFilter3 = null;
-            SelectedGenderFilter1 = GenderFilterType.Any;
-            SelectedGenderFilter2 = GenderFilterType.Any;
-            SelectedGenderFilter3 = GenderFilterType.Any;
-            SelectedUniquenessFilter1 = UniquenessFilterType.Any;
-            SelectedUniquenessFilter2 = UniquenessFilterType.Any;
-            SelectedUniquenessFilter3 = UniquenessFilterType.Any;
-            SearchInversion1 = FilterInversionType.Is;
-            SearchInversion2 = FilterInversionType.Is;
-            SearchInversion3 = FilterInversionType.Is;
-        }).DisposeWith(_disposables);
+        // Clear Filters Command — the "Clear" button beside the AND/OR radios. Shares its
+        // body with the Ctrl+Shift+C hotkey so the two can never drift apart.
+        ClearFiltersCommand = ReactiveCommand.Create(ClearSearchFilters).DisposeWith(_disposables);
 
         // Zoom setup
         ZoomLevel = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, _settings.NpcsViewZoomLevel));
@@ -363,6 +346,38 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
         FavoriteMugshots.CollectionChanged += (s, e) => ApplyFilters();
 
         this.WhenActivated((CompositeDisposable d) => { LoadFavoritesAsync().ConfigureAwait(false); });
+    }
+
+    /// <summary>
+    /// Backs both the "Clear" button and the Ctrl+Shift+C hotkey: resets the filter *values*,
+    /// leaving the chosen search-field types (and the AND/OR logic) in place. See
+    /// <see cref="ISearchFilterHost.ClearSearchFilters"/>.
+    ///
+    /// Every value is reset regardless of which type its row is currently showing, since a
+    /// stale value on a hidden control would come back into effect the moment the user
+    /// reselects that type. Unlike the NPCs view, every type offered here has a neutral value
+    /// (blank text, no group, Gender/Uniqueness "Any"), so no row ever has to give up its type.
+    ///
+    /// The setters feed the throttled pipeline in the constructor, so this coalesces into a
+    /// single <see cref="ApplyFilters"/> pass.
+    /// </summary>
+    public void ClearSearchFilters()
+    {
+        SearchText1 = string.Empty;
+        SearchText2 = string.Empty;
+        SearchText3 = string.Empty;
+        SelectedGroupFilter1 = null;
+        SelectedGroupFilter2 = null;
+        SelectedGroupFilter3 = null;
+        SelectedGenderFilter1 = GenderFilterType.Any;
+        SelectedGenderFilter2 = GenderFilterType.Any;
+        SelectedGenderFilter3 = GenderFilterType.Any;
+        SelectedUniquenessFilter1 = UniquenessFilterType.Any;
+        SelectedUniquenessFilter2 = UniquenessFilterType.Any;
+        SelectedUniquenessFilter3 = UniquenessFilterType.Any;
+        SearchInversion1 = FilterInversionType.Is;
+        SearchInversion2 = FilterInversionType.Is;
+        SearchInversion3 = FilterInversionType.Is;
     }
 
     private void ApplyFilters()

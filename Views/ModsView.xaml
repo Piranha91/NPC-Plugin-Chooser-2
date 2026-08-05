@@ -155,11 +155,13 @@
                     <WrapPanel Orientation="Horizontal">
                         <StackPanel Orientation="Horizontal" Margin="0,2,15,2">
                              <TextBlock Text="Filter Name:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                             <TextBox Text="{Binding NameFilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MinWidth="120" VerticalAlignment="Center"/>
+                             <TextBox Text="{Binding NameFilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MinWidth="120" VerticalAlignment="Center"
+                                      ToolTip="Filter the mod list by display name&#x0a;Ctrl+Shift+C clears all search filters"/>
                         </StackPanel>
                          <StackPanel Orientation="Horizontal" Margin="0,2,15,2">
                             <TextBlock Text="Filter Plugin:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                            <TextBox Text="{Binding PluginFilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MinWidth="120" VerticalAlignment="Center"/>
+                            <TextBox Text="{Binding PluginFilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MinWidth="120" VerticalAlignment="Center"
+                                     ToolTip="Filter the mod list by the plugins each mod owns&#x0a;Ctrl+Shift+C clears all search filters"/>
                         </StackPanel>
                          <StackPanel Orientation="Horizontal" Margin="0,2,15,2">
                             <TextBlock Text="Filter NPC:" VerticalAlignment="Center" Margin="0,0,5,0"/>
@@ -171,7 +173,7 @@
                             <TextBox Text="{Binding NpcSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                      MinWidth="120" VerticalAlignment="Center"
                                      IsEnabled="{Binding IsLoadingNpcData, Converter={StaticResource BooleanNegationConverter}}"
-                                     ToolTip="Enter NPC search term (active after initial load)"/>
+                                     ToolTip="Enter NPC search term (active after initial load)&#x0a;Ctrl+Shift+C clears all search filters"/>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,2,15,2" VerticalAlignment="Center">
                             <CheckBox IsChecked="{Binding ShowMugshotOnlyMods, Mode=TwoWay}" 

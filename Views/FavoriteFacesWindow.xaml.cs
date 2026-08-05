@@ -35,6 +35,9 @@ namespace NPC_Plugin_Chooser_2.Views
                     .ObserveOn(RxApp.MainThreadScheduler)
                     .Subscribe(_ => RefreshMugshotImageSizes())
                     .DisposeWith(d);
+
+                // Ctrl+Shift+C clears this window's search filters, same as the main tabs.
+                SearchFilterHotkey.Attach(this, () => ViewModel).DisposeWith(d);
             });
         }
         

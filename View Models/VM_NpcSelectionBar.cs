@@ -37,7 +37,7 @@ using Application = System.Windows.Application;
 
 namespace NPC_Plugin_Chooser_2.View_Models;
 
-public class VM_NpcSelectionBar : ReactiveObject, IDisposable
+public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
 {
     // Shared diagnostic stopwatch — restarted whenever the user picks a new
     // NPC. Other VMs (notably VM_NpcsMenuMugshot) read it to stamp
@@ -3101,6 +3101,68 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             _requestScrollToNpcSubject.OnNext(null);
         }
     }
+
+    /// <summary>
+    /// Ctrl+Shift+C — resets the filter *values*, leaving the chosen search-field types (and the
+    /// AND/OR logic) in place. Mirrors the Favorites window's "Clear" button; see
+    /// <see cref="ISearchFilterHost.ClearSearchFilters"/> for what is deliberately left alone.
+    ///
+    /// Every value is reset regardless of which type its row is currently showing, since a stale
+    /// value on a hidden control would come back into effect the moment the user reselects that
+    /// type. Gender and Uniqueness reset to "Any", which AddRowPredicate treats as a real
+    /// always-true criterion, and Group to null, which yields no criterion at all; the three
+    /// below with no such value go to their construction-time defaults.
+    ///
+    /// The setters fire the throttled filter pipeline (the Observable.Merge in the constructor),
+    /// so the whole reset coalesces into a single <see cref="ApplyFilter"/> pass.
+    /// </summary>
+    public void ClearSearchFilters()
+    {
+        SearchText1 = string.Empty;
+        SearchText2 = string.Empty;
+        SearchText3 = string.Empty;
+        SelectedGroupFilter1 = null;
+        SelectedGroupFilter2 = null;
+        SelectedGroupFilter3 = null;
+        SelectedGenderFilter1 = GenderFilterType.Any;
+        SelectedGenderFilter2 = GenderFilterType.Any;
+        SelectedGenderFilter3 = GenderFilterType.Any;
+        SelectedUniquenessFilter1 = UniquenessFilterType.Any;
+        SelectedUniquenessFilter2 = UniquenessFilterType.Any;
+        SelectedUniquenessFilter3 = UniquenessFilterType.Any;
+        SelectedStateFilter1 = SelectionStateFilterType.NotMade;
+        SelectedStateFilter2 = SelectionStateFilterType.NotMade;
+        SelectedStateFilter3 = SelectionStateFilterType.NotMade;
+        SelectedShareStatusFilter1 = ShareStatusFilterType.Any;
+        SelectedShareStatusFilter2 = ShareStatusFilterType.Any;
+        SelectedShareStatusFilter3 = ShareStatusFilterType.Any;
+        SelectedTemplateFilter1 = TemplateFilterType.BaseHasTemplate;
+        SelectedTemplateFilter2 = TemplateFilterType.BaseHasTemplate;
+        SelectedTemplateFilter3 = TemplateFilterType.BaseHasTemplate;
+        SearchInversion1 = FilterInversionType.Is;
+        SearchInversion2 = FilterInversionType.Is;
+        SearchInversion3 = FilterInversionType.Is;
+
+        // SelectionState, Template and ShareStatus have NO neutral member — every value of those
+        // enums is a live criterion, and ShareStatus's "Any" means "involved in sharing at all"
+        // rather than "don't care", so a row on one of them keeps filtering no matter what value
+        // we write. Resetting the row's type is the only way to switch it off, so those three
+        // are the sole exception to leaving the type dropdowns alone.
+        SearchType1 = ClearedSearchType(SearchType1, NpcSearchType.Name);
+        SearchType2 = ClearedSearchType(SearchType2, NpcSearchType.InAppearanceMod);
+        SearchType3 = ClearedSearchType(SearchType3, NpcSearchType.Group);
+    }
+
+    /// <summary>
+    /// Returns the type a cleared row should end up on: <paramref name="type"/> itself when that
+    /// type has some inactive value, otherwise <paramref name="defaultType"/>.
+    /// </summary>
+    private static NpcSearchType ClearedSearchType(NpcSearchType type, NpcSearchType defaultType) =>
+        type switch
+        {
+            NpcSearchType.SelectionState or NpcSearchType.Template or NpcSearchType.ShareStatus => defaultType,
+            _ => type
+        };
 
     // In VM_NpcSelectionBar.cs
     public void ApplyFilter(bool initializing, bool preserveSelection = true)
