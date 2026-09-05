@@ -1,32 +1,69 @@
 ﻿namespace NPC_Plugin_Chooser_2.BackEnd;
 
+using System.Text;
+using Mutagen.Bethesda.Plugins.Exceptions;
+
 public class ExceptionLogger
 {
     public static string GetExceptionStack(Exception e)
     {
-        return GetExceptionStack(e, "", 0);
+        var error = new StringBuilder();
+        AppendException(e, error, 0, "");
+        return error.ToString();
     }
-    private static string GetExceptionStack(Exception e, string error, int layer)
+
+    private static void AppendException(Exception e, StringBuilder error, int layer, string branch)
     {
-        if (e is not ReactiveUI.UnhandledErrorException || e.InnerException is null) // skip logging the top layer since it is not specific to SynthEBD
+        // ReactiveUI's wrapper adds no application-specific information.
+        if (e is not ReactiveUI.UnhandledErrorException || e.InnerException is null)
         {
-            error += Environment.NewLine + "======= Layer " + layer.ToString() + ": " + Environment.NewLine + e.Message + Environment.NewLine + e.StackTrace + Environment.NewLine + Environment.NewLine;
-        }
-        
-        if (e as Mutagen.Bethesda.Plugins.Exceptions.TooManyMastersException != null)
-        {
-            var tooManyMastersEx = e as Mutagen.Bethesda.Plugins.Exceptions.TooManyMastersException;
+            var branchLabel = string.IsNullOrEmpty(branch) ? "" : $" (branch {branch})";
+            error.AppendLine().AppendLine($"======= Layer {layer}{branchLabel}:")
+                .AppendLine($"{e.GetType().FullName}: {e.Message}");
 
-            error += "Current Masters:" + Environment.NewLine + String.Join(Environment.NewLine, tooManyMastersEx.Masters.Select(x => x.FileName).ToArray()) + Environment.NewLine + Environment.NewLine;
+            // Mutagen stores this context separately from Message and StackTrace.
+            if (e is RecordException recordException)
+            {
+                if (recordException.ModKey is { } modKey)
+                    error.AppendLine($"Plugin: {modKey.FileName}");
+                if (recordException.FormKey is { } formKey)
+                    error.AppendLine($"Record: {formKey}");
+                if (recordException.RecordType is { } recordType)
+                    error.AppendLine($"Record type: {recordType.FullName}");
+                if (!string.IsNullOrWhiteSpace(recordException.EditorID))
+                    error.AppendLine($"Editor ID: {recordException.EditorID}");
+            }
+
+            if (e is ModGroupsMalformedException { ModPath: { } modPath })
+            {
+                error.AppendLine($"Plugin: {modPath.ModKey.FileName}")
+                    .AppendLine($"Plugin path: {modPath.Path}");
+            }
+
+            if (e is TooManyMastersException tooManyMastersException)
+            {
+                error.AppendLine($"Plugin: {tooManyMastersException.CurrentMod.FileName}")
+                    .AppendLine("Current Masters:");
+                foreach (var master in tooManyMastersException.Masters)
+                    error.AppendLine(master.FileName.ToString());
+            }
+
+            error.AppendLine(e.StackTrace).AppendLine();
         }
 
-        if (e.InnerException != null)
+        if (e is AggregateException aggregateException)
         {
-            return GetExceptionStack(e.InnerException, error, layer + 1);
+            // InnerException exposes only the first failure. Walk every branch without
+            // flattening away the wrappers that carry plugin context.
+            for (var i = 0; i < aggregateException.InnerExceptions.Count; i++)
+            {
+                var childBranch = string.IsNullOrEmpty(branch) ? $"{i + 1}" : $"{branch}.{i + 1}";
+                AppendException(aggregateException.InnerExceptions[i], error, layer + 1, childBranch);
+            }
         }
-        else
+        else if (e.InnerException != null)
         {
-            return error;
+            AppendException(e.InnerException, error, layer + 1, branch);
         }
     }
 }
