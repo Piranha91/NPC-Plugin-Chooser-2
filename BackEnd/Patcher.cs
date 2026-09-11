@@ -2116,6 +2116,7 @@ public class Patcher : OptionalUIModule
                                 processedNpcsTokenData[npcFormKey] = new NpcAppearanceData
                                 {
                                     ModName = selectedModDisplayName,
+                                    SourceNpcFormKey = appearanceNpcFormKey,
                                     AppearancePlugin = appearanceModKey.Value,
                                     OutputPlugin = _environmentStateProvider.OutputMod.ModKey
                                 };

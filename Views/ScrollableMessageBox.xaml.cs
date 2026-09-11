@@ -205,6 +205,33 @@ public partial class ScrollableMessageBox : Window
     }
 
     
+    /// <summary>Returns true for the first choice, false for the second, or null for
+    /// Cancel, Escape or closing the window. The first choice is the default.</summary>
+    internal static bool? ChooseWithCancel(string message, string title,
+        string firstChoice, string secondChoice, MessageBoxImage messageBoxImage = MessageBoxImage.Question)
+    {
+        var box = new ScrollableMessageBox(message, title, messageBoxImage, isConfirmation: true);
+        box.YesButton.Content = firstChoice;
+        box.NoButton.Content = secondChoice;
+        foreach (var button in new[] { box.YesButton, box.NoButton })
+        {
+            button.Width = double.NaN;
+            button.MinWidth = 75;
+            button.Padding = new Thickness(10, 0, 10, 0);
+        }
+        box.YesButton.IsDefault = true;
+        var cancel = new Button
+        {
+            Content = "Cancel", Width = 75, Height = 25,
+            Margin = new Thickness(10, 0, 0, 0), IsCancel = true
+        };
+        cancel.Click += (_, _) => box.Close();
+        box.ButtonPanel.Children.Add(cancel);
+        box.Loaded += (_, _) => box.YesButton.Focus();
+        box.ShowDialog();
+        return box._dialogResult;
+    }
+
     private ImageSource SystemIconsFromMessageBoxImage(MessageBoxImage image)
     {
         return image switch

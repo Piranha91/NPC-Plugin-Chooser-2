@@ -391,12 +391,14 @@ public class SerializableModelsRoundTripTests
         var data = new NpcAppearanceData
         {
             ModName = "Pandorable",
+            SourceNpcFormKey = Npc2,
             AppearancePlugin = ModA,
             OutputPlugin = ModB,
         };
         var clone = RoundTrip(data);
 
         clone.ModName.Should().Be("Pandorable");
+        clone.SourceNpcFormKey.Should().Be(Npc2);
         clone.AppearancePlugin.Should().Be(ModA);
         clone.OutputPlugin.Should().Be(ModB);
     }

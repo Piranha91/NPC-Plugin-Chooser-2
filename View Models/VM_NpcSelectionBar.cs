@@ -1541,9 +1541,6 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
     }
 
 
-    // Define a small, serializable record to structure the JSON output.
-    private record NpcChoiceDto(string ModName, string SourceNpcFormKey);
-
     private async Task ExportChoicesAsync()
     {
         var dialog = new SaveFileDialog
@@ -2477,20 +2474,16 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
             // Run the entire import and validation process on a background thread.
             await Task.Run(() =>
             {
-                // 1. Deserialize the JSON into our new DTO format.
-                var importedData = JSONhandler<Dictionary<string, NpcChoiceDto>>.LoadJSONFile(
-                    dialog.FileName, 
-                    out bool readSuccess, 
-                    out var exceptionStr);
-
-                if (!readSuccess)
+                // 1. Detect the JSON format silently and normalize it to choices.
+                if (!NpcChoiceImport.TryParse(File.ReadAllText(dialog.FileName),
+                        out var importedData, out var exceptionStr))
                 {
                     Application.Current.Dispatcher.Invoke(() => 
                         ScrollableMessageBox.ShowError(exceptionStr, "Failed to Read Import File"));
                     return;
                 }
 
-                if (importedData == null || !importedData.Any())
+                if (!importedData.Any())
                 {
                     Application.Current.Dispatcher.Invoke(() => 
                         ScrollableMessageBox.ShowWarning("The selected file is empty or contains no valid data.", "Import Warning"));
@@ -2504,32 +2497,59 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
                 // 3. Show a confirmation dialog on the UI thread.
                 Application.Current.Dispatcher.Invoke(() =>
                 {
+                    var plan = NpcChoiceImport.CreatePlan(importedData, report.ValidSelections,
+                        _settings.SelectedAppearanceMods);
                     var reportMessage = new StringBuilder();
                     if (issues.Any())
                     {
-                        reportMessage.AppendLine($"The import file contains {issues.Count} issue(s) that will be skipped.\n");
+                        reportMessage.AppendLine($"The import file contains {issues.Count} issue(s) that will be skipped. Current choices for those NPCs will be kept.\n");
                         if(report.MalformedEntries.Any()) reportMessage.AppendLine("--- Malformed Entries ---\n" + string.Join('\n', report.MalformedEntries) + "\n");
                         if(report.UnresolvedNpcs.Any()) reportMessage.AppendLine("--- Unresolved NPCs ---\n" + string.Join('\n', report.UnresolvedNpcs) + "\n");
                         if(report.UnrecognizedMods.Any()) reportMessage.AppendLine("--- Unrecognized Mods/Choices ---\n" + string.Join('\n', report.UnrecognizedMods) + "\n");
-                        reportMessage.AppendLine($"Do you want to proceed with importing the {report.ValidSelections.Count} valid choices?");
+                    }
+
+                    if (plan.InferredSourceCount > 0)
+                    {
+                        reportMessage.AppendLine($"This patch token lacks shared-face donor information for {plan.InferredSourceCount} NPC(s). " +
+                            "Those entries use the target NPC's own face unless a shared-face choice already exists. " +
+                            "Shared faces from that run cannot be reconstructed from this token.\n");
+                        if (plan.ProtectedSharedNpcs.Count > 0)
+                            reportMessage.AppendLine($"Your existing shared-face choices for {plan.ProtectedSharedNpcs.Count} NPC(s) listed in the token will be kept.\n");
+                    }
+
+                    if (plan.Selections.Count == 0)
+                    {
+                        ScrollableMessageBox.ShowWarning(
+                            "There are no choices to apply. Your current choices have not changed.\n\n" + reportMessage,
+                            "Import Warning");
+                        return;
+                    }
+
+                    reportMessage.AppendLine($"Import {plan.Selections.Count} choice(s), replacing any current choices for those NPCs?");
+                    var icon = issues.Any() || plan.InferredSourceCount > 0 ? MessageBoxImage.Warning : MessageBoxImage.Question;
+                    bool? keepMissing;
+                    if (plan.MissingNpcs.Count > 0)
+                    {
+                        reportMessage.AppendLine($"\nYou currently have choices for {plan.MissingNpcs.Count} NPC(s) not listed in this file. " +
+                            "Choose whether to keep or clear those choices. Cancel leaves all choices unchanged.");
+                        keepMissing = ScrollableMessageBox.ChooseWithCancel(reportMessage.ToString(), "Confirm Import",
+                            "Import & Keep Others", "Import & Clear Others", icon);
                     }
                     else
                     {
-                        reportMessage.Append($"This will overwrite your current choices with {report.ValidSelections.Count} choice(s) from the file. Proceed?");
+                        keepMissing = ScrollableMessageBox.Confirm(reportMessage.ToString(), "Confirm Import", icon)
+                            ? true : null;
                     }
 
-                    if (ScrollableMessageBox.Confirm(reportMessage.ToString(), "Confirm Import", issues.Any() ? MessageBoxImage.Warning : MessageBoxImage.Question))
+                    // 4. Apply only after the user has chosen. Missing and rejected
+                    // entries are handled separately; an import never clears everything first.
+                    if (NpcChoiceImport.Apply(plan, _consistencyProvider, keepMissing))
                     {
-                        // 4. If confirmed, apply the valid selections.
-                        _consistencyProvider.ClearAllSelections();
-                        foreach (var kvp in report.ValidSelections)
+                        foreach (var kvp in plan.Selections)
                         {
                             var targetNpcKey = kvp.Key;
                             var sourceNpcKey = kvp.Value.NpcFormKey;
                             var modName = kvp.Value.ModName;
-
-                            // Apply the selection
-                            _consistencyProvider.SetSelectedMod(targetNpcKey, modName, sourceNpcKey);
 
                             // If it's a shared ("guest") appearance, we must ensure it's
                             // added to the GuestAppearances list so the UI can see it.
@@ -2543,7 +2563,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
                                 AddGuestAppearance(targetNpcKey, modName, sourceNpcKey, sourceNpcDisplayName);
                             }
                         }
-                        ScrollableMessageBox.Show($"Import complete. {report.ValidSelections.Count} choices have been applied.", "Import Successful");
+                        var missingSummary = plan.MissingNpcs.Count == 0 ? string.Empty :
+                            $" {plan.MissingNpcs.Count} choice(s) for NPCs not listed in the file were {(keepMissing == true ? "kept" : "cleared")}.";
+                        ScrollableMessageBox.Show($"Import complete. {plan.Selections.Count} choices have been applied.{missingSummary}", "Import Successful");
                     }
                     else
                     {
@@ -2561,7 +2583,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
     /// <summary>
     /// Validates deserialized import data against the current application state.
     /// </summary>
-    private ImportValidationReport ValidateImportData(Dictionary<string, NpcChoiceDto> importedData)
+    private ImportValidationReport ValidateImportData(Dictionary<string, NpcChoiceDto?> importedData)
     {
         var validSelections = new Dictionary<FormKey, (string ModName, FormKey NpcFormKey)>();
         var malformed = new List<string>();
@@ -2572,6 +2594,13 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
 
         foreach (var kvp in importedData)
         {
+            if (kvp.Value == null || string.IsNullOrWhiteSpace(kvp.Value.ModName) ||
+                string.IsNullOrWhiteSpace(kvp.Value.SourceNpcFormKey))
+            {
+                malformed.Add($"- Missing or invalid appearance choice for {kvp.Key} (ModName and SourceNpcFormKey are required).");
+                continue;
+            }
+
             // Validate and parse FormKeys
             if (!FormKey.TryFactory(kvp.Key, out var targetNpcKey))
             {

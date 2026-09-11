@@ -216,7 +216,7 @@
                         <Button Content="Export" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
                                 Command="{Binding ExportChoicesCommand}" ToolTip="Export the current list of selected appearance mods for each NPC to a .json file."/>
                         <Button Content="Import" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
-                                Command="{Binding ImportChoicesCommand}" ToolTip="Import a list of NPC appearance selections from a .json file, overwriting current choices."/>
+                                Command="{Binding ImportChoicesCommand}" ToolTip="Import NPC appearance selections from an exported choices .json file or a patch output's NPC_Token.json. The format is detected automatically. If current choices are missing from the file, choose whether to keep or clear them."/>
                         <Button Content="Clear" Margin="0,2,0,2" Padding="5,2" VerticalAlignment="Center"
                                 Command="{Binding ClearChoicesCommand}" ToolTip="Clear all selections you have made."/>
                     </StackPanel>

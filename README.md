@@ -491,7 +491,7 @@ Bulk actions on your whole set of choices:
 
 * **Match Load Order**: Scans your load order to figure out which mods you’re currently using as appearance mods, and selects them automatically (respecting the Load Order Import exclusions in Settings).
 * **Randomize**: Opens the [Randomize window](#randomizing-appearances) to assign random appearances.
-* **Export** / **Import**: Back up your selections to a `.json` file and restore them later. (This file is N.P.C.2-specific — it is *not* cross-compatible with EasyNPC; use the Settings tab for that.)
+* **Export** / **Import**: Back up your selections to a `.json` file and restore them later. **Import** also accepts the `NPC_Token.json` in a patch output folder, automatically detecting either format regardless of the filename. Tokens restore only the NPCs recorded as patched, so skipped NPCs and choices outside that run are not included. Import validates choices against your current setup and asks before applying them. Whenever you have choices for NPCs absent from the file, the confirmation offers **Import & Keep Others**, **Import & Clear Others**, or **Cancel**; keeping them is the default. Entries rejected by validation leave that NPC's current choice intact either way. New tokens preserve shared appearances. When an older token lacks the source NPC, Import explains the limitation and protects existing shared-face choices for NPCs listed in the token; other legacy entries use the target NPC's own face. (These files are N.P.C.2-specific — they are *not* cross-compatible with EasyNPC; use the Settings tab for that.)
 * **Clear**: Removes all selections so you can start fresh.
 
 ### Selected Mugshots
