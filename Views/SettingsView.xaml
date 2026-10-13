@@ -295,6 +295,10 @@
                                                 <Setter Property="Text" Value="from Mutagen"/>
                                                 <Setter Property="Foreground" Value="{DynamicResource StatusValidForeground}"/>
                                             </DataTrigger>
+                                            <DataTrigger Binding="{Binding EnvironmentCreationClubListingsSource}" Value="DataFolder">
+                                                <Setter Property="Text" Value="next to Data folder"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource StatusValidForeground}"/>
+                                            </DataTrigger>
                                             <DataTrigger Binding="{Binding EnvironmentCreationClubListingsSource}" Value="Fallback">
                                                 <Setter Property="Text" Value="from fallback probe"/>
                                                 <Setter Property="Foreground" Value="{DynamicResource StatusPendingForeground}"/>

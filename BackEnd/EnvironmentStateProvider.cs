@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Plugins.Order;
+using Mutagen.Bethesda.Plugins.Order.DI;
 using Mutagen.Bethesda.Skyrim;
 using Mutagen.Bethesda.Environments;
 using Noggog;
@@ -86,8 +87,9 @@ public class EnvironmentStateProvider : ReactiveObject
     public enum CreationClubListingsSourceKind
     {
         NotFound,
-        Mutagen,
-        Fallback
+        Mutagen,    // Mutagen's own registry/Steam game lookup
+        DataFolder, // found beside the configured Data folder and supplied to Mutagen
+        Fallback    // found beside the Data folder after the build; CC plugins NOT in the load order
     }
     
     // Additional fields to help other classes
@@ -165,6 +167,7 @@ public class EnvironmentStateProvider : ReactiveObject
         {
             builder = builder.WithTargetDataFolder(_targetDataFolderPath);
         }
+        builder = WithCreationClubListingsNextToDataFolder(builder);
 
         var validatedName = Path.GetFileNameWithoutExtension(OutputPluginName);
         
@@ -344,12 +347,55 @@ public class EnvironmentStateProvider : ReactiveObject
             && (!ownOutputModKey.HasValue || k != ownOutputModKey.Value));
     }
 
-    // Mutagen's default Skyrim.ccc discovery uses registry-based game lookup, which
-    // fails for non-standard installs (renamed folder, drive move). When that happens
-    // _environment.CreationClubListingsFilePath is empty / missing, so the manual
-    // parse below returns an empty set, the free CC plugins never appear as implicit
-    // masters, and screening rejects mods that declare them as required. Fall back
-    // to probing the data folder's parent for Skyrim.ccc before giving up.
+    // Mutagen (through at least 0.54.4 / main as of 2026-10) locates Skyrim.ccc via the
+    // registry/Steam game lookup even when WithTargetDataFolder is given, so after a drive
+    // move or on any install the locator can't find, it resolves no .ccc and silently
+    // leaves every CC plugin out of the load order. Everything that consults the load
+    // order then misses them: the mod-folder master scan flags ccBGSSSE001-Fish.esm as a
+    // missing master, the link cache can't resolve CC records, FormID prefixes shift.
+    // The .ccc lives in the game folder, i.e. the parent of the Data folder the user
+    // configured, so hand that one to Mutagen whenever it exists. Preferring it over the
+    // registry also keeps a stale registry entry (old install still on disk) from
+    // supplying a different game's CC list.
+    private GameEnvironmentBuilder<ISkyrimMod, ISkyrimModGetter> WithCreationClubListingsNextToDataFolder(
+        GameEnvironmentBuilder<ISkyrimMod, ISkyrimModGetter> builder)
+        => WithCreationClubListingsPath(builder, FindCreationClubListingsNextToDataFolder());
+
+    internal static GameEnvironmentBuilder<ISkyrimMod, ISkyrimModGetter> WithCreationClubListingsPath(
+        GameEnvironmentBuilder<ISkyrimMod, ISkyrimModGetter> builder, string? cccPath)
+    {
+        if (cccPath == null) return builder;
+
+        // The resolver is consulted for every DI component the builder constructs; returning
+        // null for the others leaves Mutagen's defaults in place.
+        var injection = new CreationClubListingsPathInjection(new FilePath(cccPath));
+        return builder.WithResolver(type =>
+            type == typeof(ICreationClubListingsPathProvider) ? injection : null);
+    }
+
+    private string? FindCreationClubListingsNextToDataFolder()
+        => FindCreationClubListingsNextTo(_targetDataFolderPath);
+
+    internal static string? FindCreationClubListingsNextTo(string? dataFolderPath)
+    {
+        if (dataFolderPath.IsNullOrWhitespace()) return null;
+        try
+        {
+            var parent = Directory.GetParent(dataFolderPath.TrimEnd('\\', '/'))?.FullName;
+            if (string.IsNullOrEmpty(parent)) return null;
+            var candidate = Path.Combine(parent, "Skyrim.ccc");
+            return File.Exists(candidate) ? candidate : null;
+        }
+        catch
+        {
+            return null; // fall back to Mutagen's own lookup
+        }
+    }
+
+    // Records where the .ccc came from for the Environment Status panel / startup log. With
+    // the injection above, Mutagen normally already holds the Data-folder copy; the parent
+    // probe below only remains for a build with no configured Data folder whose
+    // registry-derived one still lacks a .ccc lookup.
     private void ResolveCreationClubListingsPath()
     {
         var mutagenPath = _environment.CreationClubListingsFilePath ?? string.Empty;
@@ -357,7 +403,11 @@ public class EnvironmentStateProvider : ReactiveObject
         {
             CreationClubListingsFilePath = mutagenPath;
             CreationClubListingsFileExists = true;
-            CreationClubListingsSource = CreationClubListingsSourceKind.Mutagen;
+            var injected = FindCreationClubListingsNextToDataFolder();
+            CreationClubListingsSource = injected != null &&
+                                         string.Equals(Path.GetFullPath(injected), Path.GetFullPath(mutagenPath), StringComparison.OrdinalIgnoreCase)
+                ? CreationClubListingsSourceKind.DataFolder
+                : CreationClubListingsSourceKind.Mutagen;
             return;
         }
 
@@ -395,11 +445,11 @@ public class EnvironmentStateProvider : ReactiveObject
         {
             if (File.Exists(CreationClubListingsFilePath))
             {
-                var ccListings = File.ReadAllText(CreationClubListingsFilePath);
-                var ccPlugins = ccListings.Split(Environment.NewLine);
-                foreach (var pluginName in ccPlugins)
+                // ReadAllLines splits on \r\n and bare \n alike (as Mutagen's own reader does);
+                // splitting on Environment.NewLine turned an LF-only file into one unparseable line.
+                foreach (var line in File.ReadAllLines(CreationClubListingsFilePath))
                 {
-                    var plugin = ModKey.TryFromFileName(pluginName);
+                    var plugin = ModKey.TryFromFileName(line.Trim());
                     if (plugin != null && !creationClubModKeys.Contains(plugin.Value))
                     {
                         creationClubModKeys.Add(plugin.Value);
@@ -465,6 +515,7 @@ public class EnvironmentStateProvider : ReactiveObject
             {
                 builder = builder.WithTargetDataFolder(_targetDataFolderPath);
             }
+            builder = WithCreationClubListingsNextToDataFolder(builder);
 
             // Only OnlyEnabledAndExisting() — the set the game actually loads. No
             // TrimDependentPlugins, no WithOutputMod: the deployed output plugin and any
