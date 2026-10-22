@@ -346,6 +346,61 @@ public class TemplateFlatteningTests
         text.Should().NotContain(":", "a FormKey would leak in as 'xxxxxx:Plugin.esp'");
     }
 
+    // ---- NPC-list red ! on a template source (VM_NpcSelectionBar.SelectTemplateConflicts) -------
+    //
+    // A user picked a different mod for a templated NPC than for its template, under "Give each
+    // NPC its own copy", and still got the red "template relationship may cause appearance issues"
+    // mark: the indicator predated the mode and never consulted it. A flattened chain means the
+    // template's selection no longer reaches the referencing NPC, so there is nothing to clash.
+
+    private static readonly FormKey TemplateUserA = FormKey.Factory("000801:AppearanceA.esp");
+    private static readonly FormKey TemplateUserB = FormKey.Factory("000802:AppearanceB.esp");
+
+    private static List<(string ModName, FormKey NpcFormKey, string NpcDisplayName)> TemplateRefs() => new()
+    {
+        ("Mod A", TemplateUserA, "Bandit A"),
+        ("Mod B", TemplateUserB, "Bandit B"),
+        ("Template Mod", FormKey.Factory("000803:Template.esp"), "Same Mod"),
+    };
+
+    [Fact]
+    public void TemplateConflict_InheritMode_FlagsEveryDifferentMod()
+    {
+        var conflicts = VM_NpcSelectionBar.SelectTemplateConflicts("template mod", TemplateRefs(), _ => false);
+
+        conflicts.Select(c => c.NpcFormKey).Should().BeEquivalentTo(new[] { TemplateUserA, TemplateUserB },
+            "an inheriting NPC really does wear the template's face, not its own pick; the same " +
+            "mod (case-insensitively) is no clash");
+    }
+
+    [Fact]
+    public void TemplateConflict_OwnCopyMode_FlagsNothing()
+    {
+        VM_NpcSelectionBar.SelectTemplateConflicts("Template Mod", TemplateRefs(), _ => true)
+            .Should().BeEmpty("each referencing NPC gets its own mod's face, whatever the template has selected");
+    }
+
+    [Fact]
+    public void TemplateConflict_PerModOverride_OnlyClearsThatMod()
+    {
+        var conflicts = VM_NpcSelectionBar.SelectTemplateConflicts("Template Mod", TemplateRefs(),
+            modName => modName == "Mod A");
+
+        conflicts.Select(c => c.NpcFormKey).Should().Equal(TemplateUserB);
+    }
+
+    [Fact]
+    public void TemplateConflictTooltip_StatesTheOutcome_AndNamesTheSetting()
+    {
+        var text = VM_NpcSelectionBar.BuildTemplateConflictTooltip("Template Mod",
+            new[] { ("Mod A", TemplateUserA, "Bandit A") });
+
+        text.Should().Contain("Bandit A").And.Contain("[Mod A]").And.Contain("[Template Mod]");
+        text.Should().Contain(HandlingModeDisplay.ToDisplayString(TemplateHandlingMode.GiveEachNpcOwnCopy),
+            "the remedy setting has to be findable from the tooltip");
+        text.Should().NotContain("may cause", "the outcome is certain while the mark shows, so say it");
+    }
+
     // ---- Randomize's inherited-template note (VM_NpcSelectionBar.BuildInheritedTemplateRandomizeNote)
     //
     // Randomize used to list every templated NPC it could not assign under "had no candidate that

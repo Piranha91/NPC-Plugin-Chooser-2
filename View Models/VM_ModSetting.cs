@@ -935,6 +935,10 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         this.WhenAnyValue(x => x.SelectedTemplateHandlingItem)
             .Subscribe(item => OverrideTemplateHandlingMode = item.Key)
             .DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.OverrideTemplateHandlingMode).Skip(1)
+            .Where(_ => !_isLoadingFromModel)
+            .Subscribe(_ => _parentVm?.RequestTemplateIndicatorRecalculation())
+            .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.OverrideWigHairTintMode)
             .Subscribe(mode => SelectedWigHairTintItem =
                 WigHairTintModes.First(kv => kv.Key == mode))

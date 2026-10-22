@@ -953,6 +953,13 @@ public class VM_Mods : ReactiveObject, ISearchFilterHost
         _npcSelectionBar?.RefreshCurrentNpcAppearanceSources();
     }
 
+    /// <summary>A mod's Templated NPCs override changed — the NPC list's red template-conflict
+    /// marks depend on it.</summary>
+    public void RequestTemplateIndicatorRecalculation()
+    {
+        _npcSelectionBar?.RecalculateAllAppModTemplateIndicators();
+    }
+
     /// <summary>
     /// Forces the right-hand mugshot panel to rebuild its per-mugshot VMs for
     /// the currently-selected mod. Each rebuilt VM re-walks

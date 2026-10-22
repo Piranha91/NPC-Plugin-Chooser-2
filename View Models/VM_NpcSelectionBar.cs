@@ -6252,21 +6252,16 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
             var thisSelection = _consistencyProvider.GetSelectedMod(vm.NpcFormKey);
             if (!string.IsNullOrEmpty(thisSelection.ModName))
             {
-                var conflicting = selectedRefs
-                    .Where(r => !string.Equals(r.ModName, thisSelection.ModName,
-                        StringComparison.OrdinalIgnoreCase))
-                    .ToList();
+                var conflicting = SelectTemplateConflicts(thisSelection.ModName, selectedRefs,
+                    modName => TemplateChainWillBeFlattened(
+                        _lazyModsVm.Value.AllModSettings.FirstOrDefault(m =>
+                            m.DisplayName.Equals(modName, StringComparison.OrdinalIgnoreCase)),
+                        vm.NpcFormKey));
 
                 if (conflicting.Any())
                 {
                     vm.HasTemplateConflict = true;
-                    var cSb = new StringBuilder();
-                    cSb.Append($"This NPC has [{thisSelection.ModName}] selected, " +
-                        "but is used as a template source by NPCs with a different mod selected:");
-                    foreach (var c in conflicting)
-                        cSb.Append($"\n  {c.NpcDisplayName} ({c.NpcFormKey}) → [{c.ModName}]");
-                    cSb.Append("\nThe template relationship may cause appearance conflicts.");
-                    vm.TemplateConflictTooltip = cSb.ToString();
+                    vm.TemplateConflictTooltip = BuildTemplateConflictTooltip(thisSelection.ModName, conflicting);
                     return;
                 }
             }
@@ -6274,6 +6269,56 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
 
         vm.HasTemplateConflict = false;
         vm.TemplateConflictTooltip = string.Empty;
+    }
+
+    /// <summary>
+    /// Re-evaluates every template source's red !. The Templated NPCs mode (global or per mod)
+    /// decides whether a mismatch matters at all, so changing it can raise or clear marks without
+    /// any selection changing.
+    /// </summary>
+    public void RecalculateAllAppModTemplateIndicators()
+    {
+        foreach (var vm in _npcVmLookup.Values)
+        {
+            if (vm.AppModTemplateReferences.Count > 0)
+                RecalculateAppModTemplateIndicators(vm);
+        }
+    }
+
+    /// <summary>
+    /// The referencing NPCs whose selection really does clash with this template source's own.
+    /// A different mod is only a clash while that NPC still inherits its face: once its chain will
+    /// be flattened (<paramref name="chainWillBeFlattened"/>, keyed by the referencing mod's name —
+    /// see <see cref="TemplateChainWillBeFlattened"/>) it gets a private copy of its own mod's face,
+    /// and what this NPC has selected never reaches it.
+    /// </summary>
+    internal static List<(string ModName, FormKey NpcFormKey, string NpcDisplayName)> SelectTemplateConflicts(
+        string thisModName,
+        IEnumerable<(string ModName, FormKey NpcFormKey, string NpcDisplayName)> selectedRefs,
+        Func<string, bool> chainWillBeFlattened) =>
+        selectedRefs
+            .Where(r => !string.Equals(r.ModName, thisModName, StringComparison.OrdinalIgnoreCase))
+            .Where(r => !chainWillBeFlattened(r.ModName))
+            .ToList();
+
+    /// <summary>
+    /// Tooltip for the red !. Only ever shown while the referencing NPCs inherit (see
+    /// <see cref="SelectTemplateConflicts"/>), so it states that outcome plainly rather than a vague
+    /// "may cause issues", and names both remedies — including the setting, so it can be found.
+    /// </summary>
+    internal static string BuildTemplateConflictTooltip(string thisModName,
+        IEnumerable<(string ModName, FormKey NpcFormKey, string NpcDisplayName)> conflicting)
+    {
+        var sb = new StringBuilder();
+        sb.Append($"This NPC has [{thisModName}] selected, but these NPCs copy their face from it " +
+                  "and have a different mod selected:");
+        foreach (var c in conflicting)
+            sb.Append($"\n  {c.NpcDisplayName} ({c.NpcFormKey}) → [{c.ModName}]");
+        sb.Append($"\n\nIn game they will wear this NPC's face from [{thisModName}], not the face picked for them. " +
+                  "To change that, select the same mod for both, or set \"Templated NPCs\" to " +
+                  $"\"{HandlingModeDisplay.ToDisplayString(TemplateHandlingMode.GiveEachNpcOwnCopy)}\" " +
+                  "(in Settings, or per mod in the Mods tab) so each NPC gets its own face.");
+        return sb.ToString();
     }
 
     /// <summary>

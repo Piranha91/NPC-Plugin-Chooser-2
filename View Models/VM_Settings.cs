@@ -1240,7 +1240,14 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         this.WhenAnyValue(x => x.SelectedPatchingMode).Skip(1).Subscribe(pm => _model.PatchingMode = pm)
             .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedTemplateHandlingMode).Skip(1)
-            .Subscribe(m => _model.TemplateHandlingMode = m).DisposeWith(_disposables);
+            .Subscribe(m =>
+            {
+                _model.TemplateHandlingMode = m;
+                // The NPC list's red template-conflict marks depend on the mode.
+                if (_lazyNpcSelectionBar.IsValueCreated)
+                    _lazyNpcSelectionBar.Value.RecalculateAllAppModTemplateIndicators();
+            })
+            .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedDefaultWigHandlingMode).Skip(1)
             .Subscribe(m => _model.DefaultWigHandlingMode = m).DisposeWith(_disposables);
         // Two GLOBAL-default wig-mode selections need confirming, and they share one
