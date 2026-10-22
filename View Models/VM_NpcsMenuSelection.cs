@@ -70,6 +70,15 @@ public class VM_NpcsMenuSelection : ReactiveObject
     public ObservableCollection<TemplateReferenceEntry> TemplateReferenceEntries { get; set; } = new();
     [Reactive] public bool HasTemplateReferences { get; set; }
 
+    // NPC list template tree (Settings.GroupTemplatedNpcsInList) — rewritten by every ApplyFilter.
+    // IsTreeExpanded is session-only by design.
+    [Reactive] public double TreeIndent { get; set; }
+    [Reactive] public bool ShowTreeGutter { get; set; }
+    [Reactive] public bool HasTreeChildren { get; set; }
+    [Reactive] public bool IsTreeExpanded { get; set; } = true;
+    // An ancestor shown only so a matching templated NPC keeps its place; drawn dimmed.
+    [Reactive] public bool IsTreeContextRow { get; set; }
+
     [Reactive] public string NpcGroupsDisplay { get; set; } = "Groups: None";
 
     // This property reflects the centrally stored selection

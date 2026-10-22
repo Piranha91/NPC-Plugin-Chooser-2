@@ -1661,6 +1661,15 @@
                         <TextBlock Text="Separator:" VerticalAlignment="Center" Margin="0,0,5,0"/>
                         <TextBox Text="{Binding NpcListSeparator, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="30" VerticalAlignment="Center"/>
                     </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
+                        <CheckBox Content="Group templated NPCs under their template" IsChecked="{Binding GroupTemplatedNpcsInList, Mode=TwoWay}"
+                                  VerticalAlignment="Center" Margin="0,0,15,0"
+                                  ToolTip="Show each templated NPC indented under the NPC it copies its face from, with an arrow to collapse the group.&#10;In Create mode the template is taken from the appearance mod selected for the NPC; otherwise from your load order's winning record.&#10;NPCs that copy from a levelled list have no single template NPC and stay at the top level."/>
+                        <CheckBox Content="Hide templated NPCs whose template has a selection" IsChecked="{Binding HideInheritingTemplatedNpcs, Mode=TwoWay}"
+                                  VerticalAlignment="Center"
+                                  ToolTip="Hide templated NPCs that will show their template's face in game, once that template NPC has an appearance selected.&#10;Only applies while Templated NPCs is set to &quot;Use the template's appearance&quot; for them; under &quot;Give each NPC its own copy&quot; they stay visible so you can pick their faces.&#10;The selected NPC, and any NPC you jump to, always stays visible."/>
+                    </StackPanel>
                 </StackPanel>
             </Expander>
 

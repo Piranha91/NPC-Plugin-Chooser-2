@@ -226,6 +226,8 @@ Cosmetic and convenience options for the app itself.
 * **Enable Localization**: Shows **NPC names** in a language you pick, instead of the default (usually English). This affects *only* the NPC names in the list — the app’s own interface (buttons, menus, labels) stays in English. See the note below for how it behaves.
 * **Don’t show me popup warnings for actions with potential side effects**: Suppresses the confirmation popups for bulk/destructive actions if you find them annoying.
 * **NPC List Display**: Choose which identifiers appear next to each NPC in the left-hand list — **Name**, **EditorID**, **FormKey**, **FormID**, and/or **Template Status** — along with where they’re shown and which **Separator** character divides them.
+* **Group templated NPCs under their template**: Shows each [templated NPC](#output-settings) indented under the NPC it copies its face from, nested for longer chains, with an arrow to collapse each group (collapsing isn’t remembered between sessions). In *Create* mode the template comes from the appearance mod you selected for the NPC, since that’s the record your output carries; otherwise it comes from your load order’s winning record. NPCs that copy from a levelled list have no single template NPC and stay at the top level. When a search matches a templated NPC but not its template, the template is still shown, dimmed, so the match keeps its place.
+* **Hide templated NPCs whose template has a selection**: Hides templated NPCs once the NPC they copy their face from has an appearance selected, since that selection decides their face in game. This only applies while *Templated NPCs* is set to *Use the template’s appearance* for them; under *Give each NPC its own copy* they stay visible so you can pick their faces. The NPC you have selected, and any NPC you jump to, always stays visible. The list updates the next time it refreshes (any search, sort, or filter change).
 
 #### A note on NPC name localization
 
@@ -544,6 +546,8 @@ Some NPCs show small purple **T** badges, which indicate template relationships 
 ![Template source tooltip](docs/Screenshots/NPCs/NPC_List_Mouseover_TemplateSource_Tooltip.png)
 
 ![Referenced as template source tooltip](docs/Screenshots/NPCs/NPC_List_Mouseover_TemplateSourceBy_Tooltip.png)
+
+A red **!** next to a template NPC means an NPC that copies its face from it has a *different* mod selected. While that NPC uses its template’s appearance, it will show this NPC’s face in game, not the one picked for it. Under *Give each NPC its own copy* the mismatch doesn’t matter and no **!** is shown. To see templated NPCs grouped under their templates, or to hide the ones whose face is already decided, see [Display Settings](#display-settings).
 
 **Right-clicking an NPC** in the list opens a context menu with per-NPC options:
 

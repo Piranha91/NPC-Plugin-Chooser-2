@@ -1265,7 +1265,8 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                         Debug.WriteLine(
                             $"VM_Mods.NavigateToNpc: Target {npcToSelect.DisplayName} not in FilteredNpcs. Re-applying filter.");
                         // This ApplyFilter will also see IsProgrammaticNavigationInProgress = true.
-                        _npcSelectionBar.ApplyFilter(false);
+                        // EnsureNpcVisible also undoes the template-tree options (hidden / collapsed).
+                        _npcSelectionBar.EnsureNpcVisible(npcToSelect);
                         // Give this ApplyFilter a moment if it was needed.
                         RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(50), SelectAndSignal);
                     }

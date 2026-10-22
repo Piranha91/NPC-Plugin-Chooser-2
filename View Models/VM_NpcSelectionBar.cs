@@ -344,6 +344,12 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
     [Reactive] public bool ShowTemplateStatusInList { get; set; }
     [Reactive] public TemplateIconPosition TemplateIconPosition { get; set; }
     [Reactive] public string NpcSelectionIndicator { get; set; } = "Bar";
+    [Reactive] public bool GroupTemplatedNpcsInList { get; set; }
+    [Reactive] public bool HideInheritingTemplatedNpcs { get; set; }
+
+    // An NPC a navigation asked to show: exempt from HideInheritingTemplatedNpcs until another
+    // navigation replaces it (see EnsureNpcVisible).
+    private FormKey? _revealNpcKey;
 
     // --- NPC Group Properties ---
     [Reactive] public string SelectedGroupName { get; set; } = string.Empty;
@@ -391,6 +397,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
     public ReactiveCommand<Unit, Unit> ShowFavoritesCommand { get; }
     public ReactiveCommand<VM_NpcsMenuSelection, Unit> AddFavoriteFaceToNpcCommand { get; }
     public ReactiveCommand<FormKey, Unit> JumpToTemplateReferenceCommand { get; }
+    public ReactiveCommand<VM_NpcsMenuSelection, Unit> ToggleNpcTreeExpandedCommand { get; }
 
     // --- NPC Navigation Commands ---
     public ReactiveCommand<Unit, Unit> NavigateNextNpcCommand { get; }
@@ -466,6 +473,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
         ShowTemplateStatusInList = _settings.ShowTemplateStatusInList;
         TemplateIconPosition = _settings.TemplateIconPosition;
         NpcSelectionIndicator = _settings.NpcSelectionIndicator;
+        GroupTemplatedNpcsInList = _settings.GroupTemplatedNpcsInList;
+        HideInheritingTemplatedNpcs = _settings.HideInheritingTemplatedNpcs;
         Debug.WriteLine(
             $"VM_NpcSelectionBar.Constructor: Initial ZoomLevel: {NpcsViewZoomLevel:F2}, IsZoomLocked: {NpcsViewIsZoomLocked}");
 
@@ -504,6 +513,15 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
         {
             JumpToTemplateReference(fk);
         }).DisposeWith(_disposables);
+
+        ToggleNpcTreeExpandedCommand = ReactiveCommand.Create<VM_NpcsMenuSelection>(ToggleNpcTreeExpanded)
+            .DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.GroupTemplatedNpcsInList, x => x.HideInheritingTemplatedNpcs)
+            .Skip(1)
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Subscribe(_ => ApplyFilter(false))
+            .DisposeWith(_disposables);
 
         // --- NPC Navigation Commands ---
         var canNavigateNext = this.WhenAnyValue(
@@ -565,7 +583,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
                 _isNavigatingHistory = true;
                 _npcViewHistoryIndex--;
                 var target = _npcViewHistory[_npcViewHistoryIndex];
-                if (FilteredNpcs.Contains(target))
+                if (EnsureNpcVisible(target))
                 {
                     SelectedNpc = target;
                     SignalScrollToNpc(target);
@@ -587,7 +605,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
                 _isNavigatingHistory = true;
                 _npcViewHistoryIndex++;
                 var target = _npcViewHistory[_npcViewHistoryIndex];
-                if (FilteredNpcs.Contains(target))
+                if (EnsureNpcVisible(target))
                 {
                     SelectedNpc = target;
                     SignalScrollToNpc(target);
@@ -3298,6 +3316,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
 
         if (SelectedNpc != null)
         {
+            // The template-tree options may have hidden or collapsed the restored NPC.
+            if (GroupTemplatedNpcsInList || HideInheritingTemplatedNpcs)
+                EnsureNpcVisible(SelectedNpc);
             _requestScrollToNpcSubject.OnNext(SelectedNpc);
         }
 
@@ -3542,7 +3563,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
         });
 
         FilteredNpcs.Clear();
-        foreach (var npc in results)
+        foreach (var npc in ArrangeTemplateTree(results, npcToPreserve))
         {
             FilteredNpcs.Add(npc);
         }
@@ -6576,6 +6597,199 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
         }
     }
 
+    // --- NPC list template tree (Settings.GroupTemplatedNpcsInList / HideInheritingTemplatedNpcs) ---
+
+    /// <summary>
+    /// The last stage of <see cref="ApplyFilter"/>: drops inheriting templated NPCs when that option
+    /// is on, then (when grouping) re-orders the filtered, sorted list as a template tree and stamps
+    /// each row's tree state. With both options off it is the identity, apart from clearing stale
+    /// row state.
+    /// </summary>
+    private List<VM_NpcsMenuSelection> ArrangeTemplateTree(List<VM_NpcsMenuSelection> sorted,
+        VM_NpcsMenuSelection? keepVisible)
+    {
+        TemplateTreeResolver? tree = GroupTemplatedNpcsInList || HideInheritingTemplatedNpcs
+            ? new TemplateTreeResolver(this)
+            : null;
+
+        if (tree != null && HideInheritingTemplatedNpcs)
+        {
+            sorted = sorted.Where(n => !ShouldHideInheritingNpc(n, tree, keepVisible)).ToList();
+        }
+
+        if (tree == null || !GroupTemplatedNpcsInList)
+        {
+            foreach (var npc in sorted)
+            {
+                npc.ShowTreeGutter = false;
+                npc.TreeIndent = 0;
+                npc.HasTreeChildren = false;
+                npc.IsTreeContextRow = false;
+            }
+            return sorted;
+        }
+
+        var rows = NpcListTree.Build(sorted, tree.ParentOf, n => n.IsTreeExpanded);
+        foreach (var row in rows)
+        {
+            row.Node.ShowTreeGutter = true;
+            row.Node.TreeIndent = row.Depth * TreeIndentPerLevel;
+            row.Node.HasTreeChildren = row.HasChildren;
+            row.Node.IsTreeContextRow = row.IsContext;
+        }
+        return rows.Select(r => r.Node).ToList();
+    }
+
+    private const double TreeIndentPerLevel = 14;
+
+    private bool ShouldHideInheritingNpc(VM_NpcsMenuSelection npc, TemplateTreeResolver tree,
+        VM_NpcsMenuSelection? keepVisible)
+    {
+        bool exempt = ReferenceEquals(npc, keepVisible) || ReferenceEquals(npc, SelectedNpc) ||
+                      (_revealNpcKey.HasValue && _revealNpcKey.Value.Equals(npc.NpcFormKey));
+        if (exempt) return false;
+
+        var terminus = NpcListTree.FindChainTerminus(npc, tree.ParentOf);
+        if (terminus == null) return false;
+
+        return ShouldHideInheritingNpc(
+            terminusOwnsFace: tree.TemplateLinkOf(terminus).IsNull,
+            terminusHasSelection: tree.HasSelection(terminus),
+            chainWillBeFlattened: TemplateChainWillBeFlattened(tree.SelectedModOf(npc), tree.TemplateLinkOf(npc)));
+    }
+
+    /// <summary>
+    /// The hide rule, for a templated NPC whose chain reaches a listed NPC. It is hidden only when
+    /// its face in game is already decided: the NPC at the top of the chain owns a face (it does not
+    /// itself copy from something unlisted, like a levelled list) and has a selection, and this NPC
+    /// will keep inheriting — under "Give each NPC its own copy" its own pick matters, so it stays.
+    /// Its own selection is deliberately not consulted.
+    /// </summary>
+    internal static bool ShouldHideInheritingNpc(bool terminusOwnsFace, bool terminusHasSelection,
+        bool chainWillBeFlattened) =>
+        terminusOwnsFace && terminusHasSelection && !chainWillBeFlattened;
+
+    private void ToggleNpcTreeExpanded(VM_NpcsMenuSelection? npc)
+    {
+        if (npc == null) return;
+        npc.IsTreeExpanded = !npc.IsTreeExpanded;
+
+        // Collapsing over the selected NPC would drop it from the list and ApplyFilter would jump
+        // the selection to the top; move it onto the collapsed row instead.
+        if (!npc.IsTreeExpanded && SelectedNpc != null && !ReferenceEquals(SelectedNpc, npc))
+        {
+            var tree = new TemplateTreeResolver(this);
+            var seen = new HashSet<VM_NpcsMenuSelection>(ReferenceEqualityComparer.Instance);
+            for (var a = tree.ParentOf(SelectedNpc); a != null && seen.Add(a); a = tree.ParentOf(a))
+            {
+                if (ReferenceEquals(a, npc))
+                {
+                    SelectedNpc = npc;
+                    break;
+                }
+            }
+        }
+
+        ApplyFilter(false);
+    }
+
+    /// <summary>
+    /// Makes a navigation target visible despite the template-tree options: exempts it from
+    /// HideInheritingTemplatedNpcs and expands every collapsed ancestor. Search filters are the
+    /// caller's business. Returns whether the target is now in <see cref="FilteredNpcs"/>.
+    /// </summary>
+    public bool EnsureNpcVisible(VM_NpcsMenuSelection target)
+    {
+        if (FilteredNpcs.Contains(target)) return true;
+
+        _revealNpcKey = target.NpcFormKey;
+        if (GroupTemplatedNpcsInList)
+        {
+            var tree = new TemplateTreeResolver(this);
+            var seen = new HashSet<VM_NpcsMenuSelection>(ReferenceEqualityComparer.Instance);
+            for (var a = tree.ParentOf(target); a != null && seen.Add(a); a = tree.ParentOf(a))
+            {
+                a.IsTreeExpanded = true;
+            }
+        }
+
+        ApplyFilter(initializing: false, preserveSelection: false);
+        return FilteredNpcs.Contains(target);
+    }
+
+    /// <summary>
+    /// Per-ApplyFilter view of the template links that decide each NPC's face in game. In plain
+    /// Create mode the output carries the selected appearance mod's record, so its template link
+    /// counts; otherwise (Create and Patch, SkyPatcher, or no selection) the load order's winning
+    /// record does. A link is a parent only when it names a listed NPC — a levelled list is not one.
+    /// Results are cached for the one pass; selections can change between passes.
+    /// </summary>
+    private sealed class TemplateTreeResolver
+    {
+        private readonly VM_NpcSelectionBar _bar;
+        private readonly bool _useSelectedModRecord;
+        private readonly Dictionary<string, VM_ModSetting> _modsByName = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<VM_NpcsMenuSelection, (FormKey Link, VM_NpcsMenuSelection? Parent)> _cache =
+            new(ReferenceEqualityComparer.Instance);
+
+        public TemplateTreeResolver(VM_NpcSelectionBar bar)
+        {
+            _bar = bar;
+            _useSelectedModRecord = bar._settings.PatchingMode == PatchingMode.Create && !bar._settings.UseSkyPatcherMode;
+            foreach (var mod in bar._lazyModsVm.Value.AllModSettings)
+            {
+                _modsByName.TryAdd(mod.DisplayName, mod);
+            }
+        }
+
+        public VM_NpcsMenuSelection? ParentOf(VM_NpcsMenuSelection npc) => Resolve(npc).Parent;
+
+        public FormKey TemplateLinkOf(VM_NpcsMenuSelection npc) => Resolve(npc).Link;
+
+        public bool HasSelection(VM_NpcsMenuSelection npc) =>
+            !string.IsNullOrEmpty(_bar._consistencyProvider.GetSelectedMod(npc.NpcFormKey).ModName);
+
+        public VM_ModSetting? SelectedModOf(VM_NpcsMenuSelection npc)
+        {
+            var modName = _bar._consistencyProvider.GetSelectedMod(npc.NpcFormKey).ModName;
+            return !string.IsNullOrEmpty(modName) && _modsByName.TryGetValue(modName, out var mod) ? mod : null;
+        }
+
+        private (FormKey Link, VM_NpcsMenuSelection? Parent) Resolve(VM_NpcsMenuSelection npc)
+        {
+            if (_cache.TryGetValue(npc, out var hit)) return hit;
+
+            var link = FindTemplateLink(npc);
+            VM_NpcsMenuSelection? parent =
+                !link.IsNull && _bar._npcVmLookup.TryGetValue(link, out var p) && !ReferenceEquals(p, npc)
+                    ? p
+                    : null;
+            return _cache[npc] = (link, parent);
+        }
+
+        private FormKey FindTemplateLink(VM_NpcsMenuSelection npc)
+        {
+            if (_useSelectedModRecord)
+            {
+                var (modName, sourceNpc) = _bar._consistencyProvider.GetSelectedMod(npc.NpcFormKey);
+                if (!string.IsNullOrEmpty(modName) && _modsByName.TryGetValue(modName, out var mod))
+                {
+                    // A shared appearance carries the source NPC's record, not the target's.
+                    var recordKey = sourceNpc.IsNull ? npc.NpcFormKey : sourceNpc;
+                    return mod.NpcFormKeysToNotifications.TryGetValue(recordKey, out var notification) &&
+                           notification.IssueType == NpcIssueType.Template &&
+                           notification.ReferencedFormKey.HasValue
+                        ? notification.ReferencedFormKey.Value
+                        : FormKey.Null;
+                }
+            }
+
+            return npc.WinningOverrideHasTemplate && npc.NpcData != null
+                ? npc.NpcData.TemplateFormKey
+                : FormKey.Null;
+        }
+    }
+
     /// <summary>
     /// Navigates to an NPC in the list by FormKey, ensuring it is visible in the filtered list.
     /// Used by the "Jump to Template Reference" context menu.
@@ -6603,7 +6817,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
             ApplyFilter(initializing: false, preserveSelection: false);
         }
 
-        if (FilteredNpcs.Contains(targetVm))
+        if (EnsureNpcVisible(targetVm))
         {
             SelectedNpc = targetVm;
             SignalScrollToNpc(targetVm);

@@ -495,6 +495,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public string NpcListSeparator { get; set; } = " | ";
     [Reactive] public bool ShowTemplateStatusInList { get; set; } = true;
     [Reactive] public TemplateIconPosition TemplateIconPosition { get; set; } = TemplateIconPosition.Left;
+    [Reactive] public bool GroupTemplatedNpcsInList { get; set; }
+    [Reactive] public bool HideInheritingTemplatedNpcs { get; set; }
     public IEnumerable<TemplateIconPosition> TemplateIconPositions { get; } = Enum.GetValues(typeof(TemplateIconPosition)).Cast<TemplateIconPosition>();
     
     [Reactive] public bool LogActivity { get; set; }
@@ -872,6 +874,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         NpcListSeparator = _model.NpcListSeparator;
         ShowTemplateStatusInList = _model.ShowTemplateStatusInList;
         TemplateIconPosition = _model.TemplateIconPosition;
+        GroupTemplatedNpcsInList = _model.GroupTemplatedNpcsInList;
+        HideInheritingTemplatedNpcs = _model.HideInheritingTemplatedNpcs;
         
         LogActivity = _model.LogActivity;
         LogStartup = _model.LogStartup;
@@ -1340,6 +1344,20 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                 _model.TemplateIconPosition = p;
                 if (_lazyNpcSelectionBar.IsValueCreated)
                     _lazyNpcSelectionBar.Value.TemplateIconPosition = p;
+            })
+            .DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.GroupTemplatedNpcsInList).Skip(1).Subscribe(b =>
+            {
+                _model.GroupTemplatedNpcsInList = b;
+                if (_lazyNpcSelectionBar.IsValueCreated)
+                    _lazyNpcSelectionBar.Value.GroupTemplatedNpcsInList = b;
+            })
+            .DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.HideInheritingTemplatedNpcs).Skip(1).Subscribe(b =>
+            {
+                _model.HideInheritingTemplatedNpcs = b;
+                if (_lazyNpcSelectionBar.IsValueCreated)
+                    _lazyNpcSelectionBar.Value.HideInheritingTemplatedNpcs = b;
             })
             .DisposeWith(_disposables);
 

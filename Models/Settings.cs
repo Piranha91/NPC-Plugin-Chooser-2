@@ -652,6 +652,11 @@ public class Settings
     public string NpcListSeparator { get; set; } = " | ";
     public bool ShowTemplateStatusInList { get; set; } = true;
     public TemplateIconPosition TemplateIconPosition { get; set; } = TemplateIconPosition.Right;
+    // NPC list as a template tree: each templated NPC under the NPC it takes its face from
+    // (winning override, or the selected appearance mod's record in Create mode).
+    public bool GroupTemplatedNpcsInList { get; set; }
+    // Hide templated NPCs that will inherit their face from a template NPC that already has a selection.
+    public bool HideInheritingTemplatedNpcs { get; set; }
 
     // EasyNPC Interchangeability / Settings
     public Dictionary<FormKey, ModKey> EasyNpcDefaultPlugins { get; set; } = new(); 

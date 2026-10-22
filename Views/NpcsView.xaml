@@ -505,6 +505,10 @@
                                                      <Setter Property="BorderThickness" Value="3,0,0,0"/>
                                                      <Setter Property="Padding" Value="6,0,0,0"/>
                                                  </MultiDataTrigger>
+                                                 <!-- Template tree: an ancestor shown only for context (it didn't match the search) -->
+                                                 <DataTrigger Binding="{Binding IsTreeContextRow}" Value="True">
+                                                     <Setter Property="Opacity" Value="0.5"/>
+                                                 </DataTrigger>
                                              </Style.Triggers>
                                          </Style>
                                      </Border.Style>
@@ -611,6 +615,39 @@
                                             </MenuItem>
                                         </ContextMenu>
                                     </Border.ContextMenu>
+                                     <DockPanel>
+                                     <!-- Template tree gutter (Settings > Display Settings > Group templated NPCs) -->
+                                     <StackPanel DockPanel.Dock="Left" Orientation="Horizontal"
+                                                 Visibility="{Binding ShowTreeGutter, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                         <Border Width="{Binding TreeIndent}"/>
+                                         <Grid Width="14">
+                                             <Button Command="{Binding DataContext.ToggleNpcTreeExpandedCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                     CommandParameter="{Binding}"
+                                                     Focusable="False" Cursor="Hand"
+                                                     ToolTip="Collapse or expand the NPCs that copy their face from this one"
+                                                     Visibility="{Binding HasTreeChildren, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                 <Button.Template>
+                                                     <ControlTemplate TargetType="Button">
+                                                         <Border Background="Transparent">
+                                                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                         </Border>
+                                                     </ControlTemplate>
+                                                 </Button.Template>
+                                                 <TextBlock>
+                                                     <TextBlock.Style>
+                                                         <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                                             <Setter Property="Text" Value="&#x25BE;"/>
+                                                             <Style.Triggers>
+                                                                 <DataTrigger Binding="{Binding IsTreeExpanded}" Value="False">
+                                                                     <Setter Property="Text" Value="&#x25B8;"/>
+                                                                 </DataTrigger>
+                                                             </Style.Triggers>
+                                                         </Style>
+                                                     </TextBlock.Style>
+                                                 </TextBlock>
+                                             </Button>
+                                         </Grid>
+                                     </StackPanel>
                                      <Grid>
                                          <Grid.ColumnDefinitions>
                                              <ColumnDefinition Width="Auto"/>
@@ -722,6 +759,7 @@
                                                         Visibility="{Binding HasTemplateConflict, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                          </StackPanel>
                                      </Grid>
+                                     </DockPanel>
                                  </Border>
                              </DataTemplate>
                          </ListBox.ItemTemplate>
