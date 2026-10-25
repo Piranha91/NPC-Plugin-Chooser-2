@@ -151,6 +151,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public IEnumerable<RenderCacheMode> MugshotCacheModeChoices { get; } = Enum.GetValues(typeof(RenderCacheMode)).Cast<RenderCacheMode>();
     [Reactive] public double MugshotCacheFixedGB { get; set; }
     [Reactive] public double MugshotCacheFreeRamPercent { get; set; }
+    // DDS upload route; read once at startup (TextureUploadPolicy), so changes need a restart.
+    [Reactive] public bool MugshotUseCompressedTextures { get; set; }
 
     [Reactive] public float InternalHeadTopFraction { get; set; }
     [Reactive] public float InternalHeadBottomFraction { get; set; }
@@ -714,6 +716,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         MugshotCacheMode = _model.InternalMugshot.CacheMode;
         MugshotCacheFixedGB = _model.InternalMugshot.CacheFixedBudgetGB;
         MugshotCacheFreeRamPercent = _model.InternalMugshot.CacheFreeRamPercent;
+        MugshotUseCompressedTextures = _model.InternalMugshot.UseCompressedTextures;
         InternalHeadTopFraction = _model.InternalMugshot.HeadTopFraction;
         InternalHeadBottomFraction = _model.InternalMugshot.HeadBottomFraction;
         InternalYaw = _model.InternalMugshot.Yaw;
@@ -1104,6 +1107,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(g => { _model.InternalMugshot.CacheFixedBudgetGB = g; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.MugshotCacheFreeRamPercent).Skip(1)
             .Subscribe(p => { _model.InternalMugshot.CacheFreeRamPercent = p; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.MugshotUseCompressedTextures).Skip(1)
+            .Subscribe(b => { _model.InternalMugshot.UseCompressedTextures = b; RequestThrottledSave(); }).DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.InternalCameraMode).Skip(1)
             .Subscribe(m => { _model.InternalMugshot.CameraMode = m; RequestThrottledSave(); }).DisposeWith(_disposables);

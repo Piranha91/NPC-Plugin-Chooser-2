@@ -49,6 +49,9 @@ public class MugshotSettingsHashCoverageTests
                                           "suffix (+wigtint) instead",
         ["IncludeDefaultOutfit"] = "hashed via the effective-attire parameter (per-NPC override aware)",
         ["IncludeHeadgear"] = "hashed via the effective-attire parameter (per-NPC override aware)",
+        ["UseCompressedTextures"] = "hashed via the EFFECTIVE process policy (TextureUploadPolicy, v20): " +
+                                    "an env var or DdsMaxFinalMip.txt can override the setting, " +
+                                    "so the field alone would name the wrong route",
     };
 
     /// <summary>Every settable property must either hash or be justified above.

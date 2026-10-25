@@ -1102,6 +1102,14 @@ public sealed class InternalMugshotSettings
     // silently culled (cleaner preview at the cost of hiding the failure).
     public bool RenderMissingTextureAsWireframe { get; set; } = true;
 
+    // When true (default), DDS textures upload in their compressed GPU formats
+    // with the mod's own mip chain instead of being decoded on the CPU first —
+    // about 2x faster on high-poly mods and far less memory, with sub-visible
+    // differences at alpha-tested hair edges. Off forces the decoded route.
+    // Read once at startup (restart to apply); the effective policy is folded
+    // into the schema-v20 settings hash. See TextureUploadPolicy.
+    public bool UseCompressedTextures { get; set; } = true;
+
     // Warning-icon visibility. Each gates one mugshot-tile warning icon AND
     // whether its backing state is stamped into the PNG metadata at render
     // time, so a mugshot generated while a toggle is off carries no trace of

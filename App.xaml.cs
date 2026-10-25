@@ -87,6 +87,8 @@ namespace NPC_Plugin_Chooser_2
             // RAM growth). Off means the per-switch hook is a cheap IsEnabled check.
             MemoryLogger.InitializeFromFileTrigger();
 
+            ApplyDdsUploadPolicyFromFileTrigger();
+
             using (ContextualPerformanceTracer.Trace("App.OnStartup"))
             {
                 base.OnStartup(e);
@@ -240,6 +242,9 @@ namespace NPC_Plugin_Chooser_2
             StartupLogger.Log("Running update handler");
             var updateHandler = new UpdateHandler(settingsModel);
             await updateHandler.InitialCheckForUpdatesAndPatch(splashVM);
+            // Before the container builds CharacterPreviewCache, which reads the DDS policy once.
+            TextureUploadPolicy.Apply(settingsModel.InternalMugshot.UseCompressedTextures);
+            StartupLogger.Log($"DDS upload policy: {TextureUploadPolicy.StampValue}");
             builder.RegisterInstance(settingsModel).AsSelf().SingleInstance();
 
             StartupLogger.LogPhase("Dependency Injection Setup");
@@ -590,6 +595,36 @@ namespace NPC_Plugin_Chooser_2
 
             splashVM.UpdateProgress(90, "Core initialization complete."); // After heavy lifting in InitializeAsync
             return container;
+        }
+
+        /// <summary>
+        /// Dev A/B switch for CharacterViewer.Rendering's DDS upload route, overriding the
+        /// "Use compressed textures" setting. Drop a <c>DdsMaxFinalMip.txt</c> next to the exe whose
+        /// contents are a <c>CVR_DDS_MAX_FINAL_MIP_DIMENSION</c> value (a positive integer,
+        /// <c>unlimited</c>, or <c>decoded</c> for a control run); it is set process-scoped so other
+        /// hosts are unaffected. Must run before <see cref="TextureUploadPolicy.Apply"/> and the
+        /// container's <c>CharacterPreviewCache</c>. An already-set variable wins over the file.
+        /// </summary>
+        private static void ApplyDdsUploadPolicyFromFileTrigger()
+        {
+            const string variable = "CVR_DDS_MAX_FINAL_MIP_DIMENSION";
+            try
+            {
+                string triggerPath = Path.Combine(AppContext.BaseDirectory, "DdsMaxFinalMip.txt");
+                if (!File.Exists(triggerPath)) return;
+                if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(variable)))
+                {
+                    StartupLogger.Log($"DdsMaxFinalMip.txt ignored: {variable} already set to '{Environment.GetEnvironmentVariable(variable)}'");
+                    return;
+                }
+                string value = File.ReadAllText(triggerPath).Trim();
+                Environment.SetEnvironmentVariable(variable, value);
+                StartupLogger.Log($"DdsMaxFinalMip.txt: {variable}='{value}'");
+            }
+            catch (Exception ex)
+            {
+                StartupLogger.Log($"DdsMaxFinalMip.txt could not be applied: {ex.Message}");
+            }
         }
 
         /// <summary>

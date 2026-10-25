@@ -1111,6 +1111,12 @@
                                 </StackPanel>
                             </StackPanel>
 
+                            <!-- DDS upload route. Read once at startup by TextureUploadPolicy. -->
+                            <CheckBox Content="Use compressed textures (restart required)"
+                                      IsChecked="{Binding MugshotUseCompressedTextures, Mode=TwoWay}"
+                                      Margin="0,6,0,0"
+                                      ToolTip="On (default): textures go to the GPU in their compressed formats with the mod's own mip levels, skipping CPU decoding. About twice as fast on high-poly mods and uses much less RAM; differences are sub-visible, mostly a few pixels at hair-strand edges. Off: textures are decoded on the CPU first (the older route). Applies to mugshots and the 3D preview after restarting. Changing it re-renders only mugshots made with the other setting since this option was added."/>
+
                             <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                                 <StackPanel.Style>
                                     <Style TargetType="StackPanel">

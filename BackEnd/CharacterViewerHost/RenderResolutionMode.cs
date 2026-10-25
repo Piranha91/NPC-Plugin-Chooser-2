@@ -1,6 +1,56 @@
+using System;
+using System.Globalization;
 using System.Threading;
+using CharacterViewer.Rendering;
 
 namespace NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
+
+/// <summary>
+/// The DDS upload policy this process's <c>CharacterPreviewCache</c> renders with, resolved once at
+/// startup by <see cref="Apply"/> before the container builds the cache. The library reads
+/// <c>CVR_DDS_MAX_FINAL_MIP_DIMENSION</c> in the cache constructor; precedence is that variable when
+/// already set, then the <c>DdsMaxFinalMip.txt</c> dev trigger (App sets the variable from it
+/// earlier), then <see cref="Models.InternalMugshotSettings.UseCompressedTextures"/>. Unset means
+/// the library default (authored-mip compressed uploads). <see cref="StampValue"/> is folded into
+/// the schema-v20 mugshot settings hash, so tiles re-stale only when the effective policy changes.
+/// </summary>
+public static class TextureUploadPolicy
+{
+    /// <summary>Null = decoded; otherwise the final-mip limit. Mirrors the cache's own parse,
+    /// including its invalid-value fallback to decoded.</summary>
+    public static int? MaxFinalMipDimension { get; private set; } = DdsMipPolicy.DefaultMaximumFinalMipDimension;
+
+    public static string StampValue => StampFor(MaxFinalMipDimension);
+
+    public static string StampFor(int? maxFinalMipDimension) => maxFinalMipDimension switch
+    {
+        null => "decoded",
+        int.MaxValue => "unlimited",
+        int v => v.ToString(CultureInfo.InvariantCulture),
+    };
+
+    /// <summary>The variable value the cache should see: an already-set value wins; otherwise
+    /// "decoded" when the setting is off, or null (library default) when it is on.</summary>
+    public static string? EffectiveEnvironmentValue(string? current, bool useCompressedTextures)
+        => !string.IsNullOrWhiteSpace(current) ? current : useCompressedTextures ? null : "decoded";
+
+    /// <summary>The cache constructor's parse, including its invalid-value fallback to decoded.</summary>
+    public static int? ParseAsCacheDoes(string? value)
+    {
+        try { return DdsMipPolicy.Parse(value); }
+        catch (ArgumentException) { return null; }
+    }
+
+    /// <summary>Call once, after settings load and before the cache is constructed.</summary>
+    public static void Apply(bool useCompressedTextures)
+    {
+        string? current = Environment.GetEnvironmentVariable(DdsMipPolicy.EnvironmentVariable);
+        string? value = EffectiveEnvironmentValue(current, useCompressedTextures);
+        if (value != current)
+            Environment.SetEnvironmentVariable(DdsMipPolicy.EnvironmentVariable, value);
+        MaxFinalMipDimension = ParseAsCacheDoes(value);
+    }
+}
 
 /// <summary>
 /// Dev-only A/B escape hatch for the render harness (see

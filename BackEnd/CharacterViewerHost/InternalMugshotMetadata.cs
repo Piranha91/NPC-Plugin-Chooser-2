@@ -136,9 +136,16 @@ public static class InternalMugshotMetadata
     /// and the tile goes stale, which a value stamped into the PNG could never
     /// do. Tiles stamped 16-18 keep the entries and still reproduce their
     /// stamped hash.</item>
+    /// <item>20: added the effective DDS upload policy
+    /// (<see cref="TextureUploadPolicy.StampValue"/>: "decoded" or the final-mip
+    /// limit). The compressed route became the default with this schema and changes
+    /// minification slightly (alpha-tested hair edges), so the policy is part of the
+    /// tile's identity: switching it re-renders v20 tiles. A v19 tile compared at
+    /// schemaVersion=19 excludes it, so the default flip does NOT re-stale the
+    /// existing library.</item>
     /// </list>
     /// </para></summary>
-    public const int PipelineSchemaVersion = 19;
+    public const int PipelineSchemaVersion = 20;
 
     // JSON keys for the missing-asset arrays embedded in the "Parameters"
     // tEXt chunk. Kept as constants so the read path in
@@ -220,6 +227,7 @@ public static class InternalMugshotMetadata
             ["vanilla_loose_overrides_bsa"] = cfg.VanillaLooseOverridesBsa,
             ["vanilla_loose_overrides_mod_loose"] = cfg.VanillaLooseOverridesModLoose,
             ["render_missing_texture_as_wireframe"] = cfg.RenderMissingTextureAsWireframe,
+            ["texture_upload_policy"] = TextureUploadPolicy.StampValue,
             ["enable_tone_mapping"] = cfg.EnableToneMapping,
             ["enable_shadows"] = cfg.EnableShadows,
             ["exclude_hair_shadow_caster"] = cfg.ExcludeHairShadowCaster,
@@ -481,9 +489,11 @@ public static class InternalMugshotMetadata
     /// <c>EnableNormalMapHack</c>, <c>UseModdedFallbackTextures</c>) are
     /// NOT folded in here yet because the in-process renderer documents
     /// them as unused (cf. OffscreenRenderRequest XML doc).</para></summary>
+    /// <param name="textureUploadPolicyStamp">v20 entry; null uses this process's effective
+    /// <see cref="TextureUploadPolicy.StampValue"/> (the only value callers outside tests need).</param>
     public static string ComputeSettingsHashAtSchema(InternalMugshotSettings cfg, int schemaVersion,
         bool? effectiveIncludeDefaultOutfit = null, bool? effectiveIncludeHeadgear = null,
-        string? effectiveOutfitIdentity = null)
+        string? effectiveOutfitIdentity = null, string? textureUploadPolicyStamp = null)
     {
         var sb = new StringBuilder();
         var inv = CultureInfo.InvariantCulture;
@@ -724,6 +734,15 @@ public static class InternalMugshotMetadata
             sb.Append(',').Append(scheme.RimR.ToString("R", inv));
             sb.Append(',').Append(scheme.RimG.ToString("R", inv));
             sb.Append(',').Append(scheme.RimB.ToString("R", inv));
+        }
+
+        // === schema v20 fields (DDS upload policy) ===
+        // The process-wide effective policy, not cfg.UseCompressedTextures: an
+        // environment variable or the DdsMaxFinalMip.txt trigger can override
+        // the setting, and the stamp must name what was actually rendered.
+        if (schemaVersion >= 20)
+        {
+            sb.Append('|').Append(textureUploadPolicyStamp ?? TextureUploadPolicy.StampValue);
         }
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
