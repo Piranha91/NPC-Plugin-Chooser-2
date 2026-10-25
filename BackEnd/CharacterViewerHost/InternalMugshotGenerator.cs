@@ -349,7 +349,8 @@ public sealed class InternalMugshotGenerator
             long hostRenderMs = sw.ElapsedMilliseconds - preRender;
             Trace($"  RenderToPngAsync tid={Environment.CurrentManagedThreadId} bytes={png.Length} elapsed={hostRenderMs}ms");
             if (renderTimings != null)
-                WriteRenderTimingsCsv(npcFormKey, modSetting, renderTimings, hostRenderMs, png.Length);
+                WriteRenderTimingsCsv(npcFormKey, modSetting, renderTimings, hostRenderMs, png.Length,
+                    prewarmWallMs: preRender - prePrewarm, hostElapsedMs: sw.ElapsedMilliseconds);
 
             // Asset-validation gate (batch only). The renderer doesn't expose
             // an early-abort hook for missing assets — the lists are populated
@@ -560,9 +561,18 @@ public sealed class InternalMugshotGenerator
     private static readonly object _timingsCsvLock = new();
     private static readonly string _timingsCsvPath =
         Path.Combine(AppContext.BaseDirectory, "RenderLogs", "RenderTimings.csv");
+    // New columns are appended so existing column positions stay stable.
+    // prewarmDecodeMs = DDS decode on the prewarm worker (not in rendererTotalMs);
+    // prewarmWallMs = host wall time awaiting PrewarmAsync; hostElapsedMs =
+    // GenerateAsync start (incl. semaphore wait) to CSV write; completedAt =
+    // local wall-clock time of the write, for batch throughput/concurrency.
+    private const string TimingsCsvHeader =
+        "mod,npcFormKey,npcName,setupMs,buildMs,resolveMs,parseMs,loadMs,buildShapesMs,installMs,decodeMs,uploadMs,drawMs,readbackMs,encodeMs,rendererTotalMs,hostRenderMs,pngBytes,prewarmDecodeMs,prewarmWallMs,hostElapsedMs,completedAt";
+    private static bool _timingsCsvHeaderChecked;
 
     private void WriteRenderTimingsCsv(
-        FormKey npcFormKey, ModSetting? modSetting, RenderTimings t, long hostRenderMs, int bytes)
+        FormKey npcFormKey, ModSetting? modSetting, RenderTimings t, long hostRenderMs, int bytes,
+        long prewarmWallMs, long hostElapsedMs)
     {
         try
         {
@@ -584,15 +594,29 @@ public sealed class InternalMugshotGenerator
                 t.InstallMs.ToString("F1", ci), t.DecodeMs.ToString("F1", ci),
                 uploadMs.ToString("F1", ci), t.DrawMs.ToString("F1", ci),
                 t.ReadbackMs.ToString("F1", ci), t.EncodeMs.ToString("F1", ci),
-                t.TotalMs.ToString("F1", ci), hostRenderMs.ToString(ci), bytes.ToString(ci));
+                t.TotalMs.ToString("F1", ci), hostRenderMs.ToString(ci), bytes.ToString(ci),
+                t.PrewarmDecodeMs.ToString("F1", ci), prewarmWallMs.ToString(ci),
+                hostElapsedMs.ToString(ci), DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.fff", ci));
 
             lock (_timingsCsvLock)
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(_timingsCsvPath)!);
+                // Once per session: a file written under an older header would
+                // misalign the appended columns, so archive it and start fresh.
+                if (!_timingsCsvHeaderChecked)
+                {
+                    _timingsCsvHeaderChecked = true;
+                    if (File.Exists(_timingsCsvPath) &&
+                        File.ReadLines(_timingsCsvPath).FirstOrDefault() != TimingsCsvHeader)
+                    {
+                        string archive = Path.Combine(Path.GetDirectoryName(_timingsCsvPath)!,
+                            $"RenderTimings_oldheader_{DateTime.Now:yyyyMMdd-HHmmss}.csv");
+                        File.Move(_timingsCsvPath, archive);
+                    }
+                }
                 if (!File.Exists(_timingsCsvPath))
                 {
-                    File.AppendAllText(_timingsCsvPath,
-                        "mod,npcFormKey,npcName,setupMs,buildMs,resolveMs,parseMs,loadMs,buildShapesMs,installMs,decodeMs,uploadMs,drawMs,readbackMs,encodeMs,rendererTotalMs,hostRenderMs,pngBytes\n");
+                    File.AppendAllText(_timingsCsvPath, TimingsCsvHeader + "\n");
                 }
                 File.AppendAllText(_timingsCsvPath, row + "\n");
             }
