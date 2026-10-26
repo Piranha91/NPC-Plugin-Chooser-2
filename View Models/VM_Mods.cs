@@ -174,6 +174,11 @@ public class VM_Mods : ReactiveObject, ISearchFilterHost
     [ObservableAsProperty] public ObservableCollection<ModKey> AvailableSourcePluginsForSelectedMod { get; }
     public ReactiveCommand<Unit, Unit> SetGlobalSourcePluginCommand { get; }
 
+    /// <summary>"Lock 3D View" camera sync for this menu's live tiles.</summary>
+    public LiveTileCameraSyncGroup LiveTileCameraSync { get; } = new();
+    /// <summary>True when 2+ mugshot tiles are live — gates the Lock 3D View toggle.</summary>
+    [ObservableAsProperty] public bool HasMultipleLiveTiles { get; }
+
     // --- Placeholder Image Configuration --- 
     private const string PlaceholderResourceRelativePath = @"Resources\No Mugshot.png";
 
@@ -350,6 +355,30 @@ public class VM_Mods : ReactiveObject, ISearchFilterHost
         this.WhenAnyValue(x => x.SelectedModForMugshots)
             .Select(mod => mod != null && mod.CorrespondingModKeys.Count > 1 && mod.AmbiguousNpcFormKeys.Any())
             .ToPropertyEx(this, x => x.ShowSourcePluginControls)
+            .DisposeWith(_disposables);
+
+        // Lock 3D View visibility. CurrentModNpcMugshots is cleared/refilled in
+        // place (never replaced), so re-derive the per-tile watch on each change.
+        // Throttled on the UI thread: the refill adds tiles one at a time, and
+        // rebuilding the watch per Add would be quadratic for large mods.
+        Observable.FromEventPattern<System.Collections.Specialized.NotifyCollectionChangedEventHandler,
+                    System.Collections.Specialized.NotifyCollectionChangedEventArgs>(
+                h => CurrentModNpcMugshots.CollectionChanged += h,
+                h => CurrentModNpcMugshots.CollectionChanged -= h)
+            .Select(_ => Unit.Default)
+            .Throttle(TimeSpan.FromMilliseconds(100), RxApp.MainThreadScheduler)
+            .StartWith(Unit.Default)
+            .Select(_ =>
+            {
+                var tiles = CurrentModNpcMugshots.ToList();
+                if (tiles.Count < 2) return Observable.Return(false);
+                return Observable.CombineLatest(tiles.Select(m => m.WhenAnyValue(x => x.IsLiveTile)))
+                    .Select(states => states.Count(s => s) > 1);
+            })
+            .Switch()
+            .DistinctUntilChanged()
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .ToPropertyEx(this, x => x.HasMultipleLiveTiles)
             .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.SelectedModForMugshots)

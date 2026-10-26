@@ -950,7 +950,8 @@
                                HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                                SizeChanged="MugshotScrollViewer_SizeChanged"
                                PreviewMouseWheel="MugshotScrollViewer_PreviewMouseWheel">
-                     <ItemsControl x:Name="MugshotsItemsControl" ItemsSource="{Binding CurrentModNpcMugshots}">
+                     <ItemsControl x:Name="MugshotsItemsControl" ItemsSource="{Binding CurrentModNpcMugshots}"
+                                   local:UC_LiveTileViewport.SyncGroup="{Binding LiveTileCameraSync}">
                          <ItemsControl.ItemsPanel>
                              <ItemsPanelTemplate>
                                  <WrapPanel Orientation="Horizontal"
@@ -1131,6 +1132,12 @@
                                                        </Style>
                                                    </MenuItem.Style>
                                                </MenuItem>
+                                               <!-- Lock 3D View pivot rule for this view (live tiles only). The sync
+                                                    group is reached through the tile's inherited SyncGroup property. -->
+                                               <MenuItem Header="{Binding PlacementTarget.(local:UC_LiveTileViewport.SyncGroup).TogglePivotHeader, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                         Command="{Binding PlacementTarget.(local:UC_LiveTileViewport.SyncGroup).TogglePivotCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                         Visibility="{Binding IsLiveTile, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                         ToolTip="How Lock 3D View moves the other live tiles. Own center: each tile turns around the center of its own mugshot framing, so every face stays in frame. Shared pivot: all tiles use the moved tile's exact camera, showing true relative heights."/>
                                                <Separator />
                                                <MenuItem Command="{Binding AddToFavoritesCommand}"> 
                                                    <MenuItem.Style> 
@@ -1266,6 +1273,11 @@
 
                 <GroupBox Header="Zoom Controls" DockPanel.Dock="Right" Margin="10,2,0,2" Padding="5,2">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <!-- Lock 3D View: shown only while 2+ tiles are live. Stretches to
+                             the row's existing height (see Lock3DViewToggleStyle). -->
+                        <ToggleButton Margin="2,0,8,0" Style="{StaticResource Lock3DViewToggleStyle}"
+                                      IsChecked="{Binding LiveTileCameraSync.IsLocked, Mode=TwoWay}"
+                                      Visibility="{Binding HasMultipleLiveTiles, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                         <Button x:Name="ZoomOutButtonMods" Content="-" Width="25" Height="25" Margin="2,0" ToolTip="Zoom Out (Ctrl+Scroll Wheel)"/>
                         <TextBox x:Name="ZoomPercentageTextBoxMods" Width="60" Height="25" Margin="2,0" TextAlignment="Center" VerticalContentAlignment="Center"
                                  Text="{Binding ModsViewZoomLevel, StringFormat='F2', Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"

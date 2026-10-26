@@ -375,6 +375,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
     /// static or the mix is majority-static (ties included); "2D" (make
     /// static) when the majority is already live.</summary>
     [ObservableAsProperty] public string LiveTileToggleLabel { get; }
+    /// <summary>"Lock 3D View" camera sync for this menu's live tiles.</summary>
+    public LiveTileCameraSyncGroup LiveTileCameraSync { get; } = new();
+    /// <summary>True when 2+ visible tiles are live — gates the Lock 3D View toggle.</summary>
+    [ObservableAsProperty] public bool HasMultipleLiveTiles { get; }
     public ReactiveCommand<Unit, Unit> CompareSelectedCommand { get; }
     public ReactiveCommand<Unit, Unit> HideAllSelectedCommand { get; }
     public ReactiveCommand<Unit, Unit> HideAllButSelectedCommand { get; }
@@ -1285,6 +1289,26 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
             .Select(t => t.Live > t.Checked - t.Live ? "2D" : "3D")
             .ObserveOn(RxApp.MainThreadScheduler)
             .ToPropertyEx(this, x => x.LiveTileToggleLabel)
+            .DisposeWith(_disposables);
+
+        // Lock 3D View visibility: same per-tile CombineLatest shape, counting
+        // tiles that are both live and not hidden.
+        this.WhenAnyValue(x => x.CurrentNpcAppearanceMods)
+            .Select(mods =>
+            {
+                if (mods == null || !mods.Any())
+                    return Observable.Return(false);
+
+                return Observable.CombineLatest(mods.Select(m =>
+                        m.WhenAnyValue(x => x.IsLiveTile, x => x.IsVisible,
+                            (live, visible) => live && visible)))
+                    .Select(states => states.Count(s => s) > 1);
+            })
+            .Switch()
+            .StartWith(false)
+            .DistinctUntilChanged()
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .ToPropertyEx(this, x => x.HasMultipleLiveTiles)
             .DisposeWith(_disposables);
 
         ToggleLiveTilesForCheckedCommand = ReactiveCommand

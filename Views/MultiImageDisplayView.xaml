@@ -28,7 +28,8 @@
                       HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                       SizeChanged="ImageDisplayScrollViewer_SizeChanged"
                       PreviewMouseWheel="ScrollViewer_PreviewMouseWheel">
-            <ItemsControl x:Name="ImageItemsControl" ItemsSource="{Binding ImagesToDisplay}">
+            <ItemsControl x:Name="ImageItemsControl" ItemsSource="{Binding ImagesToDisplay}"
+                          local:UC_LiveTileViewport.SyncGroup="{Binding LiveTileCameraSync}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
                         <!-- Using a WrapPanel to arrange images. ActualWidth will be bound to the ScrollViewer's ViewportWidth -->
@@ -42,6 +43,25 @@
                                 Background="LightGray"
                                 Width="{Binding ImageWidth}"
                                 Height="{Binding ImageHeight}">
+                            <!-- Live tiles get a context menu with the Lock 3D View pivot
+                                 rule; static items keep no menu at all. -->
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsLiveTile}" Value="True">
+                                            <Setter Property="ContextMenu">
+                                                <Setter.Value>
+                                                    <ContextMenu>
+                                                        <MenuItem Header="{Binding PlacementTarget.(local:UC_LiveTileViewport.SyncGroup).TogglePivotHeader, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                                  Command="{Binding PlacementTarget.(local:UC_LiveTileViewport.SyncGroup).TogglePivotCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                                  ToolTip="How Lock 3D View moves the other live tiles. Own center: each tile turns around the center of its own mugshot framing, so every face stays in frame. Shared pivot: all tiles use the moved tile's exact camera, showing true relative heights."/>
+                                                    </ContextMenu>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
                             <Grid>
                                 <Image Stretch="Uniform"
                                        ToolTip="{Binding Path=DataContext.ModName, RelativeSource={RelativeSource AncestorType=ItemsControl}}">
@@ -84,6 +104,11 @@
         <!-- Controls Area -->
         <Border Grid.Row="1" Background="#55000000" Padding="8">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <!-- Lock 3D View: shown only while 2+ compared items are live. Stretches
+                     to the row's existing height (see Lock3DViewToggleStyle). -->
+                <ToggleButton Margin="2,0,10,0" Style="{StaticResource Lock3DViewToggleStyle}"
+                              IsChecked="{Binding LiveTileCameraSync.IsLocked, Mode=TwoWay}"
+                              Visibility="{Binding HasMultipleLiveTiles, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                 <Button x:Name="ZoomOutButton" Content="-" Width="30" Height="30" Margin="2,0" ToolTip="Zoom Out (Ctrl+Scroll Wheel)"/>
                 <TextBox x:Name="ZoomPercentageTextBox" Width="70" Height="30" Margin="2,0" TextAlignment="Center" VerticalContentAlignment="Center"
                          Foreground="White" Background="Transparent" BorderBrush="Gray"

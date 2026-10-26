@@ -69,10 +69,36 @@ public partial class UC_LiveTileViewport : UserControl
     private (int W, int H) _msaaSize = (0, 0);
     private const int MsaaSamples = 4;
 
+    /// <summary>
+    /// Inherited attached property: set once on a view's tile container
+    /// (e.g. the mugshot ItemsControl) and every nested live tile picks it up.
+    /// Inheritance is needed because each tile's own DataContext is its
+    /// preview VM, which can't see the hosting view's VM.
+    /// </summary>
+    public static readonly DependencyProperty SyncGroupProperty =
+        DependencyProperty.RegisterAttached(
+            "SyncGroup", typeof(LiveTileCameraSyncGroup), typeof(UC_LiveTileViewport),
+            new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.Inherits,
+                (d, _) => (d as UC_LiveTileViewport)?.UpdateSyncMembership()));
+
+    public static LiveTileCameraSyncGroup? GetSyncGroup(DependencyObject d) =>
+        (LiveTileCameraSyncGroup?)d.GetValue(SyncGroupProperty);
+
+    public static void SetSyncGroup(DependencyObject d, LiveTileCameraSyncGroup? value) =>
+        d.SetValue(SyncGroupProperty, value);
+
+    // The (group, camera) pair this tile is currently registered under.
+    private LiveTileCameraSyncGroup? _joinedGroup;
+    private OrbitCamera? _joinedCamera;
+
     public UC_LiveTileViewport()
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
+        // Sync membership deliberately ignores Loaded/Unloaded: a tab switch
+        // unloads the tiles, and re-joining would record a group-driven pose as
+        // the tile's baseline. The inherited SyncGroup value only goes null when
+        // the tile leaves its container, which is the real "left the group".
         Loaded += (_, _) => TryStartGl();
         GlControl.SizeChanged += (_, _) => TryStartGl();
 
@@ -114,7 +140,51 @@ public partial class UC_LiveTileViewport : UserControl
             _settings = SettingsAccessor.GetSettings();
         }
 
+        UpdateSyncMembership();
         TryStartGl();
+    }
+
+    /// <summary>Registers this tile's camera with the inherited sync group
+    /// (leaving any previous pairing first). Only tiles with a viewer
+    /// participate.</summary>
+    private void UpdateSyncMembership()
+    {
+        var group = GetSyncGroup(this);
+        var camera = group != null ? _viewer?.Camera : null;
+        if (ReferenceEquals(group, _joinedGroup) && ReferenceEquals(camera, _joinedCamera)) return;
+
+        LeaveSyncGroup();
+        if (group != null && camera != null)
+        {
+            group.Join(camera);
+            _joinedGroup = group;
+            _joinedCamera = camera;
+
+            // Joined after the framing already landed (group attached late):
+            // the current, untouched pose IS the framing, so record it now.
+            if (_viewer!.IsSceneReady && !_userAdjustedCamera)
+            {
+                group.SetBaseline(camera);
+            }
+        }
+    }
+
+    private void LeaveSyncGroup()
+    {
+        if (_joinedGroup != null && _joinedCamera != null)
+        {
+            _joinedGroup.Leave(_joinedCamera);
+        }
+        _joinedGroup = null;
+        _joinedCamera = null;
+    }
+
+    private void PublishUserCameraChange()
+    {
+        if (_joinedGroup != null && _joinedCamera != null)
+        {
+            _joinedGroup.PublishUserChange(_joinedCamera);
+        }
     }
 
     private void OnSceneCommitted()
@@ -134,12 +204,28 @@ public partial class UC_LiveTileViewport : UserControl
     /// mesh-aware fit against the output aspect; Manual: the persisted orbit
     /// state — the same branch InternalMugshotGenerator takes). Skipped once
     /// the user has taken over the camera.
+    ///
+    /// In a sync group the framing is always applied first and recorded as
+    /// this tile's baseline (the "original pivot" the group's Original mode
+    /// replays the leader's movement from); only then does a locked group's
+    /// steered view get layered on top. A tile driven by the group stays
+    /// un-"adjusted", so a later commit re-frames and re-adopts consistently.
     /// </summary>
     private void ApplyMugshotFraming()
     {
         if (_viewer == null || _settings == null) return;
         if (_userAdjustedCamera) return;
         if (!_viewer.IsSceneReady) return; // Retried on the next SceneCommitted.
+
+        if (!ApplyOwnFraming()) return;
+        _joinedGroup?.SetBaseline(_viewer.Camera);
+        _joinedGroup?.TryAdoptLockedView(_viewer.Camera);
+    }
+
+    /// <summary>Applies this tile's own framing; false if the fit failed.</summary>
+    private bool ApplyOwnFraming()
+    {
+        if (_viewer == null || _settings == null) return false;
 
         // An explicit pose (Compare window opening a live analogue at the source
         // tile's current angle) wins over the mugshot framing.
@@ -150,7 +236,7 @@ public partial class UC_LiveTileViewport : UserControl
             _viewer.Camera.Distance = pose.Distance;
             _viewer.Camera.Target = new OpenTK.Mathematics.Vector3(
                 pose.TargetX, pose.TargetY, pose.TargetZ);
-            return;
+            return true;
         }
 
         var cfg = _settings.InternalMugshot;
@@ -161,7 +247,7 @@ public partial class UC_LiveTileViewport : UserControl
             _viewer.Camera.Elevation = cfg.ManualElevation;
             _viewer.Camera.Target = new OpenTK.Mathematics.Vector3(
                 cfg.ManualTargetX, cfg.ManualTargetY, cfg.ManualTargetZ);
-            return;
+            return true;
         }
 
         var framing = UC_InternalMugshotPreview.BuildAutoFramingSpec(cfg);
@@ -172,11 +258,13 @@ public partial class UC_LiveTileViewport : UserControl
             // mugshot the tile replaces was framed at the output aspect.
             MeshAwareCameraFitter.ApplyTo(_viewer, framing,
                 Math.Max(1, cfg.OutputWidth), Math.Max(1, cfg.OutputHeight));
+            return true;
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine(
                 "UC_LiveTileViewport: MeshAwareCameraFitter.ApplyTo failed: " + ex.Message);
+            return false;
         }
     }
 
@@ -217,6 +305,12 @@ public partial class UC_LiveTileViewport : UserControl
         {
             _userAdjustedCamera = true;
         }
+        // Capture is held for exactly the orbit/pan drags, so it gates the
+        // mirror (hover moves don't touch the camera).
+        if (GlControl.IsMouseCaptured)
+        {
+            PublishUserCameraChange();
+        }
     }
 
     private void GlControl_MouseUp(object sender, MouseButtonEventArgs e)
@@ -244,6 +338,7 @@ public partial class UC_LiveTileViewport : UserControl
         if (_viewer == null) return;
         _viewer.Camera.OnMouseWheel(e.Delta);
         _userAdjustedCamera = true;
+        PublishUserCameraChange();
         // Keep the wheel from scrolling the mugshot gallery underneath.
         e.Handled = true;
     }
@@ -406,6 +501,8 @@ public partial class UC_LiveTileViewport : UserControl
     /// </summary>
     public void ShutdownGl()
     {
+        LeaveSyncGroup();
+
         try
         {
             GlControl.Context?.MakeCurrent();

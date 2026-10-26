@@ -26,6 +26,12 @@ public class VM_MultiImageDisplay : ReactiveObject, IDisposable
     [Reactive] public bool IsZoomLocked { get; set; } = false;
     [Reactive] public bool HasUserManuallyZoomed { get; set; } = false;
 
+    /// <summary>"Lock 3D View" camera sync for this window's live tiles.</summary>
+    public LiveTileCameraSyncGroup LiveTileCameraSync { get; } = new();
+    /// <summary>True when 2+ compared items are live tiles. Fixed for the
+    /// window's lifetime: the item set and each item's live-ness are snapshots.</summary>
+    public bool HasMultipleLiveTiles { get; }
+
     public ReactiveCommand<Unit, Unit> ZoomInCommand { get; }
     public ReactiveCommand<Unit, Unit> ZoomOutCommand { get; }
     public ReactiveCommand<Unit, Unit> ResetZoomCommand { get; }
@@ -44,6 +50,7 @@ public class VM_MultiImageDisplay : ReactiveObject, IDisposable
         ImagesToDisplay =
             new ObservableCollection<IHasMugshotImage>(images.Where(img =>
                 img.HasMugshot && (img.MugshotSource != null || !string.IsNullOrEmpty(img.ImagePath))));
+        HasMultipleLiveTiles = ImagesToDisplay.OfType<VM_CompareMugshot>().Count(c => c.IsLiveTile) > 1;
 
         // Initialize zoom from settings if desired, e.g.:
         // ZoomLevel = Math.Max(MinZoomPercentage, Math.Min(MaxZoomPercentage, _settings.CompareViewZoomLevel));
