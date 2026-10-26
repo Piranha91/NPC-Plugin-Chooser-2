@@ -1459,8 +1459,6 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             // replacer. AnalyzeModSettingsAsync has now run RefreshNpcLists, so NpcFormKeys
             // is populated and CleanupCorrespondingFolders will produce the correct result.
             await CleanupNewlyCreatedCorrespondingFoldersAsync(splashReporter, analysisFailedVms);
-
-            _aux.SaveRaceCache();
         }
         catch (AggregateException aggEx)
         {

@@ -116,6 +116,12 @@ off by default (one static read per call site), counts locally and publishes onc
   (`C:\Games\Steam\steamapps\common\Skyrim Special Edition\Data`), verified per run; 97 active plugins resolved through
   `modlist.txt` priority, 0 unresolved. Auto-detection was **not** used: this machine's `%LOCALAPPDATA%` `plugins.txt`
   is empty, so it would silently have produced a vanilla-only load order.
+  **Correction (2026-10-26):** that held only for environment construction. Population then constructed `VM_Settings`,
+  whose constructor calls the production `UpdateEnvironment()` and rebuilt the environment from that empty
+  `plugins.txt`: every population measured in this document analysed vanilla + Creation Club (80 plugins), not the
+  profile. Both variants saw the same 80-plugin load order, so the legacy/optimized comparison stands; absolute numbers
+  and the catalogue describe that load order. The harness now constructs `VM_Settings` first, re-applies the profile
+  (`Mo2ProfileEnvironment.Reapply`) and fails the run if the load order changes during population.
 * **Input counts:** 717 mod folders; 162,385 loose `*.nif`/`*.dds` under Meshes/Textures, of which 84,353 FaceGen in 578
   folders; 335 archives associated with entries' plugins (243 BSAs in mod folders, 75 GB, plus Data), 40,126 archive
   FaceGen paths; 1,416 in-memory / 619 persisted mod entries; NPC catalogue 12,509 (cold) / 12,518 (warm).
@@ -162,12 +168,22 @@ runs of a variant from facts that vary between runs of the *same* variant.
 
 **Pre-existing nondeterminism (explains every unstable fact).** A few NPCs are accepted in some runs and rejected in
 others — `0B28A5:Skyrim.esm` (under Base Game, Twisted's High Poly NPC Overhauls, or USSEP) and
-`000D67:EMCompViljaSkyrim.esp` under Vilja Re-Imagined SSE. It happens between two legacy runs as well. Cause:
-`Auxilliary`'s race-validity cache stores `Valid` verdicts but never `InvalidNotInLoadOrder`, and a mod whose
-own plugins supply a race caches it as valid. Whether a mod that lacks that race's plugin is analysed before or after
-such a mod (parallel analysis order) decides whether its NPC passes — e.g. *"Discarded Vilja … because its race
-(000D68:EMCompViljaSkyrim.esp) is not in the current load order"* appears only in some runs. It is analysis-stage
-behaviour outside this change; it is reported here, not fixed.
+`000D67:EMCompViljaSkyrim.esp` under Vilja Re-Imagined SSE. It happens between two legacy runs as well. It is
+analysis-stage behaviour outside this change; it is reported here, not fixed. **Resolved 2026-10-26** — two caches in
+`Auxilliary` were keyed by FormKey alone while their verdicts depended on the calling mod's plugins, so the first mod
+parallel analysis reached decided for every other:
+
+* *Race verdicts.* In the (80-plugin) load order the runs actually used, `EMCompViljaSkyrim.esp` is absent. Mods that
+  ship it supply race `000D68` from their own plugins and cached it `Valid`; Vilja Re-Imagined SSE, which only overrides
+  Vilja, passed if one of them was analysed first and was otherwise rejected as *"not in the current load order"*.
+* *Leveled-terminus verdicts* (`TemplateChainTerminatesInLeveledNpc`). Twisted's `TS - Lawless NPC Overhaul.esp`
+  re-points `0B28A5`'s template at the Leveled NPC `01E771`; Skyrim.esm and USSEP template it on the plain NPC `0B289E`.
+  Whichever of the three was walked first fixed the verdict for all three.
+
+Now race verdicts are cached only for races the load order resolves (a race supplied by the mod's own plugins is judged
+per call), chain verdicts are memoised per mod (`TemplateChainScope`) or, without plugins, only for load-order-only
+walks, and `RaceEvalCache.json` is no longer persisted (deleted by the 2.2.6 migration). Pinned by
+`OrderIndependentNpcVerdictTests`, which forces each case in both orders.
 
 `refresh-all`'s `modSettingsPersisted` read immediately after `RefreshAllModSettingsAsync` returns is 0 or 619 depending
 on timing (the method does not save; an asynchronous save lands shortly after). The manifests, taken moments later,

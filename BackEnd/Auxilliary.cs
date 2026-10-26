@@ -36,19 +36,26 @@ public class Auxilliary : IDisposable
     
     // caches to speed up building
     public Dictionary<FormKey, string> FormIDCache = new();
-    private ConcurrentDictionary<FormKey, RaceEvaluation> _raceValidityCache = new();
 
     /// <summary>
-    /// On-disk cache of per-race appearance verdicts. Whenever the rule in
-    /// <see cref="IsValidAppearanceRace"/> changes, an existing file holds verdicts computed under
-    /// the OLD rule and must be deleted by a version-gated migration — see
-    /// <see cref="DeletePersistedRaceValidityCache"/>.
+    /// Session cache of per-race appearance verdicts, keyed by race FormKey. Holds ONLY verdicts for
+    /// races resolved from the load order, which depend on nothing but the race: a race a mod supplies
+    /// from its own plugins (outside the load order) is judged per call and never cached, because a
+    /// FormKey-only key would hand that verdict to every other mod — including ones that cannot supply
+    /// the race — and so make acceptance depend on parallel analysis order.
+    /// </summary>
+    private readonly ConcurrentDictionary<FormKey, RaceEvaluation> _raceValidityCache = new();
+
+    /// <summary>
+    /// File the race verdicts used to persist to. No longer written or read (a verdict keyed by race
+    /// alone goes stale when the load order changes the winning race record, and the check is cheap);
+    /// kept so the 2.2.6 migration can delete the orphan — see <see cref="DeletePersistedRaceValidityCache"/>.
     /// </summary>
     public const string RaceValidityCacheFileName = "RaceEvalCache.json";
-    private string _raceValidityCacheFileName = RaceValidityCacheFileName;
     
     // Session-scoped cache: true = chain terminates in a Leveled NPC, false = chain is valid.
-    // Keyed by the NPC FormKey whose template link was (or would be) followed.
+    // Keyed by NPC FormKey, so it only ever holds verdicts for chains walked entirely through the load
+    // order — see TemplateChainTerminatesInLeveledNpc.
     private readonly ConcurrentDictionary<FormKey, bool> _leveledNpcChainCache = new();
 
     public static HashSet<string> ValidPluginExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -58,15 +65,11 @@ public class Auxilliary : IDisposable
         ".esl"
     };
     
-    // Serialized to RaceEvalCache.json by ordinal — only ever APPEND members, never reorder or
-    // remove, or an existing cache file silently decodes to the wrong verdicts.
     private enum RaceEvaluation
     {
         Valid,
         InvalidNull,
         InvalidNotInLoadOrder,
-        InvalidNullKeywords, // no longer produced; see IsValidAppearanceRace
-        InvalidNotNpc,       // no longer produced; superseded by InvalidNoFaceGenHead
         /// <summary>Race carries no FaceGen head, so its actors have no customizable face.</summary>
         InvalidNoFaceGenHead,
         /// <summary>Race is Bethesda's DefaultRace placeholder (an "unset" marker, not a real race).</summary>
@@ -102,7 +105,6 @@ public class Auxilliary : IDisposable
         FormIDCache.Clear();
         _raceValidityCache.Clear();
         _leveledNpcChainCache.Clear();
-        LoadRaceCache();
     }
 
     public static bool TryGetName(ITranslatedNamedGetter namedGetter, Language? language, bool fixGarbled, out string name)
@@ -365,7 +367,6 @@ public class Auxilliary : IDisposable
         out string rejectionMessage, out IRaceGetter? resolvedRace, IRaceGetter? sourcePluginRace = null,
         Func<FormKey, INpcGetter?>? resolveNpc = null, Func<FormKey, IRaceGetter?>? resolveRace = null)
     {
-        bool isCached = false;
         rejectionMessage = "";
         resolvedRace = null;
         RaceEvaluation raceEvaluation;
@@ -398,70 +399,11 @@ public class Auxilliary : IDisposable
             }
         }
 
-        using (ContextualPerformanceTracer.Trace("IVAR.CacheCheck1"))
+        using (ContextualPerformanceTracer.Trace("IVAR.Verdict"))
         {
-            isCached = _raceValidityCache.TryGetValue(raceFormKey, out raceEvaluation);
-            // Try Cache first
-            if (isCached && raceEvaluation == RaceEvaluation.Valid)
-            {
-                return true;
-            }
+            raceEvaluation = EvaluateRace(raceFormKey, sourcePluginRace, out resolvedRace);
         }
 
-        if (!isCached)
-        {
-            // new race, had not yet been cached
-            IRaceGetter? raceGetter = null;
-            string identifier = raceFormKey.ToString();
-            using (ContextualPerformanceTracer.Trace("IVAR.NewRace.Resolution"))
-            {
-                if (sourcePluginRace != null)
-                {
-                    raceGetter = sourcePluginRace;
-                    resolvedRace = raceGetter;
-                }
-                else if (raceFormKey.IsNull)
-                {
-                    raceEvaluation = RaceEvaluation.InvalidNull;
-                }
-                else if (!_environmentStateProvider.LinkCache.TryResolve<IRaceGetter>(raceFormKey,
-                             out raceGetter) || raceGetter is null)
-                {
-                    raceEvaluation = RaceEvaluation.InvalidNotInLoadOrder;
-                    resolvedRace = raceGetter;
-                }
-            }
-
-            if (raceGetter is not null)
-            {
-                using (ContextualPerformanceTracer.Trace("IVAR.NewRace.Evaluation"))
-                {
-                    identifier = GetLogString(raceGetter, language, true);
-
-                    if (raceFormKey.Equals(PlaceholderRaceFormKey))
-                    {
-                        raceEvaluation = RaceEvaluation.InvalidPlaceholderRace;
-                    }
-                    else if (!raceGetter.Flags.HasFlag(Race.Flag.FaceGenHead))
-                    {
-                        raceEvaluation = RaceEvaluation.InvalidNoFaceGenHead;
-                    }
-                    else
-                    {
-                        raceEvaluation = RaceEvaluation.Valid;
-                    }
-
-                    // now cache the newly evaluated race
-                    using (ContextualPerformanceTracer.Trace("IVAR.AddToCache"))
-                    {
-                        _raceValidityCache.TryAdd(raceFormKey, raceEvaluation);
-                        Debug.WriteLine(
-                            $"Evaluating validity for new race: {identifier} with result: {raceEvaluation}");
-                    }
-                }
-            }
-        }
-        
         using (ContextualPerformanceTracer.Trace("IVAR.Decision"))
         {
             if (raceEvaluation == RaceEvaluation.Valid)
@@ -498,11 +440,7 @@ public class Auxilliary : IDisposable
                 case RaceEvaluation.InvalidPlaceholderRace:
                     rejectionMessage = "its race is the DefaultRace placeholder, which has no real face.";
                     return false;
-                // InvalidNullKeywords / InvalidNotNpc are no longer produced, but a RaceEvalCache.json
-                // written by an older build can still decode to them; treat them as the same verdict.
                 case RaceEvaluation.InvalidNoFaceGenHead:
-                case RaceEvaluation.InvalidNullKeywords:
-                case RaceEvaluation.InvalidNotNpc:
                     rejectionMessage = $"its race ({RaceLabel()}) has no FaceGen head " +
                                        "(the Race record lacks the FaceGen Head flag).";
                     return false;
@@ -512,22 +450,64 @@ public class Auxilliary : IDisposable
         return true;
     }
     
-    public void SaveRaceCache()
+    /// <summary>
+    /// The verdict on one race, decided only by the race record itself and taken from the load order
+    /// whenever the load order has it.
+    ///
+    /// <para>A race from a plugin outside the load order can be judged only on a record the CALLER
+    /// supplies from its own plugins (<paramref name="suppliedRace"/>) — the selected mod's plugins, or a
+    /// resource folder <c>FindAndAddMissingMasters</c> attached to it, both of which the patcher can merge
+    /// in. That verdict is about the caller, not the FormKey, so it is never cached: a FormKey-keyed
+    /// cache would pass it on to a mod that cannot supply the race at all (which the patcher could then
+    /// not write — the master is in neither the load order nor the mod), and whether that mod's NPC got
+    /// in would depend on which mod parallel analysis happened to reach first.</para>
+    /// </summary>
+    private RaceEvaluation EvaluateRace(FormKey raceFormKey, IRaceGetter? suppliedRace, out IRaceGetter? resolvedRace)
     {
-        string cachePath = Path.Combine(AppContext.BaseDirectory, _raceValidityCacheFileName);
-
-        var filteredCache = _raceValidityCache.Where(x => !x.Key.IsNull); // null formkeys don't serialize correctly
-        
-        JSONhandler<ConcurrentDictionary<FormKey, RaceEvaluation>>.SaveJSONFile(new ConcurrentDictionary<FormKey, RaceEvaluation>(filteredCache), cachePath, out bool success, out string exceptionMessage );
-        if (!success)
+        resolvedRace = null;
+        if (raceFormKey.IsNull)
         {
-            Debug.WriteLine("Exception while saving race cache." + Environment.NewLine + exceptionMessage);
+            return RaceEvaluation.InvalidNull;
         }
+
+        if (_raceValidityCache.TryGetValue(raceFormKey, out var cached))
+        {
+            return cached;
+        }
+
+        if (_environmentStateProvider.LinkCache?.TryResolve<IRaceGetter>(raceFormKey, out var loadOrderRace) == true &&
+            loadOrderRace != null)
+        {
+            resolvedRace = loadOrderRace;
+            var verdict = JudgeRaceRecord(raceFormKey, loadOrderRace);
+            _raceValidityCache.TryAdd(raceFormKey, verdict);
+            return verdict;
+        }
+
+        if (suppliedRace != null)
+        {
+            resolvedRace = suppliedRace;
+            return JudgeRaceRecord(raceFormKey, suppliedRace); // deliberately uncached; see summary
+        }
+
+        return RaceEvaluation.InvalidNotInLoadOrder;
+    }
+
+    private static RaceEvaluation JudgeRaceRecord(FormKey raceFormKey, IRaceGetter race)
+    {
+        if (raceFormKey.Equals(PlaceholderRaceFormKey))
+        {
+            return RaceEvaluation.InvalidPlaceholderRace;
+        }
+
+        return race.Flags.HasFlag(Race.Flag.FaceGenHead)
+            ? RaceEvaluation.Valid
+            : RaceEvaluation.InvalidNoFaceGenHead;
     }
 
     /// <summary>
-    /// Drops the persisted race verdicts so they are recomputed under the current rule. Safe to
-    /// call when the file does not exist; the cache rebuilds lazily and cheaply on the next scan.
+    /// Deletes <see cref="RaceValidityCacheFileName"/>, which builds before 2.2.6 wrote and read back.
+    /// Safe to call when the file does not exist.
     /// </summary>
     public static void DeletePersistedRaceValidityCache()
     {
@@ -541,28 +521,8 @@ public class Auxilliary : IDisposable
         }
         catch (Exception e)
         {
-            // A stale cache degrades the filter but must never block startup.
+            // A leftover file is inert now; failing to delete it must never block startup.
             Debug.WriteLine($"Could not delete {RaceValidityCacheFileName}: {e.Message}");
-        }
-    }
-
-    public void LoadRaceCache()
-    {
-        string cachePath = Path.Combine(AppContext.BaseDirectory, _raceValidityCacheFileName);
-        if (File.Exists(cachePath))
-        {
-            var rawCache = JSONhandler<ConcurrentDictionary<FormKey, RaceEvaluation>>.LoadJSONFile(cachePath, out bool success, out string exceptionMessage );
-            if (!success || rawCache == null)
-            {
-                _raceValidityCache = new();
-                Debug.WriteLine("Exception while loading race cache." + Environment.NewLine + exceptionMessage);
-            }
-            else
-            {
-                var filteredCache = rawCache.Where(x => x.Value != RaceEvaluation.InvalidNotInLoadOrder); // try re-evaluating these races in case they appear in the load order
-                _raceValidityCache = new ConcurrentDictionary<FormKey, RaceEvaluation>(filteredCache);
-                _raceValidityCache.TryAdd(new FormKey(), RaceEvaluation.InvalidNull);
-            }
         }
     }
 
@@ -1179,38 +1139,94 @@ public class Auxilliary : IDisposable
     }
 
     /// <summary>
-    /// Walks the template chain starting from the given NPC and returns true if the chain
-    /// terminates in a Leveled NPC (LVLN record). NPCs whose template chain ends in a
-    /// Leveled NPC cannot have a unique appearance selected for them.
-    /// 
-    /// Results are cached per-session so that overlapping chains (e.g. A→B→C→LVLN then
-    /// D→B→…) short-circuit as soon as they hit an already-evaluated FormKey.
-    /// 
-    /// Resolution order for each link in the chain:
-    ///   1. Search the provided mod plugins (if any).
-    ///   2. Fall back to the environment link cache.
+    /// The plugins a template chain is resolved through (searched before the load order) and the
+    /// verdicts already reached under exactly that resolution. A chain's verdict depends on which
+    /// records its hops resolve to, so it may only be shared between walks that resolve them the same
+    /// way: create ONE scope per mod analysis and pass it to every
+    /// <see cref="TemplateChainTerminatesInLeveledNpc(INpcGetter, TemplateChainScope, int)"/> call for
+    /// that mod. Not thread-safe; a scope belongs to one analysis.
+    /// </summary>
+    public sealed class TemplateChainScope
+    {
+        private readonly IReadOnlyList<ISkyrimModGetter> _plugins;
+        private HashSet<FormKey>? _leveledNpcKeys;
+        private Dictionary<FormKey, INpcGetter>? _npcs;
+
+        public TemplateChainScope(IEnumerable<ISkyrimModGetter>? modPlugins)
+        {
+            _plugins = modPlugins?.ToList() ?? new List<ISkyrimModGetter>();
+        }
+
+        internal bool HasPlugins => _plugins.Count > 0;
+
+        /// <summary>Keyed by hop target: true = the chain from that record terminates in a Leveled NPC.</summary>
+        internal Dictionary<FormKey, bool> Verdicts { get; } = new();
+
+        internal bool IsLeveledNpc(FormKey formKey)
+        {
+            _leveledNpcKeys ??= _plugins.SelectMany(p => p.LeveledNpcs.Select(l => l.FormKey)).ToHashSet();
+            return _leveledNpcKeys.Contains(formKey);
+        }
+
+        internal INpcGetter? ResolveNpc(FormKey formKey)
+        {
+            if (_npcs == null)
+            {
+                _npcs = new Dictionary<FormKey, INpcGetter>();
+                foreach (var plugin in _plugins)
+                {
+                    foreach (var npc in plugin.Npcs)
+                    {
+                        _npcs.TryAdd(npc.FormKey, npc); // first plugin wins, as the per-hop scan did
+                    }
+                }
+            }
+
+            return _npcs.TryGetValue(formKey, out var found) ? found : null;
+        }
+    }
+
+    /// <summary>
+    /// <see cref="TemplateChainTerminatesInLeveledNpc(INpcGetter, TemplateChainScope, int)"/> for a single
+    /// call. Callers judging many NPCs of one mod should hold a <see cref="TemplateChainScope"/> instead,
+    /// so the mod's plugins are indexed once and its verdicts reused.
     /// </summary>
     public bool TemplateChainTerminatesInLeveledNpc(
         INpcGetter npcGetter,
         IEnumerable<ISkyrimModGetter>? modPlugins = null,
         int maxDepth = 50)
     {
+        return TemplateChainTerminatesInLeveledNpc(npcGetter, new TemplateChainScope(modPlugins), maxDepth);
+    }
+
+    /// <summary>
+    /// Walks the template chain starting from the given NPC RECORD and returns true if the chain
+    /// terminates in a Leveled NPC (LVLN record). NPCs whose template chain ends in a
+    /// Leveled NPC cannot have a unique appearance selected for them.
+    ///
+    /// <para>Each hop resolves through the scope's plugins first, then the load order. Verdicts are
+    /// memoised by hop target so overlapping chains (A→B→C→LVLN then D→B→…) short-circuit — in the
+    /// scope when it has plugins, otherwise in a session cache that therefore only ever holds chains
+    /// walked entirely through the load order. The starting record itself is never memoised: two
+    /// plugins of one mod can override the same NPC with different templates. Sharing verdicts across
+    /// mods made one mod's override decide for every other — Twisted's Lawless overhaul re-points
+    /// 0B28A5:Skyrim.esm at a Leveled NPC, and whichever of it, Base Game or USSEP was analysed first
+    /// settled the NPC for all three.</para>
+    /// </summary>
+    public bool TemplateChainTerminatesInLeveledNpc(INpcGetter npcGetter, TemplateChainScope scope, int maxDepth = 50)
+    {
         if (!IsValidTemplatedNpc(npcGetter))
         {
             return false; // Not templated at all — nothing to check
         }
 
-        // Check if this exact NPC was already evaluated
-        if (_leveledNpcChainCache.TryGetValue(npcGetter.FormKey, out var cachedResult))
-        {
-            return cachedResult;
-        }
+        bool TryGetVerdict(FormKey key, out bool verdict) => scope.HasPlugins
+            ? scope.Verdicts.TryGetValue(key, out verdict)
+            : _leveledNpcChainCache.TryGetValue(key, out verdict);
 
-        // Collect every NPC FormKey we visit so we can backfill the cache afterwards
-        var visitedNpcFormKeys = new List<FormKey> { npcGetter.FormKey };
-        var visitedSet = new HashSet<FormKey>();
+        var visitedTargets = new List<FormKey>();
+        var visitedSet = new HashSet<FormKey> { npcGetter.FormKey };
         var templateFormKey = npcGetter.Template.FormKey;
-        var pluginList = modPlugins?.ToList(); // avoid multiple enumeration
         bool result = false; // assume valid until proven otherwise
 
         for (int depth = 0; depth < maxDepth; depth++)
@@ -1220,81 +1236,47 @@ public class Auxilliary : IDisposable
                 break; // null link or cycle detected
             }
 
-            // --- Check the cache for this template FormKey ---
-            if (_leveledNpcChainCache.TryGetValue(templateFormKey, out var cached))
+            if (TryGetVerdict(templateFormKey, out var cached))
             {
                 result = cached;
-                break; // propagate the cached answer to everything upstream
+                break; // propagate the memoised answer to everything upstream
             }
 
-            // --- Try to resolve as a Leveled NPC first (cheapest decisive check) ---
-            bool isLeveled = false;
+            visitedTargets.Add(templateFormKey);
 
-            // Check plugins
-            if (!isLeveled && pluginList != null)
-            {
-                foreach (var plugin in pluginList)
-                {
-                    if (plugin.LeveledNpcs.FirstOrDefault(l => l.FormKey == templateFormKey) != null)
-                    {
-                        isLeveled = true;
-                        break;
-                    }
-                }
-            }
-
-            // Check link cache
-            if (!isLeveled)
-            {
-                isLeveled = _environmentStateProvider.LinkCache
-                    .TryResolve<ILeveledNpcGetter>(templateFormKey, out _);
-            }
-
-            if (isLeveled)
+            // --- Leveled NPC first (cheapest decisive check): the scope's plugins, then the load order ---
+            if (scope.IsLeveledNpc(templateFormKey) ||
+                _environmentStateProvider.LinkCache.TryResolve<ILeveledNpcGetter>(templateFormKey, out _))
             {
                 result = true;
                 break;
             }
 
-            // --- Not a Leveled NPC — try to resolve as a regular NPC and continue walking ---
-            INpcGetter? nextNpc = null;
-
-            // Check plugins first
-            if (pluginList != null)
-            {
-                foreach (var plugin in pluginList)
-                {
-                    nextNpc = plugin.Npcs.FirstOrDefault(n => n.FormKey == templateFormKey);
-                    if (nextNpc != null) break;
-                }
-            }
-
-            // Fall back to link cache
+            // --- Not a Leveled NPC — resolve as a regular NPC and keep walking ---
+            var nextNpc = scope.ResolveNpc(templateFormKey);
             if (nextNpc == null)
             {
                 _environmentStateProvider.LinkCache.TryResolve<INpcGetter>(templateFormKey, out nextNpc);
             }
 
-            if (nextNpc == null)
+            if (nextNpc == null || !IsValidTemplatedNpc(nextNpc))
             {
-                break; // can't resolve further — assume valid
-            }
-
-            // Track this intermediate NPC so it gets cached too
-            visitedNpcFormKeys.Add(nextNpc.FormKey);
-
-            if (!IsValidTemplatedNpc(nextNpc))
-            {
-                break; // chain ends at a non-templated NPC — valid
+                break; // unresolvable (assume valid), or the chain ends at a non-templated NPC (valid)
             }
 
             templateFormKey = nextNpc.Template.FormKey;
         }
 
-        // --- Backfill the cache for every NPC FormKey we visited in this chain ---
-        foreach (var formKey in visitedNpcFormKeys)
+        foreach (var formKey in visitedTargets)
         {
-            _leveledNpcChainCache.TryAdd(formKey, result);
+            if (scope.HasPlugins)
+            {
+                scope.Verdicts.TryAdd(formKey, result);
+            }
+            else
+            {
+                _leveledNpcChainCache.TryAdd(formKey, result);
+            }
         }
 
         return result;

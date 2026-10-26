@@ -90,6 +90,11 @@ public class UpdateHandler
             InvalidateCachesForAppearanceRaceRule_Initial();
         }
 
+        if (settingsVersion < "2.2.6")
+        {
+            InvalidateCachesForContextFreeRaceVerdicts_Initial();
+        }
+
         Debug.WriteLine("Settings update process complete.");
     }
 
@@ -1052,6 +1057,38 @@ public class UpdateHandler
     }
 
     /// <summary>
+    /// One-time (&lt; 2.2.6) invalidation for order-independent NPC acceptance. Before 2.2.6 the race
+    /// verdict cache and the Leveled-terminus chain cache were keyed by FormKey alone, while both
+    /// verdicts can depend on which mod's plugins supplied the record; whichever mod parallel analysis
+    /// reached first decided for the rest. Two places kept such a verdict across launches:
+    /// <list type="number">
+    /// <item>RaceEvalCache.json, which is no longer written or read and is deleted here;</item>
+    /// <item>each mod's analysis snapshot, whose persisted NpcFormKeys a cache hit reuses without
+    ///       re-analysis (how Base Game kept or lost 0B28A5:Skyrim.esm between launches) — nulled so
+    ///       every mod is re-derived once under the order-independent rule;</item>
+    /// <item>the non-appearance mod cache, which would hide a mod every one of whose NPCs was
+    ///       rejected on another mod's verdict.</item>
+    /// </list>
+    /// </summary>
+    private void InvalidateCachesForContextFreeRaceVerdicts_Initial()
+    {
+        Auxilliary.DeletePersistedRaceValidityCache();
+
+        foreach (var modSetting in _settings.ModSettings)
+        {
+            modSetting.LastKnownState = null;
+        }
+
+        int forgottenFolders = _settings.CachedNonAppearanceMods.Count;
+        _settings.CachedNonAppearanceMods.Clear();
+        _settings.CachedMissingMasterMods.Clear(); // keyed on the above; orphans have nothing to describe
+
+        Debug.WriteLine(
+            $"2.2.6: deleted the race verdict cache, invalidated analysis snapshots and cleared {forgottenFolders} " +
+            "cached non-appearance mod folder(s) so NPC acceptance is re-derived independent of analysis order.");
+    }
+
+    /// <summary>
     /// One-time (&lt; 2.2.3) cache invalidation for the rewritten appearance-race rule. 2.2.3
     /// replaced the <c>ActorTypeNPC</c> keyword test with the RACE record's <c>FaceGenHead</c>
     /// flag and moved the test onto the template chain terminus (see
@@ -1444,6 +1481,18 @@ public class UpdateHandler
                 }
 
                 var flaggedForRemoval = new List<(FormKey, string)>();
+                var templateChainScope = new Auxilliary.TemplateChainScope(plugins);
+
+                // Races this mod's own plugins define — the only source, besides the load order, that
+                // IsValidAppearanceRace may judge a race on (it ignores these for races the load order has).
+                var ownRaces = new Dictionary<FormKey, IRaceGetter>();
+                foreach (var plugin in plugins)
+                {
+                    foreach (var race in plugin.Races)
+                    {
+                        ownRaces.TryAdd(race.FormKey, race);
+                    }
+                }
 
                 foreach (var npcFormKey in vm.NpcFormKeys)
                 {
@@ -1456,6 +1505,8 @@ public class UpdateHandler
 
                     if (!aux.IsValidAppearanceRace(npcGetter.Race.FormKey, npcGetter,
                             _settings.LocalizationLanguage, out string rejectionMessage, out var resolvedRace,
+                            sourcePluginRace: ownRaces.GetValueOrDefault(npcGetter.Race.FormKey),
+                            resolveRace: fk => ownRaces.GetValueOrDefault(fk),
                             resolveNpc: fk => npcLookup.TryGetValue(fk, out var own)
                                 ? own
                                 : environmentStateProvider.LinkCache.TryResolve<INpcGetter>(fk, out var g)
@@ -1482,7 +1533,7 @@ public class UpdateHandler
                     // Second check: if the NPC passed the race check, see if its template
                     // chain terminates in a Leveled NPC (these can't have unique appearances).
                     else if (Auxilliary.IsValidTemplatedNpc(npcGetter) &&
-                             aux.TemplateChainTerminatesInLeveledNpc(npcGetter, plugins))
+                             aux.TemplateChainTerminatesInLeveledNpc(npcGetter, templateChainScope))
                     {
                         var logStr = Auxilliary.GetLogString(npcGetter, _settings.LocalizationLanguage, fullString: true);
                         var leveledReason = "its template chain terminates in a Leveled NPC.";

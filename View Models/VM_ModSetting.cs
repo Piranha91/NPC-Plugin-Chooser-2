@@ -1541,7 +1541,9 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                     StartupLogger.Log($"  [{DisplayName}] Caching plugin races");
                     using (ContextualPerformanceTracer.Trace("RefreshNpcLists.CachePluginRaces"))
                     {
-                        // If the plugin is not in the load order, cache its race to pass to downstream evaluation function so it doesn't waste time searching the main link cache for a FormKey that was never there
+                        // Races this mod's plugins define outside the load order. The link cache cannot see
+                        // them, so they are handed to IsValidAppearanceRace as the record to judge; a race the
+                        // load order has is always judged on the load order's record instead.
                         var loadOrderPlugins =
                             _environmentStateProvider.LoadOrderModKeys
                                 .ToHashSet(); // source is IEnumerable; makes sure to convert.
@@ -1603,6 +1605,10 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
 
                         return null;
                     }
+
+                    // One resolution context for every Leveled-terminus check in this mod, so its
+                    // verdicts are shared across this mod's NPCs and never with another mod's.
+                    var templateChainScope = new Auxilliary.TemplateChainScope(plugins);
 
                     INpcGetter? templateResolver(FormKey formKey)
                     {
@@ -1709,7 +1715,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                             // NPCs whose template chain terminates in a Leveled NPC
                             // cannot have a unique appearance selected, so exclude them.
                             if (isValidTemplatedNpc &&
-                                _aux.TemplateChainTerminatesInLeveledNpc(npcGetter, plugins))
+                                _aux.TemplateChainTerminatesInLeveledNpc(npcGetter, templateChainScope))
                             {
                                 string message =
                                     $"Discarded {Auxilliary.GetLogString(npcGetter, language, true)} from {DisplayName} because its template chain terminates in a Leveled NPC.";

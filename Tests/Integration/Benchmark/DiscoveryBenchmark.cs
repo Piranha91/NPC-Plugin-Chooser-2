@@ -127,6 +127,14 @@ public class DiscoveryBenchmark
             using var closer = MessageBoxAutoCloser.Install(dialogs);
             using var harness = new FrontendVmHarness(mo2.Provider, settings);
 
+            // VM_Settings' constructor re-resolves the environment from %LOCALAPPDATA% (see
+            // Mo2ProfileEnvironment.Reapply). Construct it now, outside the measured region, then put the
+            // profile's load order back, and prove it is still the one in force once population is done.
+            Autofac.ResolutionExtensions.Resolve<VM_Settings>(harness.Container);
+            mo2.Reapply();
+            var expectedLoadOrder = mo2.Provider.LoadOrderModKeys.ToList();
+            Assert.Equal((int)result["loadOrderCount"]!, expectedLoadOrder.Count);
+
             if (scenario is "cold" or "warm")
             {
                 var m = await MeasureAsync(() => harness.DriveStartupPopulationAsync());
@@ -164,6 +172,12 @@ public class DiscoveryBenchmark
                     result["targetAfter"] = DescribeEntry(target!);
                 }
             }
+
+            var loadOrderAfter = mo2.Provider.LoadOrderModKeys.ToList();
+            result["loadOrderCountAfterPopulation"] = loadOrderAfter.Count;
+            Assert.True(loadOrderAfter.SequenceEqual(expectedLoadOrder),
+                $"The environment changed during population ({expectedLoadOrder.Count} -> {loadOrderAfter.Count} plugins); " +
+                "the run did not analyse the profile's load order.");
 
             result["modSettingsInMemory"] = harness.ModsVm.AllModSettings.Count;
             result["modSettingsPersisted"] = settings.ModSettings.Count;

@@ -35,6 +35,22 @@ internal sealed class Mo2ProfileEnvironment
     /// <summary>Active profile plugins no folder supplied (the VFS would not have shown them either).</summary>
     public required IReadOnlyList<ModKey> UnresolvedPlugins { get; init; }
 
+    internal required Func<IEnumerable<IModListingGetter<ISkyrimModGetter>>, IEnumerable<IModListingGetter<ISkyrimModGetter>>> Transform { get; init; }
+    internal required string OutputPluginName { get; init; }
+
+    /// <summary>
+    /// Re-resolves <see cref="Provider"/> to this profile's load order. Needed because
+    /// <c>VM_Settings</c>'s constructor calls the production <c>UpdateEnvironment()</c>, which rebuilds the
+    /// environment from <c>%LOCALAPPDATA%</c>'s <c>plugins.txt</c> — on the reference machine that file is
+    /// empty, so every population before this was introduced analysed vanilla + Creation Club (80 plugins)
+    /// instead of the profile (97). Call after the container has constructed <c>VM_Settings</c>.
+    /// </summary>
+    public void Reapply()
+    {
+        Provider.SetEnvironmentTarget(SkyrimRelease.SkyrimSE, GameDataFolder, OutputPluginName);
+        Provider.UpdateEnvironmentForTest(Transform);
+    }
+
     public static bool TryBuild(string instanceRoot, string profileName, string outputPluginName,
         out Mo2ProfileEnvironment? environment, out string failure)
     {
@@ -148,6 +164,8 @@ internal sealed class Mo2ProfileEnvironment
                 EnabledModFolders = enabledMods,
                 ResolvedPlugins = resolved,
                 UnresolvedPlugins = unresolved,
+                Transform = Transform,
+                OutputPluginName = outputPluginName,
             };
             return true;
         }

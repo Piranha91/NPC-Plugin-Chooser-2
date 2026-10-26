@@ -26,9 +26,12 @@ public class EnvironmentStateProvider : ReactiveObject
     private IGameEnvironment<ISkyrimMod, ISkyrimModGetter> _environment;
     private static ILoadOrderGetter<IModListingGetter<ISkyrimModGetter>> _emptyLoadOrder =
         new LoadOrder<IModListingGetter<ISkyrimModGetter>>();
-    public ILoadOrderGetter<IModListingGetter<ISkyrimModGetter>>? LoadOrder => _environment?.LoadOrder ?? _emptyLoadOrder;
+    // Set only by UseInMemoryLoadOrderForTest; null in production.
+    private ILoadOrderGetter<IModListingGetter<ISkyrimModGetter>>? _testLoadOrder;
+    private ILinkCache<ISkyrimMod, ISkyrimModGetter>? _testLinkCache;
+    public ILoadOrderGetter<IModListingGetter<ISkyrimModGetter>>? LoadOrder => _testLoadOrder ?? _environment?.LoadOrder ?? _emptyLoadOrder;
     public IEnumerable<ModKey> LoadOrderModKeys => LoadOrder?.ListedOrder?.Select(m => m.ModKey) ?? new HashSet<ModKey>();
-    public ILinkCache<ISkyrimMod, ISkyrimModGetter>? LinkCache => _environment?.LinkCache;
+    public ILinkCache<ISkyrimMod, ISkyrimModGetter>? LinkCache => _testLinkCache ?? _environment?.LinkCache;
     public SkyrimRelease SkyrimVersion { get; private set; }
     public DirectoryPath ExtraSettingsDataPath { get; set; }
     public DirectoryPath InternalDataPath { get; set; }
@@ -154,6 +157,18 @@ public class EnvironmentStateProvider : ReactiveObject
         Func<IEnumerable<IModListingGetter<ISkyrimModGetter>>, IEnumerable<IModListingGetter<ISkyrimModGetter>>> modListingTransform)
     {
         UpdateEnvironmentCore(modListingTransform);
+    }
+
+    /// <summary>
+    /// Test-only seam. Stands in an in-memory load order (and a link cache over it) for a built
+    /// environment, so record logic that reads only <see cref="LoadOrder"/> / <see cref="LinkCache"/>
+    /// can be exercised deterministically without a game install. Has no production callers.
+    /// </summary>
+    internal void UseInMemoryLoadOrderForTest(LoadOrder<IModListingGetter<ISkyrimModGetter>> loadOrder)
+    {
+        _testLoadOrder = loadOrder;
+        _testLinkCache = loadOrder.ToImmutableLinkCache<ISkyrimMod, ISkyrimModGetter>();
+        Status = EnvironmentStatus.Valid;
     }
 
     private void UpdateEnvironmentCore(
