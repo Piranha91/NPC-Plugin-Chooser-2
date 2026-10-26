@@ -27,7 +27,7 @@ public class PortraitCreator
     private readonly NpcMeshResolver _meshResolver;
     private readonly string _executablePath;
     private string _executableVersion = "0.0.0"; // Default if query fails
-    private readonly SemaphoreSlim _renderSemaphore;
+    private readonly ResizableConcurrencyLimiter _renderSemaphore;
     private static readonly ConcurrentDictionary<(string, string), Task<bool>> _renderTasks = new();
 
     private static readonly ConcurrentQueue<string> _outputBuffer = new ConcurrentQueue<string>();
@@ -45,10 +45,13 @@ public class PortraitCreator
         _meshResolver = meshResolver;
         _executablePath = Path.Combine(AppContext.BaseDirectory, "NPC Portrait Creator", "NPCPortraitCreator.exe");
 
-        // Initialize the semaphore with the value from settings.
-        _renderSemaphore =
-            new SemaphoreSlim(_settings.MaxParallelPortraitRenders, _settings.MaxParallelPortraitRenders);
+        // Sized from settings; resized live by SetMaxParallelRenders (values below 1 become 1).
+        _renderSemaphore = new ResizableConcurrencyLimiter(_settings.MaxParallelPortraitRenders);
     }
+
+    /// <summary>Applies a new Max parallel renders value without a restart; see
+    /// <see cref="ResizableConcurrencyLimiter.SetLimit"/>.</summary>
+    public void SetMaxParallelRenders(int maxParallel) => _renderSemaphore.SetLimit(maxParallel);
     
     /// <summary>
     /// Asynchronously queries the C++ executable for its version number.

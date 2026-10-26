@@ -299,6 +299,7 @@ namespace NPC_Plugin_Chooser_2
 
             builder.RegisterType<InternalMugshotGenerator>().AsSelf().SingleInstance();
             builder.RegisterType<BatchMugshotGenerator>().AsSelf().SingleInstance();
+            builder.RegisterType<NpcMugshotPrewarmer>().AsSelf().SingleInstance();
             builder.RegisterType<MugshotStalenessChecker>().AsSelf().SingleInstance();
             // Effective-outfit simulation (patch-mode plugin level + SkyPatcher/
             // SPID runtime layers) for the character previews and mugshot

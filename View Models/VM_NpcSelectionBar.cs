@@ -26,6 +26,7 @@ using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using Noggog;
 using NPC_Plugin_Chooser_2.BackEnd;
+using NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.Themes;
 using NPC_Plugin_Chooser_2.Views; 
@@ -85,6 +86,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
     private SolidColorBrush NpcIndicatorGreenBrush => Application.Current.Resources["StatusValidForeground"] as SolidColorBrush ?? _fallbackGreenBrush;
     private SolidColorBrush NpcIndicatorPurpleBrush => Application.Current.Resources["SelectionNoDataBrush"] as SolidColorBrush ?? _fallbackPurpleBrush;
     private SolidColorBrush NpcIndicatorRedBrush => Application.Current.Resources["StatusErrorForeground"] as SolidColorBrush ?? _fallbackRedBrush;
+    private readonly Lazy<NpcMugshotPrewarmer> _lazyPrewarmer;
     private HashSet<string> _hiddenModNames = new();
     private Dictionary<FormKey, HashSet<string>> _hiddenModsPerNpc = new();
     private Dictionary<FormKey, List<(string ModName, string ImagePath)>> _downloadedMugshotData = new();
@@ -434,9 +436,13 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
         VM_ModSetting.FromModelFactory modSettingFromModelFactory,
         PluginProvider pluginProvider,
         RecordHandler recordHandler,
-        Lazy<VM_Settings> lazyVmSettings)
+        Lazy<VM_Settings> lazyVmSettings,
+        Lazy<NpcMugshotPrewarmer> lazyPrewarmer)
     {
         _lazyVmSettings = lazyVmSettings;
+        // Lazy: the prewarmer reaches the offscreen renderer, whose creation is pinned
+        // to a specific point of start-up on the UI thread.
+        _lazyPrewarmer = lazyPrewarmer;
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
         _auxilliary = auxilliary;
@@ -770,6 +776,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
                 // must cancel the old batch and mint a fresh token.
                 _generationTilesDirty = true;
                 Debug.WriteLine($"[NpcPerf] T+{SelectionPerfSw.ElapsedMilliseconds}ms CurrentNpcAppearanceMods bound (count={vms.Count})");
+
+                // Warm the next NPC's tiles once this one's renders are done (the
+                // prewarmer waits for the renderer to go idle). Replaces any pending
+                // prewarm for the previous selection.
+                ScheduleNextNpcPrewarm();
 
                 // Opt-in memory sample, one row per NPC switch (no-op unless LogMemory.txt is present).
                 // Placed after the previous NPC's tiles are disposed so the sample reflects the steady state
@@ -3942,25 +3953,17 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
             finalModVMs.Add(vmKey, appearanceVM);
         }
 
-        // --- Source 1: Standard appearances from the NPC's game data ---
+        // --- Sources 1 and 2: standard appearances from the NPC's game data, then guest
+        // appearances from settings (LocalAppearanceSources, shared with the next-NPC prewarm) ---
         int source1Count = 0;
-        foreach (var modSetting in selectionVm.AppearanceMods)
+        int source2Count = 0;
+        foreach (var source in LocalAppearanceSources(selectionVm))
         {
-            CreateVmIfNotExists(modSetting.DisplayName, targetNpcFormKey, sourceCategory: "Saved Mod Setting");
-            source1Count++;
+            CreateVmIfNotExists(source.ModName, source.SourceKey, source.OverrideName, sourceCategory: source.Category);
+            if (source.Category == GuestSourceCategory) source2Count++;
+            else source1Count++;
         }
         _eventLogger.Log($"Found {source1Count} saved appearance mods.", "SOURCE 1");
-
-        // --- Source 2: Guest appearances from settings ---
-        int source2Count = 0;
-        if (_settings.GuestAppearances.TryGetValue(targetNpcFormKey, out var guestList))
-        {
-            foreach (var guest in guestList)
-            {
-                CreateVmIfNotExists(guest.ModName, guest.NpcFormKey, guest.NpcDisplayName, sourceCategory: "Guest/Shared");
-                source2Count++;
-            }
-        }
         _eventLogger.Log($"Found {source2Count} guest appearance assignments.", "SOURCE 2");
 
         // --- Source 3: All other mugshots from the cache for this NPC ---
@@ -4468,6 +4471,72 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
         var sw = Stopwatch.StartNew();
         while (!condition() && sw.ElapsedMilliseconds < maxMs && !token.IsCancellationRequested)
             await Task.Delay(100, token);
+    }
+
+    private const string GuestSourceCategory = "Guest/Shared";
+
+    /// <summary>Sources 1 and 2 of <see cref="CreateMugShotViewModelsAsync"/>, in its order: the
+    /// NPC's own appearance mods, then its guest appearances. These are the only tiles with local
+    /// data a renderer can draw; mugshot-folder matches show their image and FaceFinder-only
+    /// entries have no local data. Shared with the next-NPC prewarm so both see the same tiles.</summary>
+    private IEnumerable<(string ModName, FormKey SourceKey, string? OverrideName, string Category)>
+        LocalAppearanceSources(VM_NpcsMenuSelection selectionVm)
+    {
+        foreach (var modSetting in selectionVm.AppearanceMods)
+            yield return (modSetting.DisplayName, selectionVm.NpcFormKey, null, "Saved Mod Setting");
+        if (_settings.GuestAppearances.TryGetValue(selectionVm.NpcFormKey, out var guestList))
+        {
+            foreach (var guest in guestList)
+                yield return (guest.ModName, guest.NpcFormKey, guest.NpcDisplayName, GuestSourceCategory);
+        }
+    }
+
+    /// <summary>The next NPC's tiles that would need a render, in display order (native mod
+    /// first, then by name, as CreateMugShotViewModelsAsync sorts). Skips hidden mods and tiles
+    /// with a curated mugshot; BatchMugshotGenerator.PrewarmTileIfNeededAsync filters fresh
+    /// autogen / FaceFinder images per tile.</summary>
+    private List<PrewarmTile> NextNpcPrewarmTiles(VM_NpcsMenuSelection next)
+    {
+        var target = next.NpcFormKey;
+        _hiddenModsPerNpc.TryGetValue(target, out var hiddenForNpc);
+        var seen = new HashSet<(string, FormKey)>();
+        var candidates = new List<(PrewarmTile Tile, bool Native)>();
+        foreach (var source in LocalAppearanceSources(next))
+        {
+            if (!seen.Add((source.ModName.ToLowerInvariant(), source.SourceKey))) continue;
+            if (_hiddenModNames.Contains(source.ModName) || (hiddenForNpc?.Contains(source.ModName) ?? false)) continue;
+            var mod = _lazyModsVm.Value.AllModSettings.FirstOrDefault(
+                m => m.DisplayName.Equals(source.ModName, StringComparison.OrdinalIgnoreCase));
+            if (mod == null) continue;
+            if (GetImagePathForNpc(mod, source.SourceKey, _downloadedMugshotData, target) != null) continue;
+            candidates.Add((new PrewarmTile(source.SourceKey, mod, target),
+                mod.CorrespondingModKeys.Contains(target.ModKey)));
+        }
+        return candidates
+            .OrderByDescending(c => c.Native)
+            .ThenBy(c => c.Tile.Mod.DisplayName)
+            .ThenBy(c => c.Tile.SourceNpc.ToString())
+            .Select(c => c.Tile)
+            .ToList();
+    }
+
+    /// <summary>Hands the next NPC in the list to the prewarmer (replacing any pending
+    /// prewarm) and triggers the one-time start-up warm-up. Never throws.</summary>
+    private void ScheduleNextNpcPrewarm()
+    {
+        try
+        {
+            var prewarmer = _lazyPrewarmer.Value;
+            prewarmer.WarmUpOnce();
+            var current = SelectedNpc;
+            int idx = current != null ? FilteredNpcs.IndexOf(current) : -1;
+            var next = idx >= 0 && idx < FilteredNpcs.Count - 1 ? FilteredNpcs[idx + 1] : null;
+            prewarmer.Schedule(next != null ? NextNpcPrewarmTiles(next) : Array.Empty<PrewarmTile>());
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"ScheduleNextNpcPrewarm failed: {ex.Message}");
+        }
     }
 
     private void TriggerAsyncMugshotGeneration()

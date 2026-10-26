@@ -1110,6 +1110,14 @@ public sealed class InternalMugshotSettings
     // into the schema-v20 settings hash. See TextureUploadPolicy.
     public bool UseCompressedTextures { get; set; } = true;
 
+    // Background warm-ups (performance only; never change pixels). Both are
+    // memory-gated: skipped while free RAM is below NpcMugshotPrewarmer's headroom.
+    // PrewarmNextNpcMugshots: once the current NPC's tiles are done, warm the CPU
+    // caches for the next NPC in the list. WarmUpRendererAtStartup: open the BSA
+    // index in the background after start-up instead of on the first render.
+    public bool PrewarmNextNpcMugshots { get; set; } = true;
+    public bool WarmUpRendererAtStartup { get; set; } = true;
+
     // Warning-icon visibility. Each gates one mugshot-tile warning icon AND
     // whether its backing state is stamped into the PNG metadata at render
     // time, so a mugshot generated while a toggle is off carries no trace of

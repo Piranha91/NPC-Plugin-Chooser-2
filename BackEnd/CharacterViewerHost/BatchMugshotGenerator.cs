@@ -559,6 +559,36 @@ public sealed class BatchMugshotGenerator
     /// not the checker).</summary>
     public void ResetMissingAssetRerenderClaims() => _stalenessChecker.ResetMissingAssetRerenderClaims();
 
+    /// <summary>Internal-renderer GenerateAsync calls queued or running.</summary>
+    public int InFlightRenders => _internalGenerator.InFlightRenders;
+
+    /// <summary>Opens the BSA index ahead of the first render (idempotent).</summary>
+    public void EnsureArchivesOpened() => _bsaAdapter.EnsureAllArchivesOpened();
+
+    /// <summary>Warms the renderer's CPU caches for one NPCs-menu tile that would need a
+    /// render: auto-generation on, the Internal renderer selected, and no fresh autogen
+    /// or cached FaceFinder image (the tile would show those instead). Curated mugshots
+    /// are filtered by the caller. Returns true when a prewarm ran.</summary>
+    public async Task<bool> PrewarmTileIfNeededAsync(
+        FormKey npcFormKey, VM_ModSetting modSetting, FormKey? targetNpcFormKey, CancellationToken token)
+    {
+        if (modSetting == null) return false;
+        if (!_settings.UsePortraitCreatorFallback || _settings.SelectedRenderer != MugshotRenderer.Internal) return false;
+        if (TryGetExistingFreshAutoGenPath(npcFormKey, modSetting, out _, targetNpcFormKey)) return false;
+        if (TryGetExistingFreshFaceFinderPath(npcFormKey, modSetting.DisplayName, out _)) return false;
+        var sourceMod = _settings.ModSettings.FirstOrDefault(m => m.DisplayName == modSetting.DisplayName);
+        return await _internalGenerator.PrewarmTileAsync(npcFormKey, sourceMod, targetNpcFormKey, token)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>Applies a new Max parallel renders value to both renderers without a restart
+    /// (VM_Settings has this generator injected, not the renderers).</summary>
+    public void SetMaxParallelRenders(int maxParallel)
+    {
+        _internalGenerator.SetMaxParallelRenders(maxParallel);
+        _portraitCreator.SetMaxParallelRenders(maxParallel);
+    }
+
     public bool ExistingAutoGenHasMissingAssets(FormKey npcFormKey, VM_ModSetting modSetting)
     {
         if (modSetting == null) return false;

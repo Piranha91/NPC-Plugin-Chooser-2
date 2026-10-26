@@ -49,6 +49,8 @@ public class MugshotSettingsHashCoverageTests
                                           "suffix (+wigtint) instead",
         ["IncludeDefaultOutfit"] = "hashed via the effective-attire parameter (per-NPC override aware)",
         ["IncludeHeadgear"] = "hashed via the effective-attire parameter (per-NPC override aware)",
+        ["PrewarmNextNpcMugshots"] = "background cache warm-up; performance only",
+        ["WarmUpRendererAtStartup"] = "background archive warm-up; performance only",
         ["UseCompressedTextures"] = "hashed via the EFFECTIVE process policy (TextureUploadPolicy, v20): " +
                                     "an env var or DdsMaxFinalMip.txt can override the setting, " +
                                     "so the field alone would name the wrong route",

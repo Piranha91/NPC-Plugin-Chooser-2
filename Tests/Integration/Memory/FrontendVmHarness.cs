@@ -98,6 +98,7 @@ public sealed class FrontendVmHarness : IDisposable
 
         builder.RegisterType<InternalMugshotGenerator>().AsSelf().SingleInstance();
         builder.RegisterType<BatchMugshotGenerator>().AsSelf().SingleInstance();
+        builder.RegisterType<NpcMugshotPrewarmer>().AsSelf().SingleInstance();
         builder.RegisterType<MugshotStalenessChecker>().AsSelf().SingleInstance();
         builder.RegisterType<NPC_Plugin_Chooser_2.BackEnd.OutfitDistribution.OutfitDisplayResolver>()
             .AsSelf().SingleInstance();

@@ -876,6 +876,23 @@
                                   Width="260" />
                     </StackPanel>
 
+                    <!-- Render concurrency: shared by both renderers (Internal's render-slot
+                         limit, Legacy's subprocess limit). Applied live through
+                         BatchMugshotGenerator.SetMaxParallelRenders. Theme setters mirror the
+                         DoubleUpDown style in the Internal panel, which doesn't reach here. -->
+                    <StackPanel Orientation="Horizontal" Margin="15,5,0,5"
+                                Visibility="{Binding UsePortraitCreatorFallback, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <TextBlock Text="Max parallel renders:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <xctk:IntegerUpDown Value="{Binding MaxParallelPortraitRenders, Mode=TwoWay}"
+                                            Minimum="1" Maximum="32" Increment="1"
+                                            Width="70" VerticalAlignment="Center"
+                                            Background="{DynamicResource TextBoxBackground}"
+                                            Foreground="{DynamicResource PrimaryForeground}"
+                                            BorderBrush="{DynamicResource BorderBrush}"
+                                            CaretBrush="{DynamicResource PrimaryForeground}"
+                                            ToolTip="How many mugshots may be generated at once, for either renderer. Higher values can finish batches sooner on CPUs with many cores but use more RAM and can slow everything down once the CPU is saturated; lower values reduce system load. Takes effect immediately: raising it starts queued renders right away, lowering it lets in-flight renders finish first."/>
+                    </StackPanel>
+
                     <!-- Auto-Generated Mugshots folder selector -->
                     <StackPanel Margin="15,5,0,5"
                                 Visibility="{Binding UsePortraitCreatorFallback, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -1117,6 +1134,17 @@
                                       Margin="0,6,0,0"
                                       ToolTip="On (default): textures go to the GPU in their compressed formats with the mod's own mip levels, skipping CPU decoding. About twice as fast on high-poly mods and uses much less RAM; differences are sub-visible, mostly a few pixels at hair-strand edges. Off: textures are decoded on the CPU first (the older route). Applies to mugshots and the 3D preview after restarting. Changing it re-renders only mugshots made with the other setting since this option was added."/>
 
+                            <!-- Background warm-ups (NpcMugshotPrewarmer). Performance only;
+                                 both skip themselves when free RAM is low. -->
+                            <CheckBox Content="Prepare the next NPC's mugshots in advance"
+                                      IsChecked="{Binding MugshotPrewarmNextNpc, Mode=TwoWay}"
+                                      Margin="0,4,0,0"
+                                      ToolTip="When the current NPC's mugshots are done, loads the meshes and textures for the next NPC in the list in the background, so its mugshots appear faster when you move to it. Uses spare CPU and RAM only while nothing is rendering, and skips itself when free memory is below 4 GB or a quarter of your RAM. Doesn't change the images."/>
+                            <CheckBox Content="Warm up the renderer at start-up"
+                                      IsChecked="{Binding MugshotWarmUpAtStartup, Mode=TwoWay}"
+                                      Margin="0,4,0,0"
+                                      ToolTip="Prepares the archive index in the background after start-up, a one-time cost otherwise paid by the first NPC whose mugshots are generated. Skipped when free memory is low. Takes effect on the next start-up. Doesn't change the images."/>
+
                             <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                                 <StackPanel.Style>
                                     <Style TargetType="StackPanel">
@@ -1268,17 +1296,7 @@
                             </Style>
                         </Border.Style>
                         <StackPanel>
-                            <TextBlock Text="Max Parallel Portrait Renders" FontWeight="Bold" Margin="0,5,0,0"/>
-                            <TextBlock TextWrapping="Wrap" Margin="0,0,0,5" Opacity="0.8">
-                                Controls how many CPU-intensive portrait generation processes can run at once.
-                                Lower values reduce system load during image generation.
-                            </TextBlock>
-                            <TextBox Text="{Binding MaxParallelPortraitRenders}" 
-                                     Width="60" HorizontalAlignment="Left"
-                                     PreviewTextInput="IntegerTextBox_PreviewTextInput"
-                                     DataObject.Pasting="IntegerTextBox_Pasting" />
-
-                            <TextBlock Text="Mugshot Background Color" FontWeight="Bold" Margin="0,15,0,0"/>
+                            <TextBlock Text="Mugshot Background Color" FontWeight="Bold" Margin="0,5,0,0"/>
                             <StackPanel Orientation="Horizontal" Margin="0,2,0,5">
                                 <Border BorderBrush="Black" BorderThickness="1" Width="100" Height="25"
                                         Background="{Binding MugshotBackgroundColor}" CornerRadius="2"/>

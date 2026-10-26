@@ -41,8 +41,9 @@ public sealed class InternalMugshotGenerator
     // and queued jobs into memory while the single render thread drains them
     // one at a time. Gating the whole method caps that backlog. Sized from
     // MaxParallelPortraitRenders to match the Legacy PortraitCreator's own
-    // render semaphore (and the comment in GenerateAsync's diagnostics).
-    private readonly SemaphoreSlim _renderSemaphore;
+    // render semaphore (and the comment in GenerateAsync's diagnostics), and
+    // resized live by SetMaxParallelRenders when the setting changes.
+    private readonly ResizableConcurrencyLimiter _renderSemaphore;
 
     public InternalMugshotGenerator(
         NpcMeshResolver resolver,
@@ -55,7 +56,8 @@ public sealed class InternalMugshotGenerator
         GeneratedMugshotTracker tracker,
         CharacterViewerLogGate logGate,
         Lazy<VM_NpcSelectionBar> npcSelectionBar,
-        FaceGenConsistencyAnalyzer faceGenConsistency)
+        FaceGenConsistencyAnalyzer faceGenConsistency,
+        CharacterPreviewCache previewCache)
     {
         _resolver = resolver;
         _renderer = renderer;
@@ -69,17 +71,19 @@ public sealed class InternalMugshotGenerator
         _npcSelectionBar = npcSelectionBar;
         _faceGenConsistency = faceGenConsistency;
 
-        // Math.Max(1, ...) guards a misconfigured 0/negative setting from
-        // deadlocking every render. Captured once at construction (matching
-        // PortraitCreator); a runtime change takes effect on next launch.
-        int maxParallel = Math.Max(1, _settings.MaxParallelPortraitRenders);
-        _renderSemaphore = new SemaphoreSlim(maxParallel, maxParallel);
+        // The limiter clamps a misconfigured 0/negative setting to 1 so it can't
+        // deadlock every render. Later changes arrive via SetMaxParallelRenders.
+        _renderSemaphore = new ResizableConcurrencyLimiter(_settings.MaxParallelPortraitRenders);
 
         // On an environment rebuild (game path / load order change) the renderer's
         // cached resolved paths, decoded pixels, and uploaded GL textures may be
         // stale — drop them so subsequent renders re-resolve against the new
         // environment. Singleton, so the subscription lives for the app's life.
         _env.OnEnvironmentUpdated.Subscribe(_ => _renderer.InvalidateCaches());
+
+        // Per-decode attribution beside RenderTimings.csv (same opt-in trigger).
+        if (RenderTimingsEnabled)
+            previewCache.DecodeObserver = WriteDecodeEventCsv;
     }
 
     /// <summary>
@@ -144,18 +148,26 @@ public sealed class InternalMugshotGenerator
         // CharacterViewerLogGate.Verbose on for the duration so the renderer
         // emits its own [CharacterViewer] verbose lines.
         using var captureScope = MaybeStartRenderLogCapture(npcFormKey, modSetting);
+        // Flows into the prewarm worker (Task.Run carries the ExecutionContext) so
+        // DecodeEvents.csv can name the tile; the dedicated GL thread sees null.
+        _currentTile.Value = (modSetting?.DisplayName ?? "(none)", npcFormKey.ToString());
         Trace($"ENTER tid={tid} npc={npcFormKey} mod=[{modSetting?.DisplayName ?? "(none)"}]");
         bool acquired = false;
+        // Queued or running; the next-NPC prewarm only works while this is zero.
+        Interlocked.Increment(ref _inFlightRenders);
         try
         {
             // Acquire before any resolve/extraction work so the in-flight
             // backlog (not just the GL render) stays bounded. WaitAsync throws
             // OCE if cancelled before a slot frees — caught below, returns
             // false, and the finally skips Release since acquired is still false.
+            // Host-side phase split for RenderTimings.csv (wall ms on this flow).
+            var host = new HostPhases();
             long preAcquire = sw.ElapsedMilliseconds;
             await _renderSemaphore.WaitAsync(token).ConfigureAwait(false);
             acquired = true;
-            Trace($"  acquired-slot tid={Environment.CurrentManagedThreadId} waited={sw.ElapsedMilliseconds - preAcquire}ms");
+            host.SlotWaitMs = sw.ElapsedMilliseconds - preAcquire;
+            Trace($"  acquired-slot tid={Environment.CurrentManagedThreadId} waited={host.SlotWaitMs}ms");
 
             var linkCache = _env.LinkCache;
             if (linkCache == null) { Trace($"EXIT tid={tid} npc={npcFormKey} no-linkcache elapsed={sw.ElapsedMilliseconds}ms"); return false; }
@@ -164,7 +176,9 @@ public sealed class InternalMugshotGenerator
             // its plugins (LinkCache.Winner fallback for anything the mod
             // doesn't override) and asset paths get rebased to mod folders
             // when present.
+            long preResolve = sw.ElapsedMilliseconds;
             var paths = _resolver.Resolve(npcFormKey, modSetting);
+            host.ResolveMs = sw.ElapsedMilliseconds - preResolve;
             Trace($"  resolve tid={tid} npc={npcFormKey} ok={paths != null} elapsed={sw.ElapsedMilliseconds}ms");
             if (paths == null) { Trace($"EXIT tid={tid} npc={npcFormKey} resolve-null elapsed={sw.ElapsedMilliseconds}ms"); return false; }
 
@@ -175,7 +189,8 @@ public sealed class InternalMugshotGenerator
             // and would otherwise block the UI thread that triggered the call.
             long preEnsure = sw.ElapsedMilliseconds;
             await Task.Run(() => _bsa.EnsureAllArchivesOpened(), token).ConfigureAwait(false);
-            Trace($"  EnsureAllArchivesOpened tid={Environment.CurrentManagedThreadId} elapsed={sw.ElapsedMilliseconds - preEnsure}ms");
+            host.ArchivesMs = sw.ElapsedMilliseconds - preEnsure;
+            Trace($"  EnsureAllArchivesOpened tid={Environment.CurrentManagedThreadId} elapsed={host.ArchivesMs}ms");
 
             // No FaceGen anywhere in this mod's scope: rendering would produce a
             // headless body, since every other mesh (body / hands / skin) resolves
@@ -187,7 +202,10 @@ public sealed class InternalMugshotGenerator
             // above) follows the template chain and finds the face the game draws
             // for it. Only a chain that can't be followed (Leveled-NPC terminus,
             // dangling link) or a genuinely FaceGen-less NPC lands here.
-            if (!_resolver.FaceGenExists(npcFormKey, modSetting))
+            long preFaceGen = sw.ElapsedMilliseconds;
+            bool faceGenExists = _resolver.FaceGenExists(npcFormKey, modSetting);
+            host.FaceGenCheckMs = sw.ElapsedMilliseconds - preFaceGen;
+            if (!faceGenExists)
             {
                 Trace($"EXIT tid={Environment.CurrentManagedThreadId} npc={npcFormKey} no-facegen totalElapsed={sw.ElapsedMilliseconds}ms");
                 return false;
@@ -218,9 +236,11 @@ public sealed class InternalMugshotGenerator
             // head-slot armature as headgear. The tile flags the wig gap on its has-wig
             // badge; the live 3D preview stays output-faithful and does not pass this.
             // (Batch generation routes through here too.)
+            long preAttire = sw.ElapsedMilliseconds;
             var meshOverrides = _resolver.ResolveAttireMeshOverrides(
                 npcFormKey, modSetting, effectiveIncludeDefaultOutfit, effectiveIncludeHeadgear,
                 targetNpcFormKey, out var outfitDisplay, alwaysRenderOutfitWigsAndAntlers: true);
+            host.AttireMs = sw.ElapsedMilliseconds - preAttire;
             var meshOverrideWarningsOut = new List<MeshOverrideWarning>();
             // Attire (outfit/headgear) textures the override build couldn't decode.
             // The renderer attributes these as the post-override delta of its
@@ -238,6 +258,10 @@ public sealed class InternalMugshotGenerator
             // next to the exe). Pure data, no logging — so timings are
             // representative with the verbose render trace OFF.
             var renderTimings = RenderTimingsEnabled ? new RenderTimings() : null;
+
+            long preScopes = sw.ElapsedMilliseconds;
+            var resolutionScopes = _resolver.BuildResolutionScopes(modSetting, npcFormKey);
+            host.ScopesMs = sw.ElapsedMilliseconds - preScopes;
 
             var request = new OffscreenRenderRequest
             {
@@ -261,7 +285,7 @@ public sealed class InternalMugshotGenerator
                 // in two phases (all loose, then all scoped BSA) per the
                 // 8-step contract. AdditionalScopes (1.2.0+) supersedes
                 // AdditionalDataFolders.
-                AdditionalScopes = _resolver.BuildResolutionScopes(modSetting, npcFormKey),
+                AdditionalScopes = resolutionScopes,
                 // Engine-order resolution (2.8.0+): after the scope chain and
                 // data-folder loose, EVERY asset may fall back to the broadcast
                 // archive tier (enabled load-order plugins' data-folder BSAs,
@@ -348,9 +372,18 @@ public sealed class InternalMugshotGenerator
             byte[] png = await _renderer.RenderToPngAsync(request).ConfigureAwait(false);
             long hostRenderMs = sw.ElapsedMilliseconds - preRender;
             Trace($"  RenderToPngAsync tid={Environment.CurrentManagedThreadId} bytes={png.Length} elapsed={hostRenderMs}ms");
-            if (renderTimings != null)
-                WriteRenderTimingsCsv(npcFormKey, modSetting, renderTimings, hostRenderMs, png.Length,
-                    prewarmWallMs: preRender - prePrewarm, hostElapsedMs: sw.ElapsedMilliseconds);
+            host.PrewarmWallMs = preRender - prePrewarm;
+            host.RenderMs = hostRenderMs;
+            long postRenderStart = sw.ElapsedMilliseconds;
+            // Written at each exit below so post-render work (consistency check,
+            // PNG write, metadata stamp) is included.
+            void LogTimings()
+            {
+                if (renderTimings == null) return;
+                host.PostRenderMs = sw.ElapsedMilliseconds - postRenderStart;
+                WriteRenderTimingsCsv(npcFormKey, modSetting, renderTimings, host, png.Length,
+                    hostElapsedMs: sw.ElapsedMilliseconds);
+            }
 
             // Asset-validation gate (batch only). The renderer doesn't expose
             // an early-abort hook for missing assets — the lists are populated
@@ -362,6 +395,7 @@ public sealed class InternalMugshotGenerator
             int missingTextureCount = missingTexturePathsOut?.Count ?? 0;
             if (assetValidatedOnly && (missingMeshCount > 0 || missingTextureCount > 0))
             {
+                LogTimings();
                 Trace($"EXIT tid={Environment.CurrentManagedThreadId} npc={npcFormKey} skipped-missing-assets meshes={missingMeshCount} textures={missingTextureCount} totalElapsed={sw.ElapsedMilliseconds}ms");
                 return false;
             }
@@ -407,6 +441,14 @@ public sealed class InternalMugshotGenerator
             // Base Game / Creation Club tiles badge-free). Vanilla index paths
             // use backslash separators (OrdinalIgnoreCase), so normalize
             // before membership testing.
+            // Hits an earlier next-NPC prewarm recorded for this tile (its own request);
+            // this render may have found those assets cached without re-resolving them.
+            if (_prewarmFallbackHits.TryRemove(TileKey(npcFormKey, modSetting, targetNpcFormKey), out var prewarmed))
+            {
+                foreach (var hit in prewarmed)
+                    if (!dataFolderFallbackRaw.Contains(hit, StringComparer.OrdinalIgnoreCase))
+                        dataFolderFallbackRaw.Add(hit);
+            }
             var dataFolderAssets = new List<string>();
             if (dataFolderFallbackRaw.Count > 0)
             {
@@ -510,6 +552,7 @@ public sealed class InternalMugshotGenerator
             // save so a subsequent abnormal exit (debugger stop, crash, OS
             // shutdown) doesn't lose the cache entry.
             _tracker.Track(outputPath);
+            LogTimings();
             Trace($"EXIT tid={Environment.CurrentManagedThreadId} npc={npcFormKey} ok totalElapsed={sw.ElapsedMilliseconds}ms");
             return true;
         }
@@ -538,8 +581,82 @@ public sealed class InternalMugshotGenerator
         finally
         {
             if (acquired) _renderSemaphore.Release();
+            Interlocked.Decrement(ref _inFlightRenders);
         }
     }
+
+    private int _inFlightRenders;
+
+    /// <summary>GenerateAsync calls queued or running (any tile, any caller).</summary>
+    public int InFlightRenders => Volatile.Read(ref _inFlightRenders);
+
+    // Data-folder-fallback hits captured by PrewarmTileAsync, merged into that tile's
+    // render. The renderer records hits per request; a separate prewarm request warms
+    // the caches, so the real render may resolve those assets from cache and never
+    // re-record them. Keyed by (source NPC, mod, target NPC).
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<(FormKey Npc, string Mod, FormKey? Target), string[]>
+        _prewarmFallbackHits = new();
+
+    private static (FormKey, string, FormKey?) TileKey(FormKey npc, ModSetting? mod, FormKey? target)
+        => (npc, mod?.DisplayName ?? "", target);
+
+    /// <summary>
+    /// Warms the renderer's CPU caches (NIF parse, transparency verdicts, any decode the
+    /// upload will need) for one tile without rendering it, so a later GenerateAsync of
+    /// the same tile pays only GL upload, draw and encode. Mirrors GenerateAsync's
+    /// pre-render steps and the request fields <see cref="IOffscreenRenderer.PrewarmAsync"/>
+    /// reads. Takes no render slot: callers schedule it only while the renderer is idle.
+    /// Best-effort and non-throwing; returns false when there was nothing to warm.
+    /// </summary>
+    public async Task<bool> PrewarmTileAsync(FormKey npcFormKey, ModSetting? modSetting,
+        FormKey? targetNpcFormKey, CancellationToken token)
+    {
+        try
+        {
+            if (_env.LinkCache == null) return false;
+            var paths = _resolver.Resolve(npcFormKey, modSetting);
+            if (paths == null) return false;
+            await Task.Run(() => _bsa.EnsureAllArchivesOpened(), token).ConfigureAwait(false);
+            if (!_resolver.FaceGenExists(npcFormKey, modSetting)) return false;
+            var (includeOutfit, includeHeadgear) = _settings.GetEffectiveAttireFlags(npcFormKey);
+            var meshOverrides = _resolver.ResolveAttireMeshOverrides(
+                npcFormKey, modSetting, includeOutfit, includeHeadgear,
+                targetNpcFormKey, out _, alwaysRenderOutfitWigsAndAntlers: true);
+            var cfg = _settings.InternalMugshot;
+            var fallbackHits = new List<string>();
+            var request = new OffscreenRenderRequest
+            {
+                MeshPaths = paths,
+                MeshOverrides = meshOverrides.Count > 0 ? meshOverrides : null,
+                AdditionalScopes = _resolver.BuildResolutionScopes(modSetting, npcFormKey),
+                AllowLoadOrderFallback = !RenderResolutionMode.ForceLegacy,
+                VanillaLooseOverridesBsa = cfg.VanillaLooseOverridesBsa,
+                VanillaLooseOverridesModLoose = cfg.VanillaLooseOverridesModLoose,
+                PrewarmFallbackPathsOut = fallbackHits,
+                Cancellation = token,
+                Width = cfg.OutputWidth,
+                Height = cfg.OutputHeight,
+            };
+            token.ThrowIfCancellationRequested();
+            await _renderer.PrewarmAsync(request).ConfigureAwait(false);
+            if (token.IsCancellationRequested) return false;
+            // Entries for tiles that were never rendered (the user went elsewhere) would
+            // otherwise accumulate for the session; losing one only drops a badge hint.
+            if (_prewarmFallbackHits.Count > 512) _prewarmFallbackHits.Clear();
+            _prewarmFallbackHits[TileKey(npcFormKey, modSetting, targetNpcFormKey)] = fallbackHits.ToArray();
+            return true;
+        }
+        catch (OperationCanceledException) { return false; }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"InternalMugshotGenerator.PrewarmTileAsync failed for {npcFormKey}: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>Applies a new Max parallel renders value without a restart; see
+    /// <see cref="ResizableConcurrencyLimiter.SetLimit"/>.</summary>
+    public void SetMaxParallelRenders(int maxParallel) => _renderSemaphore.SetLimit(maxParallel);
 
     private static void Trace(string message)
     {
@@ -556,7 +673,7 @@ public sealed class InternalMugshotGenerator
     // from LogRenderLogic so timings can be collected WITHOUT the verbose
     // per-asset trace, whose I/O would otherwise inflate the very numbers being
     // measured.
-    private static readonly bool RenderTimingsEnabled =
+    internal static readonly bool RenderTimingsEnabled =
         File.Exists(Path.Combine(AppContext.BaseDirectory, "LogRenderTimings.txt"));
     private static readonly object _timingsCsvLock = new();
     private static readonly string _timingsCsvPath =
@@ -566,13 +683,68 @@ public sealed class InternalMugshotGenerator
     // prewarmWallMs = host wall time awaiting PrewarmAsync; hostElapsedMs =
     // GenerateAsync start (incl. semaphore wait) to CSV write; completedAt =
     // local wall-clock time of the write, for batch throughput/concurrency.
+    // host*Ms split the host flow before/after the renderer (see HostPhases);
+    // maxParallel and ddsPolicy name the run's configuration for A/B runs.
     private const string TimingsCsvHeader =
-        "mod,npcFormKey,npcName,setupMs,buildMs,resolveMs,parseMs,loadMs,buildShapesMs,installMs,decodeMs,uploadMs,drawMs,readbackMs,encodeMs,rendererTotalMs,hostRenderMs,pngBytes,prewarmDecodeMs,prewarmWallMs,hostElapsedMs,completedAt";
+        "mod,npcFormKey,npcName,setupMs,buildMs,resolveMs,parseMs,loadMs,buildShapesMs,installMs,decodeMs,uploadMs,drawMs,readbackMs,encodeMs,rendererTotalMs,hostRenderMs,pngBytes,prewarmDecodeMs,prewarmWallMs,hostElapsedMs,completedAt," +
+        "hostSlotWaitMs,hostResolveMs,hostArchivesMs,hostFaceGenCheckMs,hostAttireMs,hostScopesMs,hostPostRenderMs,maxParallel,ddsPolicy";
     private static bool _timingsCsvHeaderChecked;
 
+    private static readonly AsyncLocal<(string Mod, string Npc)?> _currentTile = new();
+    private static readonly string _decodeCsvPath =
+        Path.Combine(AppContext.BaseDirectory, "RenderLogs", "DecodeEvents.csv");
+    private const string DecodeCsvHeader = "at,mod,npcFormKey,reason,cubemap,width,height,decodeMs,gamePath";
+    private static bool _decodeCsvHeaderChecked;
+
+    /// <summary>One row per CPU DDS decode (renderer cache miss). Decodes on the GL render
+    /// thread, or from the interactive preview, carry an empty tile.</summary>
+    private static void WriteDecodeEventCsv(DdsDecodeEvent e)
+    {
+        try
+        {
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            string Q(string s) => "\"" + s.Replace("\"", "\"\"") + "\"";
+            var tile = _currentTile.Value;
+            string row = string.Join(",",
+                DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.fff", ci),
+                Q(tile?.Mod ?? ""), Q(tile?.Npc ?? ""), e.Reason, e.Cubemap ? "1" : "0",
+                e.Width.ToString(ci), e.Height.ToString(ci), e.Milliseconds.ToString("F1", ci),
+                Q(e.RelativeGamePath));
+            lock (_timingsCsvLock)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(_decodeCsvPath)!);
+                if (!_decodeCsvHeaderChecked)
+                {
+                    _decodeCsvHeaderChecked = true;
+                    if (File.Exists(_decodeCsvPath) &&
+                        File.ReadLines(_decodeCsvPath).FirstOrDefault() != DecodeCsvHeader)
+                    {
+                        File.Move(_decodeCsvPath, Path.Combine(Path.GetDirectoryName(_decodeCsvPath)!,
+                            $"DecodeEvents_oldheader_{DateTime.Now:yyyyMMdd-HHmmss}.csv"));
+                    }
+                }
+                if (!File.Exists(_decodeCsvPath))
+                    File.AppendAllText(_decodeCsvPath, DecodeCsvHeader + "\n");
+                File.AppendAllText(_decodeCsvPath, row + "\n");
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"WriteDecodeEventCsv failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>Host wall-clock ms per phase of one GenerateAsync, for RenderTimings.csv.
+    /// Covers the work outside the renderer that its own <see cref="RenderTimings"/> can't see.</summary>
+    private sealed class HostPhases
+    {
+        public long SlotWaitMs, ResolveMs, ArchivesMs, FaceGenCheckMs, AttireMs, ScopesMs;
+        public long PrewarmWallMs, RenderMs, PostRenderMs;
+    }
+
     private void WriteRenderTimingsCsv(
-        FormKey npcFormKey, ModSetting? modSetting, RenderTimings t, long hostRenderMs, int bytes,
-        long prewarmWallMs, long hostElapsedMs)
+        FormKey npcFormKey, ModSetting? modSetting, RenderTimings t, HostPhases host, int bytes,
+        long hostElapsedMs)
     {
         try
         {
@@ -594,9 +766,13 @@ public sealed class InternalMugshotGenerator
                 t.InstallMs.ToString("F1", ci), t.DecodeMs.ToString("F1", ci),
                 uploadMs.ToString("F1", ci), t.DrawMs.ToString("F1", ci),
                 t.ReadbackMs.ToString("F1", ci), t.EncodeMs.ToString("F1", ci),
-                t.TotalMs.ToString("F1", ci), hostRenderMs.ToString(ci), bytes.ToString(ci),
-                t.PrewarmDecodeMs.ToString("F1", ci), prewarmWallMs.ToString(ci),
-                hostElapsedMs.ToString(ci), DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.fff", ci));
+                t.TotalMs.ToString("F1", ci), host.RenderMs.ToString(ci), bytes.ToString(ci),
+                t.PrewarmDecodeMs.ToString("F1", ci), host.PrewarmWallMs.ToString(ci),
+                hostElapsedMs.ToString(ci), DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.fff", ci),
+                host.SlotWaitMs.ToString(ci), host.ResolveMs.ToString(ci), host.ArchivesMs.ToString(ci),
+                host.FaceGenCheckMs.ToString(ci), host.AttireMs.ToString(ci), host.ScopesMs.ToString(ci),
+                host.PostRenderMs.ToString(ci), _renderSemaphore.Limit.ToString(ci),
+                TextureUploadPolicy.StampValue);
 
             lock (_timingsCsvLock)
             {
