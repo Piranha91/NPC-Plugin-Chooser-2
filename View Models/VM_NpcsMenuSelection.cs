@@ -35,6 +35,8 @@ public class VM_NpcsMenuSelection : ReactiveObject
     [Reactive] public string DisplayName { get; set; } = _defaultDisplayName;
     private static string _defaultNpcName = "No Name Assigned";
     [Reactive] public string NpcName { get; set; } = _defaultNpcName;
+    // False when NpcName is the placeholder — such NPCs never form a same-name group.
+    public bool HasInGameName { get; private set; }
     private static string _defaultEditorID = "No Editor ID";
     [Reactive] public string NpcEditorId { get; set; } = _defaultEditorID;
     private static string _defaultFormKeyString = "No FormKey";
@@ -317,6 +319,7 @@ public class VM_NpcsMenuSelection : ReactiveObject
         {
             NpcName = _defaultNpcName;
         }
+        HasInGameName = hasName && !string.IsNullOrWhiteSpace(NpcName);
 
         // Build the display string from parts based on settings
         var parts = new List<string>();

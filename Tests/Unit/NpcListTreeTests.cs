@@ -107,6 +107,39 @@ public class NpcListTreeTests
         NpcListTree.FindChainTerminus(top, n => n.Parent).Should().BeNull();
     }
 
+    // ---- Same-name grouping ----------------------------------------------------------------
+
+    [Fact]
+    public void NameGroups_AreLedByTheFirstInSortOrder_CaseInsensitively_SkippingNullKeys()
+    {
+        var b1 = new Node("Bandit");
+        var lydia = new Node("Lydia");
+        var b2 = new Node("bandit");
+        var templated = new Node("Bandit (templated)");
+
+        var leaders = NpcListTree.PickNameGroupLeaders(new[] { b1, lydia, b2, templated },
+            n => n == templated ? null : n.Name);
+
+        leaders.Should().HaveCount(2);
+        leaders["BANDIT"].Should().BeSameAs(b1);
+        leaders["Lydia"].Should().BeSameAs(lydia);
+    }
+
+    [Fact]
+    public void NameGroups_GatherScatteredMembers_WhereTheLeaderSorts()
+    {
+        var b1 = new Node("Bandit 1");
+        var lydia = new Node("Lydia");
+        var b2 = new Node("Bandit 2", b1);   // parent = group leader, as VM_NpcSelectionBar wires it
+        var b3 = new Node("Bandit 3", b1);
+
+        Layout(new[] { b1, lydia, b2, b3 }).Should().Equal(
+            "Bandit 1",
+            "  Bandit 2",
+            "  Bandit 3",
+            "Lydia");
+    }
+
     // ---- Hide rule -------------------------------------------------------------------------
 
     [Fact]

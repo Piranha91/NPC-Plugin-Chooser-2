@@ -85,6 +85,23 @@ internal static class NpcListTree
     }
 
     /// <summary>
+    /// Same-name grouping (Settings.GroupSameNameNpcsInList): for each key, the first node in
+    /// <paramref name="sorted"/> order leads the group, so a gathered group sits where its first
+    /// member sorts. Nodes with a null key (unnamed, or templated) join no group. Keys compare
+    /// case-insensitively.
+    /// </summary>
+    internal static Dictionary<string, T> PickNameGroupLeaders<T>(IEnumerable<T> sorted,
+        Func<T, string?> groupKey) where T : class
+    {
+        var leaders = new Dictionary<string, T>(StringComparer.OrdinalIgnoreCase);
+        foreach (var node in sorted)
+        {
+            if (groupKey(node) is { } key) leaders.TryAdd(key, node);
+        }
+        return leaders;
+    }
+
+    /// <summary>
     /// The top of <paramref name="node"/>'s chain — the NPC it ultimately takes its face from among
     /// the listed ones — or null when it has no parent, or the chain loops.
     /// </summary>

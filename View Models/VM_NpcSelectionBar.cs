@@ -347,6 +347,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
     [Reactive] public TemplateIconPosition TemplateIconPosition { get; set; }
     [Reactive] public string NpcSelectionIndicator { get; set; } = "Bar";
     [Reactive] public bool GroupTemplatedNpcsInList { get; set; }
+    [Reactive] public bool GroupSameNameNpcsInList { get; set; }
     [Reactive] public bool HideInheritingTemplatedNpcs { get; set; }
 
     // An NPC a navigation asked to show: exempt from HideInheritingTemplatedNpcs until another
@@ -484,6 +485,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
         TemplateIconPosition = _settings.TemplateIconPosition;
         NpcSelectionIndicator = _settings.NpcSelectionIndicator;
         GroupTemplatedNpcsInList = _settings.GroupTemplatedNpcsInList;
+        GroupSameNameNpcsInList = _settings.GroupSameNameNpcsInList;
         HideInheritingTemplatedNpcs = _settings.HideInheritingTemplatedNpcs;
         Debug.WriteLine(
             $"VM_NpcSelectionBar.Constructor: Initial ZoomLevel: {NpcsViewZoomLevel:F2}, IsZoomLocked: {NpcsViewIsZoomLocked}");
@@ -527,7 +529,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
         ToggleNpcTreeExpandedCommand = ReactiveCommand.Create<VM_NpcsMenuSelection>(ToggleNpcTreeExpanded)
             .DisposeWith(_disposables);
 
-        this.WhenAnyValue(x => x.GroupTemplatedNpcsInList, x => x.HideInheritingTemplatedNpcs)
+        this.WhenAnyValue(x => x.GroupTemplatedNpcsInList, x => x.GroupSameNameNpcsInList,
+                x => x.HideInheritingTemplatedNpcs)
             .Skip(1)
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(_ => ApplyFilter(false))
@@ -3374,7 +3377,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
         if (SelectedNpc != null)
         {
             // The template-tree options may have hidden or collapsed the restored NPC.
-            if (GroupTemplatedNpcsInList || HideInheritingTemplatedNpcs)
+            if (IsListGrouped || HideInheritingTemplatedNpcs)
                 EnsureNpcVisible(SelectedNpc);
             _requestScrollToNpcSubject.OnNext(SelectedNpc);
         }
@@ -6712,18 +6715,25 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
         }
     }
 
-    // --- NPC list template tree (Settings.GroupTemplatedNpcsInList / HideInheritingTemplatedNpcs) ---
+    // --- NPC list tree (Settings.GroupTemplatedNpcsInList / GroupSameNameNpcsInList /
+    //     HideInheritingTemplatedNpcs) ---
+
+    // Same-name group leaders from the latest ApplyFilter pass: the first non-templated NPC in sort
+    // order for each in-game name. Kept so collapse / reveal walk the same tree the list shows.
+    private Dictionary<string, VM_NpcsMenuSelection> _nameGroupLeaders = new(StringComparer.OrdinalIgnoreCase);
+
+    private bool IsListGrouped => GroupTemplatedNpcsInList || GroupSameNameNpcsInList;
 
     /// <summary>
     /// The last stage of <see cref="ApplyFilter"/>: drops inheriting templated NPCs when that option
-    /// is on, then (when grouping) re-orders the filtered, sorted list as a template tree and stamps
-    /// each row's tree state. With both options off it is the identity, apart from clearing stale
-    /// row state.
+    /// is on, then (when grouping) re-orders the filtered, sorted list as a tree and stamps each
+    /// row's tree state. With all options off it is the identity, apart from clearing stale row
+    /// state.
     /// </summary>
     private List<VM_NpcsMenuSelection> ArrangeTemplateTree(List<VM_NpcsMenuSelection> sorted,
         VM_NpcsMenuSelection? keepVisible)
     {
-        TemplateTreeResolver? tree = GroupTemplatedNpcsInList || HideInheritingTemplatedNpcs
+        TemplateTreeResolver? tree = IsListGrouped || HideInheritingTemplatedNpcs
             ? new TemplateTreeResolver(this)
             : null;
 
@@ -6732,7 +6742,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
             sorted = sorted.Where(n => !ShouldHideInheritingNpc(n, tree, keepVisible)).ToList();
         }
 
-        if (tree == null || !GroupTemplatedNpcsInList)
+        _nameGroupLeaders = tree != null && GroupSameNameNpcsInList
+            ? NpcListTree.PickNameGroupLeaders(sorted, tree.NameGroupKey)
+            : new Dictionary<string, VM_NpcsMenuSelection>(StringComparer.OrdinalIgnoreCase);
+
+        if (tree == null || !IsListGrouped)
         {
             foreach (var npc in sorted)
             {
@@ -6744,7 +6758,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
             return sorted;
         }
 
-        var rows = NpcListTree.Build(sorted, tree.ParentOf, n => n.IsTreeExpanded);
+        var rows = NpcListTree.Build(sorted, TreeParentOf(tree), n => n.IsTreeExpanded);
         foreach (var row in rows)
         {
             row.Node.ShowTreeGutter = true;
@@ -6756,6 +6770,23 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
     }
 
     private const double TreeIndentPerLevel = 14;
+
+    /// <summary>
+    /// The list's tree parent: a templated NPC sits under its template (when that grouping is on);
+    /// a non-templated named NPC sits under its same-name group's leader (when that grouping is on).
+    /// Template chains for the hide rule use <see cref="TemplateTreeResolver.ParentOf"/> directly —
+    /// a name group decides nothing about anyone's face.
+    /// </summary>
+    private Func<VM_NpcsMenuSelection, VM_NpcsMenuSelection?> TreeParentOf(TemplateTreeResolver tree) => npc =>
+    {
+        if (GroupTemplatedNpcsInList && tree.ParentOf(npc) is { } templateParent) return templateParent;
+        if (GroupSameNameNpcsInList && tree.NameGroupKey(npc) is { } key &&
+            _nameGroupLeaders.TryGetValue(key, out var leader) && !ReferenceEquals(leader, npc))
+        {
+            return leader;
+        }
+        return null;
+    };
 
     private bool ShouldHideInheritingNpc(VM_NpcsMenuSelection npc, TemplateTreeResolver tree,
         VM_NpcsMenuSelection? keepVisible)
@@ -6793,9 +6824,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
         // the selection to the top; move it onto the collapsed row instead.
         if (!npc.IsTreeExpanded && SelectedNpc != null && !ReferenceEquals(SelectedNpc, npc))
         {
-            var tree = new TemplateTreeResolver(this);
+            var parentOf = TreeParentOf(new TemplateTreeResolver(this));
             var seen = new HashSet<VM_NpcsMenuSelection>(ReferenceEqualityComparer.Instance);
-            for (var a = tree.ParentOf(SelectedNpc); a != null && seen.Add(a); a = tree.ParentOf(a))
+            for (var a = parentOf(SelectedNpc); a != null && seen.Add(a); a = parentOf(a))
             {
                 if (ReferenceEquals(a, npc))
                 {
@@ -6818,11 +6849,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
         if (FilteredNpcs.Contains(target)) return true;
 
         _revealNpcKey = target.NpcFormKey;
-        if (GroupTemplatedNpcsInList)
+        if (IsListGrouped)
         {
-            var tree = new TemplateTreeResolver(this);
+            var parentOf = TreeParentOf(new TemplateTreeResolver(this));
             var seen = new HashSet<VM_NpcsMenuSelection>(ReferenceEqualityComparer.Instance);
-            for (var a = tree.ParentOf(target); a != null && seen.Add(a); a = tree.ParentOf(a))
+            for (var a = parentOf(target); a != null && seen.Add(a); a = parentOf(a))
             {
                 a.IsTreeExpanded = true;
             }
@@ -6860,6 +6891,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
         public VM_NpcsMenuSelection? ParentOf(VM_NpcsMenuSelection npc) => Resolve(npc).Parent;
 
         public FormKey TemplateLinkOf(VM_NpcsMenuSelection npc) => Resolve(npc).Link;
+
+        /// <summary>The same-name grouping key: the in-game name, for named NPCs that are not
+        /// templated at all (a template link to a levelled list counts as templated).</summary>
+        public string? NameGroupKey(VM_NpcsMenuSelection npc) =>
+            npc.HasInGameName && TemplateLinkOf(npc).IsNull ? npc.NpcName : null;
 
         public bool HasSelection(VM_NpcsMenuSelection npc) =>
             !string.IsNullOrEmpty(_bar._consistencyProvider.GetSelectedMod(npc.NpcFormKey).ModName);

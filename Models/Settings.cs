@@ -655,6 +655,8 @@ public class Settings
     // NPC list as a template tree: each templated NPC under the NPC it takes its face from
     // (winning override, or the selected appearance mod's record in Create mode).
     public bool GroupTemplatedNpcsInList { get; set; }
+    // NPC list: non-templated NPCs sharing an in-game name grouped under the first in sort order.
+    public bool GroupSameNameNpcsInList { get; set; }
     // Hide templated NPCs that will inherit their face from a template NPC that already has a selection.
     public bool HideInheritingTemplatedNpcs { get; set; }
 

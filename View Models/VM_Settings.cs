@@ -501,6 +501,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public bool ShowTemplateStatusInList { get; set; } = true;
     [Reactive] public TemplateIconPosition TemplateIconPosition { get; set; } = TemplateIconPosition.Left;
     [Reactive] public bool GroupTemplatedNpcsInList { get; set; }
+    [Reactive] public bool GroupSameNameNpcsInList { get; set; }
     [Reactive] public bool HideInheritingTemplatedNpcs { get; set; }
     public IEnumerable<TemplateIconPosition> TemplateIconPositions { get; } = Enum.GetValues(typeof(TemplateIconPosition)).Cast<TemplateIconPosition>();
     
@@ -883,6 +884,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         ShowTemplateStatusInList = _model.ShowTemplateStatusInList;
         TemplateIconPosition = _model.TemplateIconPosition;
         GroupTemplatedNpcsInList = _model.GroupTemplatedNpcsInList;
+        GroupSameNameNpcsInList = _model.GroupSameNameNpcsInList;
         HideInheritingTemplatedNpcs = _model.HideInheritingTemplatedNpcs;
         
         LogActivity = _model.LogActivity;
@@ -1370,6 +1372,13 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                 _model.GroupTemplatedNpcsInList = b;
                 if (_lazyNpcSelectionBar.IsValueCreated)
                     _lazyNpcSelectionBar.Value.GroupTemplatedNpcsInList = b;
+            })
+            .DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.GroupSameNameNpcsInList).Skip(1).Subscribe(b =>
+            {
+                _model.GroupSameNameNpcsInList = b;
+                if (_lazyNpcSelectionBar.IsValueCreated)
+                    _lazyNpcSelectionBar.Value.GroupSameNameNpcsInList = b;
             })
             .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.HideInheritingTemplatedNpcs).Skip(1).Subscribe(b =>
