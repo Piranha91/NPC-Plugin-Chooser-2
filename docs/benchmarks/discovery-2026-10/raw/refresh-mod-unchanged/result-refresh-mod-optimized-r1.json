@@ -1,0 +1,144 @@
+{
+  "run": "r1",
+  "variant": "optimized",
+  "scenario": "refresh-mod",
+  "instance": "S:\\Skyrim NPC Selection",
+  "profile": "NPC Test",
+  "dataFolder": "C:\\Games\\Steam\\steamapps\\common\\Skyrim Special Edition\\Data",
+  "modsFolder": "S:\\Dev\\NPC Plugin Chooser 2\\NPC Plugin Chooser 2\\Tests\\bin\\DiscoveryBench\\fixture",
+  "loadOrderCount": 97,
+  "unresolvedProfilePlugins": [],
+  "modSettingsAtStart": 0,
+  "cachedNonAppearanceAtStart": 0,
+  "environmentBuildMs": 1111.7662,
+  "runtime": ".NET 10.0.9",
+  "serverGc": false,
+  "debuggerAttached": false,
+  "configuration": "Release",
+  "initialPopulationNpcs": 5637,
+  "targetBefore": {
+    "npcFormKeys": 3,
+    "faceGenOnlyNpcFormKeys": 3,
+    "faceGenOnlySample": [
+      "006F0A:Glenmoril.esm",
+      "0083AD:Glenmoril.esm",
+      "008826:Glenmoril.esm"
+    ],
+    "isFaceGenOnlyEntry": true
+  },
+  "measured": {
+    "wallMs": 196.8817,
+    "cpuMs": 171.875,
+    "allocatedBytes": 101437664,
+    "gen0": 2,
+    "gen1": 2,
+    "gen2": 0,
+    "workingSetBeforeBytes": 1716625408,
+    "workingSetAfterBytes": 1766612992,
+    "peakWorkingSetBytes": 1766612992,
+    "peakPagedMemoryBytes": 1507221504,
+    "counters": {
+      "LooseFoldersScanned": 1,
+      "LooseDuplicateFolderReferences": 0,
+      "LooseRootsEnumerated": 2,
+      "LooseCandidatePaths": 6,
+      "LoosePathsRetained": 6,
+      "PreliminaryCandidates": 1,
+      "TemporaryViewModelsConstructed": 0,
+      "ArchivesConsidered": 1,
+      "ArchivesProbed": 0,
+      "ArchivesProbeAbsent": 0,
+      "ArchivesProbePresent": 0,
+      "ArchivesProbeInconclusive": 0,
+      "ArchivesFullyIndexed": 0,
+      "ArchiveFoldersRead": 0,
+      "ArchiveFileEntriesEnumerated": 0,
+      "ArchivePathsRetained": 0,
+      "ArchiveListingCacheHits": 1,
+      "PluginDirectoryListings": 2,
+      "PluginLoads": 5
+    },
+    "phases": {
+      "FaceGenCacheTotal": {
+        "ms": 2.8435,
+        "entries": 1
+      },
+      "LooseFaceGenDiscovery": {
+        "ms": 0.2408,
+        "entries": 1
+      },
+      "PreliminaryCandidates": {
+        "ms": 0.0642,
+        "entries": 1
+      },
+      "ArchiveAssociation": {
+        "ms": 1.128,
+        "entries": 1
+      },
+      "ArchiveFaceGenIndexing": {
+        "ms": 0.579,
+        "entries": 1
+      },
+      "ModFolderScan": {
+        "ms": 0.0,
+        "entries": 0
+      },
+      "Analysis": {
+        "ms": 0.0,
+        "entries": 0
+      }
+    },
+    "scanWorkSteps": {
+      "ScanTemporaryViewModel": {
+        "summedWorkerMs": 0.0,
+        "entries": 0
+      },
+      "ScanFaceGenPrecheck": {
+        "summedWorkerMs": 0.0,
+        "entries": 0
+      },
+      "ScanLoadPlugins": {
+        "summedWorkerMs": 0.0,
+        "entries": 0
+      },
+      "ScanFindMissingMasters": {
+        "summedWorkerMs": 0.0,
+        "entries": 0
+      },
+      "ScanAppearancePluginCheck": {
+        "summedWorkerMs": 0.0,
+        "entries": 0
+      },
+      "ScanMergeInSuitability": {
+        "summedWorkerMs": 0.0,
+        "entries": 0
+      },
+      "ScanInjectedRecords": {
+        "summedWorkerMs": 0.0,
+        "entries": 0
+      },
+      "ScanUnloadPlugins": {
+        "summedWorkerMs": 0.0,
+        "entries": 0
+      }
+    }
+  },
+  "refreshSucceeded": true,
+  "refreshFailureReason": "",
+  "targetAfter": {
+    "npcFormKeys": 3,
+    "faceGenOnlyNpcFormKeys": 3,
+    "faceGenOnlySample": [
+      "006F0A:Glenmoril.esm",
+      "0083AD:Glenmoril.esm",
+      "008826:Glenmoril.esm"
+    ],
+    "isFaceGenOnlyEntry": true
+  },
+  "modSettingsInMemory": 888,
+  "modSettingsPersisted": 4,
+  "npcCatalogueCount": 5637,
+  "dialogs": [],
+  "manifest": "S:\\Dev\\NPC Plugin Chooser 2\\NPC Plugin Chooser 2\\Tests\\bin\\DiscoveryBench\\results-20261026-002904\\manifest-refresh-mod-optimized-r1.json",
+  "hostProcessSeconds": 17.795029300032184
+}

@@ -1,0 +1,151 @@
+{
+  "run": "r5",
+  "variant": "optimized",
+  "scenario": "refresh-mod",
+  "instance": "S:\\Skyrim NPC Selection",
+  "profile": "NPC Test",
+  "dataFolder": "C:\\Games\\Steam\\steamapps\\common\\Skyrim Special Edition\\Data",
+  "modsFolder": "S:\\Dev\\NPC Plugin Chooser 2\\NPC Plugin Chooser 2\\Tests\\bin\\DiscoveryBench\\fixture",
+  "loadOrderCount": 97,
+  "unresolvedProfilePlugins": [],
+  "modSettingsAtStart": 0,
+  "cachedNonAppearanceAtStart": 0,
+  "environmentBuildMs": 1140.2525,
+  "runtime": ".NET 10.0.9",
+  "serverGc": false,
+  "debuggerAttached": false,
+  "configuration": "Release",
+  "initialPopulationNpcs": 5637,
+  "mutations": [
+    "copy\tS:\\Skyrim NPC Selection\\mods\\Immersive College NPCs\\ICNs_ImmersiveCollegeNPCs.bsa\tS:\\Dev\\NPC Plugin Chooser 2\\NPC Plugin Chooser 2\\Tests\\bin\\DiscoveryBench\\fixture\\Men of Glenmoril Refined - NPC Overhaul\\Glenmoril NPCs Refined.bsa",
+    "copy\tS:\\Skyrim NPC Selection\\mods\\Vilja Re-Imagined SSE\\Meshes\\actors\\character\\facegendata\\facegeom\\emcompviljaskyrim.esp\\00000D67.NIF\tS:\\Dev\\NPC Plugin Chooser 2\\NPC Plugin Chooser 2\\Tests\\bin\\DiscoveryBench\\fixture\\Men of Glenmoril Refined - NPC Overhaul\\Meshes\\actors\\character\\facegendata\\facegeom\\emcompviljaskyrim.esp\\00000D67.NIF",
+    "copy\tS:\\Skyrim NPC Selection\\mods\\Vilja Re-Imagined SSE\\Textures\\actors\\character\\facegendata\\facetint\\emcompviljaskyrim.esp\\00000D67.dds\tS:\\Dev\\NPC Plugin Chooser 2\\NPC Plugin Chooser 2\\Tests\\bin\\DiscoveryBench\\fixture\\Men of Glenmoril Refined - NPC Overhaul\\Textures\\actors\\character\\facegendata\\facetint\\emcompviljaskyrim.esp\\00000D67.dds"
+  ],
+  "targetBefore": {
+    "npcFormKeys": 3,
+    "faceGenOnlyNpcFormKeys": 3,
+    "faceGenOnlySample": [
+      "006F0A:Glenmoril.esm",
+      "0083AD:Glenmoril.esm",
+      "008826:Glenmoril.esm"
+    ],
+    "isFaceGenOnlyEntry": true
+  },
+  "measured": {
+    "wallMs": 165.9227,
+    "cpuMs": 109.375,
+    "allocatedBytes": 101536744,
+    "gen0": 1,
+    "gen1": 0,
+    "gen2": 0,
+    "workingSetBeforeBytes": 1762545664,
+    "workingSetAfterBytes": 1803112448,
+    "peakWorkingSetBytes": 1803112448,
+    "peakPagedMemoryBytes": 1544298496,
+    "counters": {
+      "LooseFoldersScanned": 1,
+      "LooseDuplicateFolderReferences": 0,
+      "LooseRootsEnumerated": 2,
+      "LooseCandidatePaths": 8,
+      "LoosePathsRetained": 8,
+      "PreliminaryCandidates": 1,
+      "TemporaryViewModelsConstructed": 0,
+      "ArchivesConsidered": 1,
+      "ArchivesProbed": 1,
+      "ArchivesProbeAbsent": 0,
+      "ArchivesProbePresent": 1,
+      "ArchivesProbeInconclusive": 0,
+      "ArchivesFullyIndexed": 0,
+      "ArchiveFoldersRead": 2,
+      "ArchiveFileEntriesEnumerated": 28,
+      "ArchivePathsRetained": 28,
+      "ArchiveListingCacheHits": 0,
+      "PluginDirectoryListings": 2,
+      "PluginLoads": 5
+    },
+    "phases": {
+      "FaceGenCacheTotal": {
+        "ms": 6.7072,
+        "entries": 1
+      },
+      "LooseFaceGenDiscovery": {
+        "ms": 0.2696,
+        "entries": 1
+      },
+      "PreliminaryCandidates": {
+        "ms": 0.0626,
+        "entries": 1
+      },
+      "ArchiveAssociation": {
+        "ms": 1.4528,
+        "entries": 1
+      },
+      "ArchiveFaceGenIndexing": {
+        "ms": 4.4668,
+        "entries": 1
+      },
+      "ModFolderScan": {
+        "ms": 0.0,
+        "entries": 0
+      },
+      "Analysis": {
+        "ms": 0.0,
+        "entries": 0
+      }
+    },
+    "scanWorkSteps": {
+      "ScanTemporaryViewModel": {
+        "summedWorkerMs": 0.0,
+        "entries": 0
+      },
+      "ScanFaceGenPrecheck": {
+        "summedWorkerMs": 0.0,
+        "entries": 0
+      },
+      "ScanLoadPlugins": {
+        "summedWorkerMs": 0.0,
+        "entries": 0
+      },
+      "ScanFindMissingMasters": {
+        "summedWorkerMs": 0.0,
+        "entries": 0
+      },
+      "ScanAppearancePluginCheck": {
+        "summedWorkerMs": 0.0,
+        "entries": 0
+      },
+      "ScanMergeInSuitability": {
+        "summedWorkerMs": 0.0,
+        "entries": 0
+      },
+      "ScanInjectedRecords": {
+        "summedWorkerMs": 0.0,
+        "entries": 0
+      },
+      "ScanUnloadPlugins": {
+        "summedWorkerMs": 0.0,
+        "entries": 0
+      }
+    }
+  },
+  "refreshSucceeded": true,
+  "refreshFailureReason": "",
+  "targetAfter": {
+    "npcFormKeys": 18,
+    "faceGenOnlyNpcFormKeys": 18,
+    "faceGenOnlySample": [
+      "000800:icns_immersivecollegenpcs.esp",
+      "000811:icns_immersivecollegenpcs.esp",
+      "000820:icns_immersivecollegenpcs.esp",
+      "000829:icns_immersivecollegenpcs.esp",
+      "00085E:icns_immersivecollegenpcs.esp"
+    ],
+    "isFaceGenOnlyEntry": true
+  },
+  "modSettingsInMemory": 888,
+  "modSettingsPersisted": 4,
+  "npcCatalogueCount": 5637,
+  "dialogs": [],
+  "manifest": "S:\\Dev\\NPC Plugin Chooser 2\\NPC Plugin Chooser 2\\Tests\\bin\\DiscoveryBench\\results-20261026-002557\\manifest-refresh-mod-optimized-r5.json",
+  "hostProcessSeconds": 19.075460899970494
+}

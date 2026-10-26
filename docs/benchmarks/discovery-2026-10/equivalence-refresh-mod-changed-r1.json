@@ -1,0 +1,84 @@
+{
+  "legacy": "Tests/bin/DiscoveryBench/results-20261026-002557/manifest-refresh-mod-legacy-r1.json",
+  "optimized": "Tests/bin/DiscoveryBench/results-20261026-002557/manifest-refresh-mod-optimized-r1.json",
+  "sections": {
+    "faceGenCache.loose": {
+      "foldersLegacy": 1,
+      "foldersOptimized": 1,
+      "pathsLegacy": 8,
+      "pathsOptimized": 8,
+      "faceGenPathsMissingFromOptimized": 0,
+      "examplesMissing": [],
+      "pathsOnlyInOptimized": 0,
+      "examplesExtra": [],
+      "nonFaceGenPathsNoLongerCached": 0,
+      "droppedPathsLegacyConsumersWouldAccept": [],
+      "foldersOnlyInLegacyKeys": 0,
+      "foldersOnlyInLegacyKeysThatHadFaceGen": [],
+      "identicalFaceGenSubset": true
+    },
+    "faceGenCache.bsa": {
+      "onlyLegacy": [],
+      "onlyOptimized": [],
+      "changed": [],
+      "counts": {
+        "onlyLegacy": 0,
+        "onlyOptimized": 0,
+        "changed": 0,
+        "legacy": 5,
+        "optimized": 5
+      },
+      "paths": {
+        "legacy": 7348,
+        "optimized": 7348
+      },
+      "identical": true
+    },
+    "modSettings": {
+      "onlyLegacy": [],
+      "onlyOptimized": [],
+      "changed": [],
+      "counts": {
+        "onlyLegacy": 0,
+        "onlyOptimized": 0,
+        "changed": 0,
+        "legacy": 4,
+        "optimized": 4
+      },
+      "identical": true
+    },
+    "inMemory": {
+      "onlyLegacy": [],
+      "onlyOptimized": [],
+      "changed": [],
+      "counts": {
+        "onlyLegacy": 0,
+        "onlyOptimized": 0,
+        "changed": 0,
+        "legacy": 888,
+        "optimized": 888
+      },
+      "identical": true
+    },
+    "npcCatalogue": {
+      "onlyLegacy": [],
+      "onlyOptimized": [],
+      "changed": [],
+      "counts": {
+        "onlyLegacy": 0,
+        "onlyOptimized": 0,
+        "changed": 0,
+        "legacy": 5637,
+        "optimized": 5637
+      },
+      "identical": true
+    },
+    "caches": {
+      "identical": true
+    },
+    "dialogs": {
+      "identical": true
+    }
+  },
+  "allMustMatchSectionsIdentical": true
+}

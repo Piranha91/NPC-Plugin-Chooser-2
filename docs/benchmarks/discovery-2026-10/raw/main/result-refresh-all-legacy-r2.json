@@ -1,0 +1,122 @@
+{
+  "run": "r2",
+  "variant": "legacy",
+  "scenario": "refresh-all",
+  "instance": "S:\\Skyrim NPC Selection",
+  "profile": "NPC Test",
+  "dataFolder": "C:\\Games\\Steam\\steamapps\\common\\Skyrim Special Edition\\Data",
+  "modsFolder": "S:\\Skyrim NPC Selection\\mods",
+  "loadOrderCount": 97,
+  "unresolvedProfilePlugins": [],
+  "modSettingsAtStart": 619,
+  "cachedNonAppearanceAtStart": 97,
+  "environmentBuildMs": 1121.2779,
+  "runtime": ".NET 10.0.9",
+  "serverGc": false,
+  "debuggerAttached": false,
+  "configuration": "Release",
+  "initialPopulationNpcs": 12518,
+  "measured": {
+    "wallMs": 46686.8436,
+    "cpuMs": 31671.875,
+    "allocatedBytes": 71562331032,
+    "gen0": 1236,
+    "gen1": 336,
+    "gen2": 10,
+    "workingSetBeforeBytes": 2172571648,
+    "workingSetAfterBytes": 4400963584,
+    "peakWorkingSetBytes": 4400963584,
+    "peakPagedMemoryBytes": 4126269440,
+    "counters": {
+      "LooseFoldersScanned": 717,
+      "LooseDuplicateFolderReferences": 0,
+      "LooseRootsEnumerated": 1113,
+      "LooseCandidatePaths": 162385,
+      "LoosePathsRetained": 162385,
+      "PreliminaryCandidates": 719,
+      "TemporaryViewModelsConstructed": 719,
+      "ArchivesConsidered": 335,
+      "ArchivesProbed": 0,
+      "ArchivesProbeAbsent": 0,
+      "ArchivesProbePresent": 0,
+      "ArchivesProbeInconclusive": 0,
+      "ArchivesFullyIndexed": 335,
+      "ArchiveFoldersRead": 0,
+      "ArchiveFileEntriesEnumerated": 567541,
+      "ArchivePathsRetained": 40126,
+      "ArchiveListingCacheHits": 0,
+      "PluginDirectoryListings": 4490,
+      "PluginLoads": 26295
+    },
+    "phases": {
+      "FaceGenCacheTotal": {
+        "ms": 1510.9786,
+        "entries": 1
+      },
+      "LooseFaceGenDiscovery": {
+        "ms": 350.6553,
+        "entries": 1
+      },
+      "PreliminaryCandidates": {
+        "ms": 672.8231,
+        "entries": 1
+      },
+      "ArchiveAssociation": {
+        "ms": 234.9929,
+        "entries": 1
+      },
+      "ArchiveFaceGenIndexing": {
+        "ms": 249.6194,
+        "entries": 1
+      },
+      "ModFolderScan": {
+        "ms": 33772.8473,
+        "entries": 1
+      },
+      "Analysis": {
+        "ms": 6956.1441,
+        "entries": 1
+      }
+    },
+    "scanWorkSteps": {
+      "ScanTemporaryViewModel": {
+        "summedWorkerMs": 2820.7585,
+        "entries": 530
+      },
+      "ScanFaceGenPrecheck": {
+        "summedWorkerMs": 153.495,
+        "entries": 530
+      },
+      "ScanLoadPlugins": {
+        "summedWorkerMs": 17617.0544,
+        "entries": 530
+      },
+      "ScanFindMissingMasters": {
+        "summedWorkerMs": 17256.0845,
+        "entries": 530
+      },
+      "ScanAppearancePluginCheck": {
+        "summedWorkerMs": 155811.0432,
+        "entries": 504
+      },
+      "ScanMergeInSuitability": {
+        "summedWorkerMs": 11270.5684,
+        "entries": 172
+      },
+      "ScanInjectedRecords": {
+        "summedWorkerMs": 167274.2592,
+        "entries": 172
+      },
+      "ScanUnloadPlugins": {
+        "summedWorkerMs": 21335.0071,
+        "entries": 617
+      }
+    }
+  },
+  "modSettingsInMemory": 1416,
+  "modSettingsPersisted": 619,
+  "npcCatalogueCount": 12509,
+  "dialogs": [],
+  "manifest": "S:\\Dev\\NPC Plugin Chooser 2\\NPC Plugin Chooser 2\\Tests\\bin\\DiscoveryBench\\results-20261025-235629\\manifest-refresh-all-legacy-r2.json",
+  "hostProcessSeconds": 69.05795799999032
+}

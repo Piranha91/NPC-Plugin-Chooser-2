@@ -1,0 +1,81 @@
+{
+  "scenario": "warm",
+  "variants": {
+    "legacy": {
+      "runs": [
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-warm-legacy-r1.json",
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-warm-legacy-r2.json",
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-warm-legacy-r3.json",
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-warm-legacy-r4.json",
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-warm-legacy-r5.json",
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-warm-legacy-r6.json"
+      ],
+      "facts": 516219,
+      "unstableFacts": 0
+    },
+    "optimized": {
+      "runs": [
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-warm-optimized-r1.json",
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-warm-optimized-r2.json",
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-warm-optimized-r3.json",
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-warm-optimized-r4.json",
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-warm-optimized-r5.json",
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-warm-optimized-r6.json"
+      ],
+      "facts": 516219,
+      "unstableFacts": 5
+    }
+  },
+  "realDifferences": {
+    "stableInLegacyNeverInOptimized": [],
+    "stableInOptimizedNeverInLegacy": [],
+    "counts": [
+      0,
+      0
+    ]
+  },
+  "stableInOneIntermittentInOther": {
+    "count": 0,
+    "examples": []
+  },
+  "unstableExamples": {
+    "legacy": [],
+    "optimized": [
+      [
+        "inMemory",
+        "Unofficial Skyrim Special Edition Patch - Latest AE Version",
+        "AvailablePluginsForNpcs",
+        "0B28A5:Skyrim.esm=[\"unofficial skyrim special edition patch.esp\"]"
+      ],
+      [
+        "inMemory",
+        "Unofficial Skyrim Special Edition Patch - Latest AE Version",
+        "NpcFormKeys",
+        "\"0B28A5:Skyrim.esm\""
+      ],
+      [
+        "modSettings",
+        "Unofficial Skyrim Special Edition Patch - Latest AE Version",
+        "AvailablePluginsForNpcs",
+        "0B28A5:Skyrim.esm=[\"unofficial skyrim special edition patch.esp\"]"
+      ],
+      [
+        "modSettings",
+        "Unofficial Skyrim Special Edition Patch - Latest AE Version",
+        "NpcFormKeys",
+        "\"0B28A5:Skyrim.esm\""
+      ],
+      [
+        "modSettings",
+        "Unofficial Skyrim Special Edition Patch - Latest AE Version",
+        "NpcFormKeysToDisplayName",
+        "0B28A5:Skyrim.esm=\"dunHalldirs_LvlBanditGhostWizardAmbush\""
+      ]
+    ]
+  },
+  "unstableEntities": [
+    "modSettings :: Unofficial Skyrim Special Edition Patch - Latest AE Version (3 facts)",
+    "inMemory :: Unofficial Skyrim Special Edition Patch - Latest AE Version (2 facts)"
+  ],
+  "equivalent": true
+}

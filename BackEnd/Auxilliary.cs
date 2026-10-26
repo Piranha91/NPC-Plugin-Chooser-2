@@ -573,6 +573,7 @@ public class Auxilliary : IDisposable
         try
         {
             var enabledKeys = _environmentStateProvider.Status == EnvironmentStateProvider.EnvironmentStatus.Valid ? _environmentStateProvider.LoadOrder.Keys.ToHashSet() : new HashSet<ModKey>();
+            DiscoveryMetrics.Add(DiscoveryMetrics.Counter.PluginDirectoryListings);
 
             foreach (var filePath in Directory.EnumerateFiles(modFolderPath, "*.es*", SearchOption.TopDirectoryOnly))
             {

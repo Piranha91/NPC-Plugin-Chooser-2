@@ -1423,8 +1423,11 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             ScanForMugshotOnlyMods(loadedDisplayNames, claimedMugshotPaths, warnings, splashReporter);
 
         StartupLogger.Log("Starting mod folder scan");
-        await ScanForModsInModFolderAsync(tempList, vmsFromMugshotsOnly, loadedDisplayNames, faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles, claimedMugshotPaths,
-            splashReporter, warnings);
+        using (DiscoveryMetrics.Time(DiscoveryMetrics.Phase.ModFolderScan))
+        {
+            await ScanForModsInModFolderAsync(tempList, vmsFromMugshotsOnly, loadedDisplayNames, faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles, claimedMugshotPaths,
+                splashReporter, warnings);
+        }
         StartupLogger.Log("Mod folder scan complete");
 
         // Phase 2: Consolidate and sort the gathered data
@@ -1441,7 +1444,9 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         try
         {
+            var analysisPhase = DiscoveryMetrics.Time(DiscoveryMetrics.Phase.Analysis);
             var analysisFailedVms = await AnalyzeModSettingsAsync(splashReporter, faceGenCache, warnings);
+            analysisPhase.Dispose();
 
             PruneEmptyNewlyCreatedAppearanceMods(splashReporter, analysisFailedVms);
 
@@ -1554,6 +1559,13 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         // 1. Generate caches for the specific mod being refreshed.
         var faceGenCache = await CacheFaceGenPathsOnLoadAsync(new[] { vmToRefresh }, null); // No splash screen
+        // The type check below has always asked "did the loose cache find anything?", and the loose cache used
+        // to hold every mesh/texture the folders ship. The targeted cache holds FaceGen only, so the original
+        // question gets its own early-exiting probe, over the same folders the cache was built from (master
+        // discovery below may still add folders).
+        bool hasLooseMeshesOrTextures = FaceGenDiscovery.UseLegacyImplementation
+            ? faceGenCache.allFaceGenLooseFiles.Any()
+            : FaceGenDiscovery.AnyLooseMeshOrTexture(vmToRefresh.CorrespondingFolderPaths.ToList());
         var faceGenLooseCount = faceGenCache.allFaceGenLooseFiles.Sum(kvp => kvp.Value.Count);
         var faceGenBsaCount = faceGenCache.allFaceGenBsaFiles.TryGetValue(vmToRefresh.DisplayName, out var bsaSet) ? bsaSet.Count : 0;
         Debug.WriteLine($"{dbgTag} FaceGen cache: loose={faceGenLooseCount}, bsa={faceGenBsaCount}");
@@ -1597,7 +1609,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             }
 
             // Step 2: Check if FaceGen files exist
-            bool hasFaceGen = faceGenCache.allFaceGenLooseFiles.Any() ||
+            bool hasFaceGen = hasLooseMeshesOrTextures ||
                               (faceGenCache.allFaceGenBsaFiles.TryGetValue(vmToRefresh.DisplayName, out var bsaFiles) &&
                                bsaFiles.Any());
             Debug.WriteLine($"{dbgTag} Type checks: hasAppearancePlugins={hasAppearancePlugins}, hasFaceGen={hasFaceGen}");
@@ -2104,7 +2116,10 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             }
 
             // Unload plugins used only in this task's scope.
-            _pluginProvider.UnloadPlugins(modKeysInFolder, new HashSet<string> { modFolderPath });
+            using (DiscoveryMetrics.Work(DiscoveryMetrics.WorkStep.ScanUnloadPlugins))
+            {
+                _pluginProvider.UnloadPlugins(modKeysInFolder, new HashSet<string> { modFolderPath });
+            }
 
             splashReporter?.IncrementProgress($"Scanned: {modFolderName}");
         })).ToList();
@@ -2233,11 +2248,25 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     {
         // This VM will be discarded and never touches the UI.
         string modFolderName = Path.GetFileName(modFolderPath);
-        var tempVmForAnalysis = _modSettingFromModFolderFactory(modFolderPath, modKeysInFolder, this);
-        tempVmForAnalysis.IsNewlyCreated = true;
+        VM_ModSetting? tempVmForAnalysis = null;
+        if (FaceGenDiscovery.UseLegacyImplementation)
+        {
+            using (DiscoveryMetrics.Work(DiscoveryMetrics.WorkStep.ScanTemporaryViewModel))
+            {
+                tempVmForAnalysis = _modSettingFromModFolderFactory(modFolderPath, modKeysInFolder, this);
+                tempVmForAnalysis.IsNewlyCreated = true;
+            }
+        }
 
+        // The FaceGen precheck only needs the folder and the name a temporary VM would carry, so it runs on
+        // plain data: folders without FaceGen are rejected without ever building a view model.
         StartupLogger.Log($"  [{modFolderName}] Checking FaceGen cache");
-        var scanResult = FaceGenScanner.CreateFaceGenScanResultFromCache(tempVmForAnalysis, allFaceGenLooseFiles, allFaceGenBsaFiles);
+        FaceGenScanResult scanResult;
+        using (DiscoveryMetrics.Work(DiscoveryMetrics.WorkStep.ScanFaceGenPrecheck))
+        {
+            scanResult = FaceGenScanner.CreateFaceGenScanResultFromCache(new[] { modFolderPath },
+                Path.GetFileName(modFolderPath) ?? "Invalid Path", allFaceGenLooseFiles, allFaceGenBsaFiles);
+        }
 
         // Pre-Condition: If no FaceGen exists at all, we reject it immediately.
         // This handles cases like "Sword Mods" with no FaceGen assets.
@@ -2246,13 +2275,28 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             return new CacheNonAppearanceResult(modFolderPath, "No FaceGen Files Found");
         }
 
+        if (tempVmForAnalysis == null)
+        {
+            using (DiscoveryMetrics.Work(DiscoveryMetrics.WorkStep.ScanTemporaryViewModel))
+            {
+                tempVmForAnalysis = _modSettingFromModFolderFactory(modFolderPath, modKeysInFolder, this);
+                tempVmForAnalysis.IsNewlyCreated = true;
+            }
+        }
+
         StartupLogger.Log($"  [{modFolderName}] Loading plugins");
-        _pluginProvider.LoadPlugins(modKeysInFolder, new HashSet<string> { modFolderPath });
+        using (DiscoveryMetrics.Work(DiscoveryMetrics.WorkStep.ScanLoadPlugins))
+        {
+            _pluginProvider.LoadPlugins(modKeysInFolder, new HashSet<string> { modFolderPath });
+        }
 
         // Find missing masters (Resources)
         StartupLogger.Log($"  [{modFolderName}] Finding missing masters");
         var warnings = new ConcurrentBag<InitializationWarning>();
-        FindAndAddMissingMasters(tempVmForAnalysis, allModDirectories, warnings);
+        using (DiscoveryMetrics.Work(DiscoveryMetrics.WorkStep.ScanFindMissingMasters))
+        {
+            FindAndAddMissingMasters(tempVmForAnalysis, allModDirectories, warnings);
+        }
         if (splashReporter != null && !warnings.IsEmpty)
         {
             foreach (var warning in warnings)
@@ -2266,7 +2310,10 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         bool isStandardAppearanceMod = false;
         if (modKeysInFolder.Any())
         {
-            isStandardAppearanceMod = await ContainsAppearancePluginsAsync(modKeysInFolder, new() { modFolderPath });
+            using (DiscoveryMetrics.Work(DiscoveryMetrics.WorkStep.ScanAppearancePluginCheck))
+            {
+                isStandardAppearanceMod = await ContainsAppearancePluginsAsync(modKeysInFolder, new() { modFolderPath });
+            }
         }
 
         // PATH A: It is a valid, record-altering Appearance Mod
@@ -2274,12 +2321,19 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         {
             StartupLogger.Log($"  [{modFolderName}] Identified as standard appearance mod, running analysis");
             // Run analysis using the temporary VM
-            tempVmForAnalysis.CheckMergeInSuitability(
-                splashReporter == null ? null : splashReporter.ShowMessagesOnClose);
-            bool injectedFound =
-                await tempVmForAnalysis.CheckForInjectedRecords(splashReporter == null
-                    ? null
-                    : splashReporter.ReportWarning, _settings.LocalizationLanguage);
+            using (DiscoveryMetrics.Work(DiscoveryMetrics.WorkStep.ScanMergeInSuitability))
+            {
+                tempVmForAnalysis.CheckMergeInSuitability(
+                    splashReporter == null ? null : splashReporter.ShowMessagesOnClose);
+            }
+            bool injectedFound;
+            using (DiscoveryMetrics.Work(DiscoveryMetrics.WorkStep.ScanInjectedRecords))
+            {
+                injectedFound =
+                    await tempVmForAnalysis.CheckForInjectedRecords(splashReporter == null
+                        ? null
+                        : splashReporter.ReportWarning, _settings.LocalizationLanguage);
+            }
 
             return new NewVmCreationData(
                 modFolderPath,
@@ -2843,9 +2897,169 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             allFaceGenBsaFiles)>
         CacheFaceGenPathsOnLoadAsync(IEnumerable<VM_ModSetting>? vmsToProcess, VM_SplashScreen? splashReporter)
     {
+        using var _ = DiscoveryMetrics.Time(DiscoveryMetrics.Phase.FaceGenCacheTotal);
+        if (FaceGenDiscovery.UseLegacyImplementation)
+        {
+            return await CacheFaceGenPathsOnLoadLegacyAsync(vmsToProcess, splashReporter);
+        }
+
+        var vmsToProcessList = vmsToProcess?.ToList();
+        bool fullScan = vmsToProcessList == null || !vmsToProcessList.Any();
+
+        // --- Preliminary discovery: which entries exist, with which folders and plugins (plain data) ---
+        List<DiscoveryCandidate> candidates;
+        using (DiscoveryMetrics.Time(DiscoveryMetrics.Phase.PreliminaryCandidates))
+        {
+            candidates = fullScan ? BuildFullScanDiscoveryCandidates() : vmsToProcessList!.Select(vm =>
+                new DiscoveryCandidate(vm.DisplayName, vm.CorrespondingFolderPaths.ToList(),
+                    vm.CorrespondingModKeys.ToList(), vm.IsAutoGenerated)).ToList();
+            DiscoveryMetrics.Add(DiscoveryMetrics.Counter.PreliminaryCandidates, candidates.Count);
+        }
+
+        // --- Part 1: loose FaceGen, enumerating only the facegeom/facetint trees ---
+        Debug.WriteLine("Caching loose FaceGen file paths...");
+        Dictionary<string, HashSet<string>> allFaceGenLooseFiles;
+        using (DiscoveryMetrics.Time(DiscoveryMetrics.Phase.LooseFaceGenDiscovery))
+        {
+            // A full scan covers every mod directory; the synthetic entries own no folders.
+            allFaceGenLooseFiles = FaceGenDiscovery.DiscoverLooseFaceGen(candidates.SelectMany(c => c.FolderPaths));
+        }
+        Debug.WriteLine($"Cached loose file paths for {allFaceGenLooseFiles.Count} mod folders.");
+
+        // --- Part 2: archives each entry's plugins own, then FaceGen inside them ---
+        splashReporter?.UpdateStep("Pre-caching BSA file paths...");
+        var gameRelease = _settings.SkyrimRelease.ToGameRelease();
+        var (bsaPathsByEntry, allRelevantBsaPaths) = await Task.Run(() =>
+        {
+            using var associationPhase = DiscoveryMetrics.Time(DiscoveryMetrics.Phase.ArchiveAssociation);
+            var byEntry = new Dictionary<string, Dictionary<ModKey, HashSet<string>>>();
+            var all = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var processed = 0;
+            foreach (var candidate in candidates)
+            {
+                var pathsToSearch = new HashSet<string>(candidate.FolderPaths);
+                if (candidate.IsAutoGenerated)
+                {
+                    pathsToSearch.Add(_environmentStateProvider.DataFolderPath);
+                }
+
+                var bsaDict = _bsaHandler.GetBsaPathsForPluginsInDirs(candidate.ModKeys, pathsToSearch, gameRelease);
+                byEntry[candidate.DisplayName] = bsaDict;
+                all.UnionWith(bsaDict.Values.SelectMany(paths => paths));
+
+                processed++;
+                if (splashReporter != null)
+                {
+                    var progress = (double)processed / candidates.Count * 100.0;
+                    Application.Current.Dispatcher.Invoke(() =>
+                        splashReporter.UpdateProgress(progress, $"Analyzing assets: {candidate.DisplayName}"));
+                }
+            }
+            return (byEntry, all);
+        });
+        Debug.WriteLine($"Found {allRelevantBsaPaths.Count} unique BSAs to process.");
+        DiscoveryMetrics.Add(DiscoveryMetrics.Counter.ArchivesConsidered, allRelevantBsaPaths.Count);
+
+        splashReporter?.UpdateStep("Caching asset contents...");
+        var bsaContentCache = new ConcurrentDictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        using (DiscoveryMetrics.Time(DiscoveryMetrics.Phase.ArchiveFaceGenIndexing))
+        {
+            await Task.WhenAll(allRelevantBsaPaths.Select(bsaPath => Task.Run(() =>
+            {
+                try
+                {
+                    // Readers come from BsaHandler (uncached open, or the shared cached reader if a
+                    // renderer already holds one), exactly as the full enumeration obtained them.
+                    var faceGenFiles = FaceGenDiscovery.GetArchiveFaceGenPaths(bsaPath, path =>
+                        _bsaHandler.OpenBsaArchiveReaders(new[] { path }, gameRelease, false)
+                            .TryGetValue(path, out var reader) ? reader : null);
+                    bsaContentCache.TryAdd(bsaPath, faceGenFiles);
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException($"Failed to read BSA archive: {bsaPath}", ex);
+                }
+            })));
+        }
+        Debug.WriteLine("Finished caching content from all BSAs.");
+        splashReporter?.UpdateStep("Finalizing asset cache...");
+
+        // --- Part 3: per-entry union of its archives' FaceGen (same keys and contents as before) ---
+        var allFaceGenBsaFiles = new Dictionary<string, HashSet<string>>();
+        foreach (var (displayName, bsaDict) in bsaPathsByEntry)
+        {
+            var bsaFilePathsForEntry = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var bsaPath in bsaDict.Values.SelectMany(paths => paths).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (bsaContentCache.TryGetValue(bsaPath, out var cachedContent))
+                {
+                    bsaFilePathsForEntry.UnionWith(cachedContent);
+                }
+            }
+            allFaceGenBsaFiles[displayName] = bsaFilePathsForEntry;
+        }
+
+        Debug.WriteLine($"Assembled BSA file paths for {allFaceGenBsaFiles.Count} mod settings from cache.");
+        return (allFaceGenLooseFiles, allFaceGenBsaFiles);
+    }
+
+    /// <summary>
+    /// The entries a full FaceGen scan covers — one per mod directory (named after the folder, owning the
+    /// plugins found in it) plus the synthetic Base Game and Creation Club entries — as plain data. This is
+    /// what the original implementation built a temporary <see cref="VM_ModSetting"/> per folder to obtain.
+    /// </summary>
+    private List<DiscoveryCandidate> BuildFullScanDiscoveryCandidates()
+    {
+        var candidates = new List<DiscoveryCandidate>();
+        List<string> modDirectories;
+        try
+        {
+            modDirectories = GetModDirectories();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error enumerating ModsFolder for FaceGen caching: {ExceptionLogger.GetExceptionStack(ex)}");
+            modDirectories = new List<string>();
+        }
+
+        foreach (var modDir in modDirectories)
+        {
+            candidates.Add(new DiscoveryCandidate(Path.GetFileName(modDir) ?? "Invalid Path", new[] { modDir },
+                _aux.GetModKeysInDirectory(modDir, new(), false), IsAutoGenerated: false));
+        }
+
+        var baseGameModKeys = _environmentStateProvider.BaseGamePlugins ?? new();
+        if (baseGameModKeys.Any())
+        {
+            candidates.Add(new DiscoveryCandidate(BaseGameModSettingName, Array.Empty<string>(),
+                baseGameModKeys.ToList(), IsAutoGenerated: true));
+        }
+
+        var creationClubModKeys = _environmentStateProvider.CreationClubPlugins ?? new();
+        if (creationClubModKeys.Any())
+        {
+            candidates.Add(new DiscoveryCandidate(CreationClubModsettingName, Array.Empty<string>(),
+                creationClubModKeys.ToList(), IsAutoGenerated: true));
+        }
+
+        return candidates;
+    }
+
+    /// <summary>
+    /// The original FaceGen path cache: enumerates every <c>*.dds</c> under a mod's <c>Textures</c> and every
+    /// <c>*.nif</c> under its <c>Meshes</c>, builds a temporary <see cref="VM_ModSetting"/> per mod folder to find
+    /// its archives, and enumerates every file of every associated archive. Retained only as the reference
+    /// implementation the discovery benchmark and its equivalence manifest compare against
+    /// (<see cref="FaceGenDiscovery.UseLegacyImplementation"/>); production uses the targeted path.
+    /// </summary>
+    private async Task<(Dictionary<string, HashSet<string>> allFaceGenLooseFiles, Dictionary<string, HashSet<string>>
+            allFaceGenBsaFiles)>
+        CacheFaceGenPathsOnLoadLegacyAsync(IEnumerable<VM_ModSetting>? vmsToProcess, VM_SplashScreen? splashReporter)
+    {
         var vmsToProcessList = vmsToProcess?.ToList();
 
         // --- Part 1: Cache loose files ---
+        var loosePhase = DiscoveryMetrics.Time(DiscoveryMetrics.Phase.LooseFaceGenDiscovery);
         Debug.WriteLine("Caching loose FaceGen file paths...");
         List<string> allPathsToScanForLooseFiles;
         if (vmsToProcessList != null && vmsToProcessList.Any())
@@ -2875,14 +3089,18 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         foreach (var modPath in allPathsToScanForLooseFiles)
         {
             if (!Directory.Exists(modPath)) continue;
+            DiscoveryMetrics.Add(DiscoveryMetrics.Counter.LooseFoldersScanned);
+            long candidatePaths = 0;
 
             var looseFilesInMod = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             var texturesPath = Path.Combine(modPath, "Textures");
             if (Directory.Exists(texturesPath))
             {
+                DiscoveryMetrics.Add(DiscoveryMetrics.Counter.LooseRootsEnumerated);
                 foreach (var file in Directory.EnumerateFiles(texturesPath, "*.dds", SearchOption.AllDirectories))
                 {
+                    candidatePaths++;
                     looseFilesInMod.Add(Path.GetRelativePath(modPath, file).Replace('\\', '/'));
                 }
             }
@@ -2890,19 +3108,24 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             var meshesPath = Path.Combine(modPath, "Meshes");
             if (Directory.Exists(meshesPath))
             {
+                DiscoveryMetrics.Add(DiscoveryMetrics.Counter.LooseRootsEnumerated);
                 foreach (var file in Directory.EnumerateFiles(meshesPath, "*.nif", SearchOption.AllDirectories))
                 {
+                    candidatePaths++;
                     looseFilesInMod.Add(Path.GetRelativePath(modPath, file).Replace('\\', '/'));
                 }
             }
 
+            DiscoveryMetrics.Add(DiscoveryMetrics.Counter.LooseCandidatePaths, candidatePaths);
             if (looseFilesInMod.Any())
             {
                 allFaceGenLooseFiles[modPath] = looseFilesInMod;
+                DiscoveryMetrics.Add(DiscoveryMetrics.Counter.LoosePathsRetained, looseFilesInMod.Count);
             }
         }
 
         Debug.WriteLine($"Cached loose file paths for {allFaceGenLooseFiles.Count} mod folders.");
+        loosePhase.Dispose();
 
         // --- Part 2: Asynchronously cache BSA files with progress reporting ---
         splashReporter?.UpdateStep("Pre-caching BSA file paths...");
@@ -2914,6 +3137,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             var localAllRelevantBsaPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             List<VM_ModSetting> vmsToIterate;
+            var candidatesPhase = DiscoveryMetrics.Time(DiscoveryMetrics.Phase.PreliminaryCandidates);
             if (vmsToProcessList != null && vmsToProcessList.Any())
             {
                 // Scenario 1: Specific VMs were provided.
@@ -2953,7 +3177,11 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 }
 
                 vmsToIterate = tempVmsForFullScan;
+                DiscoveryMetrics.Add(DiscoveryMetrics.Counter.TemporaryViewModelsConstructed, tempVmsForFullScan.Count);
             }
+            DiscoveryMetrics.Add(DiscoveryMetrics.Counter.PreliminaryCandidates, vmsToIterate.Count);
+            candidatesPhase.Dispose();
+            using var associationPhase = DiscoveryMetrics.Time(DiscoveryMetrics.Phase.ArchiveAssociation);
 
             var totalVmCount = vmsToIterate.Count;
             var processedVmCount = 0;
@@ -2987,12 +3215,15 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             return (localVmBsaPathsCache, localAllRelevantBsaPaths);
         });
         Debug.WriteLine($"Found {allRelevantBsaPaths.Count} unique BSAs to process.");
+        DiscoveryMetrics.Add(DiscoveryMetrics.Counter.ArchivesConsidered, allRelevantBsaPaths.Count);
 
         splashReporter?.UpdateStep("Caching asset contents...");
+        var indexingPhase = DiscoveryMetrics.Time(DiscoveryMetrics.Phase.ArchiveFaceGenIndexing);
         var bsaContentCache = new ConcurrentDictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
         var processingTasks = allRelevantBsaPaths.Select(bsaPath => Task.Run(() =>
         {
             var faceGenFilesInArchive = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            long entries = 0;
             try
             {
                 var bsaReaders =
@@ -3000,8 +3231,10 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
                 if (bsaReaders.TryGetValue(bsaPath, out var reader) && reader.Files.Any())
                 {
+                    DiscoveryMetrics.Add(DiscoveryMetrics.Counter.ArchivesFullyIndexed);
                     foreach (var fileRecord in reader.Files)
                     {
+                        entries++;
                         string path = fileRecord.Path.ToLowerInvariant().Replace('\\', '/');
                         if (path.StartsWith("meshes/actors/character/facegendata/") ||
                             path.StartsWith("textures/actors/character/facegendata/"))
@@ -3017,10 +3250,13 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                     $"Failed to read BSA archive: {bsaPath}", ex);
             }
 
+            DiscoveryMetrics.Add(DiscoveryMetrics.Counter.ArchiveFileEntriesEnumerated, entries);
+            DiscoveryMetrics.Add(DiscoveryMetrics.Counter.ArchivePathsRetained, faceGenFilesInArchive.Count);
             bsaContentCache.TryAdd(bsaPath, faceGenFilesInArchive);
         })).ToList();
 
         await Task.WhenAll(processingTasks);
+        indexingPhase.Dispose();
 
         Debug.WriteLine("Finished caching content from all BSAs.");
         splashReporter?.UpdateStep("Finalizing asset cache...");

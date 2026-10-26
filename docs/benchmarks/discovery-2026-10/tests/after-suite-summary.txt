@@ -1,0 +1,21 @@
+Test Run Failed.
+Total tests: 2721
+     Passed: 2718
+     Failed: 3
+ Total time: 1.7749 Minutes
+  Failed NPC_Plugin_Chooser_2.Tests.Integration.GoldenOutput.PatcherGoldenOutputTests.Combo_MatchesReference(comboIndex: 3) [1 s]
+  Failed NPC_Plugin_Chooser_2.Tests.Integration.GoldenOutput.PatcherGoldenOutputTests.Combo_MatchesReference(comboIndex: 2) [3 s]
+  Failed NPC_Plugin_Chooser_2.Tests.Integration.GoldenOutput.PatcherGoldenOutputTests.Combo_MatchesReference(comboIndex: 1) [1 s]
+SKIP/opt-in notes:
+      1 SKIP (curated-browse): memory diagnostic not enabled. Set NPC2_MEMORY_DIAG=1 or drop RunMemoryDiag.txt next to the test assembly.
+      1 SKIP (facefinder): memory diagnostic not enabled. Set NPC2_MEMORY_DIAG=1 or drop RunMemoryDiag.txt next to the test assembly.
+      1 SKIP (render-autogen): memory diagnostic not enabled. Set NPC2_MEMORY_DIAG=1 or drop RunMemoryDiag.txt next to the test assembly.
+      1 SKIP: cache-ratio diagnostic not enabled. Set NPC2_CACHE_RATIO_DIAG=1 or drop RunCacheRatioDiag.txt next to the test assembly.
+      1 SKIP: discovery benchmark not enabled (set NPC2_DISCOVERY_BENCH=1).
+      1 SKIPPED: live FaceFinder comparison is opt-in; set NPC2_FACEFINDER_LIVE=1 to run it (makes real HTTPS calls to npcfacefinder.com).
+      2 SKIPPED: live FaceFinder comparison is opt-in; set NPC2_FACEFINDER_LIVE=1 to run it.
+      1 SKIPPED: live FaceFinder probe is opt-in; set NPC2_FACEFINDER_LIVE=1 to run it (makes real HTTPS calls to npcfacefinder.com).
+      1 SKIPPED: no A run found. `python validation\run.py A skypatcher` first.
+      1 SKIPPED: no B run found. `python validation\run.py B skypatcher` first.
+      1 SKIPPED: no C run found. `python validation\run.py C record` first.
+      2 SKIPPED: this check needs at least two configured appearance mods shipping 'meshes\actors\character\facegendata\facegeom\skyrim.esm\00039cfa.nif'. Add e.g. High Poly NPC Overhaul and Lawless - A Bandit Overhaul to Tests/TestData/EnvironmentMap.local.json to enable it.

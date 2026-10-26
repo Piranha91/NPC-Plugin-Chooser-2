@@ -59,6 +59,19 @@ public static class FaceGenScanner
     public static FaceGenScanResult CreateFaceGenScanResultFromCache(
         VM_ModSetting vmToProcess,
         Dictionary<string, HashSet<string>> allFaceGenLooseFiles,
+        Dictionary<string, HashSet<string>> allFaceGenBsaFiles) =>
+        CreateFaceGenScanResultFromCache(vmToProcess.CorrespondingFolderPaths, vmToProcess.DisplayName,
+            allFaceGenLooseFiles, allFaceGenBsaFiles);
+
+    /// <summary>
+    /// Plain-data form of <see cref="CreateFaceGenScanResultFromCache(VM_ModSetting, Dictionary{string, HashSet{string}}, Dictionary{string, HashSet{string}})"/>:
+    /// the entry is identified by its folder paths (loose cache keys) and display name (archive cache key), so
+    /// discovery can ask "does this folder supply FaceGen?" before any view model exists.
+    /// </summary>
+    public static FaceGenScanResult CreateFaceGenScanResultFromCache(
+        IEnumerable<string> folderPaths,
+        string displayName,
+        Dictionary<string, HashSet<string>> allFaceGenLooseFiles,
         Dictionary<string, HashSet<string>> allFaceGenBsaFiles)
     {
         var filesDict = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
@@ -66,7 +79,7 @@ public static class FaceGenScanner
         bool texturesExist = false;
 
         // 1. Process loose files from the cache
-        foreach (var modPath in vmToProcess.CorrespondingFolderPaths)
+        foreach (var modPath in folderPaths)
         {
             if (allFaceGenLooseFiles.TryGetValue(modPath, out var looseFiles))
             {
@@ -78,7 +91,7 @@ public static class FaceGenScanner
         }
 
         // 2. Process BSA files from the cache
-        if (allFaceGenBsaFiles.TryGetValue(vmToProcess.DisplayName, out var bsaFiles))
+        if (allFaceGenBsaFiles.TryGetValue(displayName, out var bsaFiles))
         {
             foreach (var filePath in bsaFiles)
             {

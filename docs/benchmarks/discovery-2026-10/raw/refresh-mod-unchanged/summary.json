@@ -1,0 +1,1173 @@
+{
+  "meta": {
+    "repo": "S:\\Dev\\NPC Plugin Chooser 2\\NPC Plugin Chooser 2",
+    "settingsSource": "S:\\Dev\\NPC Plugin Chooser 2\\NPC Plugin Chooser 2\\bin\\Debug\\net10.0-windows10.0.19041.0\\Settings.json",
+    "scenarios": [
+      "refresh-mod"
+    ],
+    "runs": 5,
+    "pilot": false,
+    "python": "3.12.6 (tags/v3.12.6:a4a2d2b, Sep  6 2024, 20:11:23) [MSC v.1940 64 bit (AMD64)]",
+    "started": "2026-10-26T00:29:04",
+    "gitHead": "72814c9b0c8b078bf6645eb5d9a8eb51647881c4",
+    "gitStatus": " M BackEnd/Auxilliary.cs\n M BackEnd/FaceGenScanner.cs\n M BackEnd/PluginProvider.cs\n M Tests/README.md\n M \"View Models/VM_Mods.cs\"\n?? AGENTS.md\n?? BackEnd/DiscoveryMetrics.cs\n?? BackEnd/FaceGenDiscovery.cs\n?? Tests/Benchmark/\n?? Tests/Harness/FaceGenDiscoveryArchiveTests.cs\n?? Tests/Harness/FaceGenDiscoveryLooseTests.cs\n?? Tests/Integration/Benchmark/\n?? Tests/TestSupport/BsaFixtureWriter.cs\n"
+  },
+  "summary": {
+    "refresh-mod/legacy": {
+      "wallMs": {
+        "n": 5,
+        "median": 206.6961,
+        "min": 194.9796,
+        "max": 210.3273,
+        "q1": 196.76485,
+        "q3": 208.74285,
+        "raw": [
+          194.9796,
+          198.5501,
+          206.6961,
+          207.1584,
+          210.3273
+        ]
+      },
+      "cpuMs": {
+        "n": 5,
+        "median": 156.25,
+        "min": 140.625,
+        "max": 234.375,
+        "q1": 140.625,
+        "q3": 210.9375,
+        "raw": [
+          140.625,
+          140.625,
+          156.25,
+          187.5,
+          234.375
+        ]
+      },
+      "allocatedBytes": {
+        "n": 5,
+        "median": 101533136,
+        "min": 101454664,
+        "max": 101563640,
+        "q1": 101465840.0,
+        "q3": 101560784.0,
+        "raw": [
+          101454664,
+          101477016,
+          101533136,
+          101557928,
+          101563640
+        ]
+      },
+      "peakWorkingSetBytes": {
+        "n": 5,
+        "median": 1742651392,
+        "min": 1717526528,
+        "max": 1834569728,
+        "q1": 1729359872.0,
+        "q3": 1792073728.0,
+        "raw": [
+          1717526528,
+          1741193216,
+          1742651392,
+          1749577728,
+          1834569728
+        ]
+      },
+      "phases": {
+        "FaceGenCacheTotal": {
+          "n": 5,
+          "median": 3.0491,
+          "min": 2.8118,
+          "max": 3.5872,
+          "q1": 2.9002999999999997,
+          "q3": 3.5202999999999998,
+          "raw": [
+            2.8118,
+            2.9888,
+            3.0491,
+            3.4534,
+            3.5872
+          ]
+        },
+        "LooseFaceGenDiscovery": {
+          "n": 5,
+          "median": 0.3965,
+          "min": 0.2853,
+          "max": 0.4644,
+          "q1": 0.28695000000000004,
+          "q3": 0.46145,
+          "raw": [
+            0.2853,
+            0.2886,
+            0.3965,
+            0.4585,
+            0.4644
+          ]
+        },
+        "PreliminaryCandidates": {
+          "n": 5,
+          "median": 0.0009,
+          "min": 0.0008,
+          "max": 0.0015,
+          "q1": 0.0008500000000000001,
+          "q3": 0.0015,
+          "raw": [
+            0.0008,
+            0.0009,
+            0.0009,
+            0.0015,
+            0.0015
+          ]
+        },
+        "ArchiveAssociation": {
+          "n": 5,
+          "median": 1.864,
+          "min": 1.6109,
+          "max": 1.992,
+          "q1": 1.6686,
+          "q3": 1.9804,
+          "raw": [
+            1.6109,
+            1.7263,
+            1.864,
+            1.9688,
+            1.992
+          ]
+        },
+        "ArchiveFaceGenIndexing": {
+          "n": 5,
+          "median": 0.2633,
+          "min": 0.2439,
+          "max": 0.4159,
+          "q1": 0.24605,
+          "q3": 0.3812,
+          "raw": [
+            0.2439,
+            0.2482,
+            0.2633,
+            0.3465,
+            0.4159
+          ]
+        },
+        "ModFolderScan": {
+          "n": 5,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "Analysis": {
+          "n": 5,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      "scanWorkSteps": {
+        "ScanTemporaryViewModel": {
+          "n": 5,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "ScanFaceGenPrecheck": {
+          "n": 5,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "ScanLoadPlugins": {
+          "n": 5,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "ScanFindMissingMasters": {
+          "n": 5,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "ScanAppearancePluginCheck": {
+          "n": 5,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "ScanMergeInSuitability": {
+          "n": 5,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "ScanInjectedRecords": {
+          "n": 5,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "ScanUnloadPlugins": {
+          "n": 5,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      "counters": {
+        "LooseFoldersScanned": {
+          "n": 5,
+          "median": 1,
+          "min": 1,
+          "max": 1,
+          "q1": 1.0,
+          "q3": 1.0,
+          "raw": [
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "LooseDuplicateFolderReferences": {
+          "n": 5,
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "LooseRootsEnumerated": {
+          "n": 5,
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "q1": 2.0,
+          "q3": 2.0,
+          "raw": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ]
+        },
+        "LooseCandidatePaths": {
+          "n": 5,
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "q1": 6.0,
+          "q3": 6.0,
+          "raw": [
+            6,
+            6,
+            6,
+            6,
+            6
+          ]
+        },
+        "LoosePathsRetained": {
+          "n": 5,
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "q1": 6.0,
+          "q3": 6.0,
+          "raw": [
+            6,
+            6,
+            6,
+            6,
+            6
+          ]
+        },
+        "PreliminaryCandidates": {
+          "n": 5,
+          "median": 1,
+          "min": 1,
+          "max": 1,
+          "q1": 1.0,
+          "q3": 1.0,
+          "raw": [
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "TemporaryViewModelsConstructed": {
+          "n": 5,
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "ArchivesConsidered": {
+          "n": 5,
+          "median": 1,
+          "min": 1,
+          "max": 1,
+          "q1": 1.0,
+          "q3": 1.0,
+          "raw": [
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "ArchivesProbed": {
+          "n": 5,
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "ArchivesProbeAbsent": {
+          "n": 5,
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "ArchivesProbePresent": {
+          "n": 5,
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "ArchivesProbeInconclusive": {
+          "n": 5,
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "ArchivesFullyIndexed": {
+          "n": 5,
+          "median": 1,
+          "min": 1,
+          "max": 1,
+          "q1": 1.0,
+          "q3": 1.0,
+          "raw": [
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "ArchiveFoldersRead": {
+          "n": 5,
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "ArchiveFileEntriesEnumerated": {
+          "n": 5,
+          "median": 37,
+          "min": 37,
+          "max": 37,
+          "q1": 37.0,
+          "q3": 37.0,
+          "raw": [
+            37,
+            37,
+            37,
+            37,
+            37
+          ]
+        },
+        "ArchivePathsRetained": {
+          "n": 5,
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "ArchiveListingCacheHits": {
+          "n": 5,
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "PluginDirectoryListings": {
+          "n": 5,
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "q1": 2.0,
+          "q3": 2.0,
+          "raw": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ]
+        },
+        "PluginLoads": {
+          "n": 5,
+          "median": 5,
+          "min": 5,
+          "max": 5,
+          "q1": 5.0,
+          "q3": 5.0,
+          "raw": [
+            5,
+            5,
+            5,
+            5,
+            5
+          ]
+        }
+      }
+    },
+    "refresh-mod/optimized": {
+      "wallMs": {
+        "n": 5,
+        "median": 195.0974,
+        "min": 185.8515,
+        "max": 197.1442,
+        "q1": 187.2566,
+        "q3": 197.01295,
+        "raw": [
+          185.8515,
+          188.6617,
+          195.0974,
+          196.8817,
+          197.1442
+        ]
+      },
+      "cpuMs": {
+        "n": 5,
+        "median": 140.625,
+        "min": 93.75,
+        "max": 218.75,
+        "q1": 109.375,
+        "q3": 195.3125,
+        "raw": [
+          93.75,
+          125.0,
+          140.625,
+          171.875,
+          218.75
+        ]
+      },
+      "allocatedBytes": {
+        "n": 5,
+        "median": 101457024,
+        "min": 101437664,
+        "max": 101561160,
+        "q1": 101438588.0,
+        "q3": 101543144.0,
+        "raw": [
+          101437664,
+          101439512,
+          101457024,
+          101525128,
+          101561160
+        ]
+      },
+      "peakWorkingSetBytes": {
+        "n": 5,
+        "median": 1771372544,
+        "min": 1662976000,
+        "max": 1805230080,
+        "q1": 1714794496.0,
+        "q3": 1802055680.0,
+        "raw": [
+          1662976000,
+          1766612992,
+          1771372544,
+          1798881280,
+          1805230080
+        ]
+      },
+      "phases": {
+        "FaceGenCacheTotal": {
+          "n": 5,
+          "median": 2.8435,
+          "min": 2.6758,
+          "max": 3.2695,
+          "q1": 2.7395,
+          "q3": 3.0580999999999996,
+          "raw": [
+            2.6758,
+            2.8032,
+            2.8435,
+            2.8467,
+            3.2695
+          ]
+        },
+        "LooseFaceGenDiscovery": {
+          "n": 5,
+          "median": 0.2408,
+          "min": 0.2387,
+          "max": 0.2476,
+          "q1": 0.23954999999999999,
+          "q3": 0.2473,
+          "raw": [
+            0.2387,
+            0.2404,
+            0.2408,
+            0.247,
+            0.2476
+          ]
+        },
+        "PreliminaryCandidates": {
+          "n": 5,
+          "median": 0.0642,
+          "min": 0.0616,
+          "max": 0.0691,
+          "q1": 0.0622,
+          "q3": 0.06725,
+          "raw": [
+            0.0616,
+            0.0628,
+            0.0642,
+            0.0654,
+            0.0691
+          ]
+        },
+        "ArchiveAssociation": {
+          "n": 5,
+          "median": 1.128,
+          "min": 0.884,
+          "max": 1.2664,
+          "q1": 0.9757,
+          "q3": 1.224,
+          "raw": [
+            0.884,
+            1.0674,
+            1.128,
+            1.1816,
+            1.2664
+          ]
+        },
+        "ArchiveFaceGenIndexing": {
+          "n": 5,
+          "median": 0.6035,
+          "min": 0.5331,
+          "max": 0.7364,
+          "q1": 0.5560499999999999,
+          "q3": 0.7149000000000001,
+          "raw": [
+            0.5331,
+            0.579,
+            0.6035,
+            0.6934,
+            0.7364
+          ]
+        },
+        "ModFolderScan": {
+          "n": 5,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "Analysis": {
+          "n": 5,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      "scanWorkSteps": {
+        "ScanTemporaryViewModel": {
+          "n": 5,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "ScanFaceGenPrecheck": {
+          "n": 5,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "ScanLoadPlugins": {
+          "n": 5,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "ScanFindMissingMasters": {
+          "n": 5,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "ScanAppearancePluginCheck": {
+          "n": 5,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "ScanMergeInSuitability": {
+          "n": 5,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "ScanInjectedRecords": {
+          "n": 5,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "ScanUnloadPlugins": {
+          "n": 5,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      "counters": {
+        "LooseFoldersScanned": {
+          "n": 5,
+          "median": 1,
+          "min": 1,
+          "max": 1,
+          "q1": 1.0,
+          "q3": 1.0,
+          "raw": [
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "LooseDuplicateFolderReferences": {
+          "n": 5,
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "LooseRootsEnumerated": {
+          "n": 5,
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "q1": 2.0,
+          "q3": 2.0,
+          "raw": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ]
+        },
+        "LooseCandidatePaths": {
+          "n": 5,
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "q1": 6.0,
+          "q3": 6.0,
+          "raw": [
+            6,
+            6,
+            6,
+            6,
+            6
+          ]
+        },
+        "LoosePathsRetained": {
+          "n": 5,
+          "median": 6,
+          "min": 6,
+          "max": 6,
+          "q1": 6.0,
+          "q3": 6.0,
+          "raw": [
+            6,
+            6,
+            6,
+            6,
+            6
+          ]
+        },
+        "PreliminaryCandidates": {
+          "n": 5,
+          "median": 1,
+          "min": 1,
+          "max": 1,
+          "q1": 1.0,
+          "q3": 1.0,
+          "raw": [
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "TemporaryViewModelsConstructed": {
+          "n": 5,
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "ArchivesConsidered": {
+          "n": 5,
+          "median": 1,
+          "min": 1,
+          "max": 1,
+          "q1": 1.0,
+          "q3": 1.0,
+          "raw": [
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "ArchivesProbed": {
+          "n": 5,
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "ArchivesProbeAbsent": {
+          "n": 5,
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "ArchivesProbePresent": {
+          "n": 5,
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "ArchivesProbeInconclusive": {
+          "n": 5,
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "ArchivesFullyIndexed": {
+          "n": 5,
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "ArchiveFoldersRead": {
+          "n": 5,
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "ArchiveFileEntriesEnumerated": {
+          "n": 5,
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "ArchivePathsRetained": {
+          "n": 5,
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "raw": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "ArchiveListingCacheHits": {
+          "n": 5,
+          "median": 1,
+          "min": 1,
+          "max": 1,
+          "q1": 1.0,
+          "q3": 1.0,
+          "raw": [
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "PluginDirectoryListings": {
+          "n": 5,
+          "median": 2,
+          "min": 2,
+          "max": 2,
+          "q1": 2.0,
+          "q3": 2.0,
+          "raw": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ]
+        },
+        "PluginLoads": {
+          "n": 5,
+          "median": 5,
+          "min": 5,
+          "max": 5,
+          "q1": 5.0,
+          "q3": 5.0,
+          "raw": [
+            5,
+            5,
+            5,
+            5,
+            5
+          ]
+        }
+      }
+    }
+  }
+}

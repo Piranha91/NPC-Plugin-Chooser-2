@@ -1,0 +1,263 @@
+{
+  "scenario": "cold",
+  "variants": {
+    "legacy": {
+      "runs": [
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-cold-legacy-r1.json",
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-cold-legacy-r2.json",
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-cold-legacy-r3.json",
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-cold-legacy-r4.json",
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-cold-legacy-r5.json",
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-cold-legacy-r6.json",
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-cold-legacy-seed.json"
+      ],
+      "facts": 516116,
+      "unstableFacts": 17
+    },
+    "optimized": {
+      "runs": [
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-cold-optimized-r1.json",
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-cold-optimized-r2.json",
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-cold-optimized-r3.json",
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-cold-optimized-r4.json",
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-cold-optimized-r5.json",
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-cold-optimized-r6.json",
+        "Tests/bin/DiscoveryBench/results-20261025-235629\\manifest-cold-optimized-seed.json"
+      ],
+      "facts": 516121,
+      "unstableFacts": 12
+    }
+  },
+  "realDifferences": {
+    "stableInLegacyNeverInOptimized": [],
+    "stableInOptimizedNeverInLegacy": [],
+    "counts": [
+      0,
+      0
+    ]
+  },
+  "stableInOneIntermittentInOther": {
+    "count": 5,
+    "examples": [
+      [
+        "inMemory",
+        "Vilja Re-Imagined SSE",
+        "AvailablePluginsForNpcs",
+        "000D67:EMCompViljaSkyrim.esp=[\"Vilja Re-Imagined SE.esp\"]"
+      ],
+      [
+        "inMemory",
+        "Vilja Re-Imagined SSE",
+        "NpcFormKeys",
+        "\"000D67:EMCompViljaSkyrim.esp\""
+      ],
+      [
+        "modSettings",
+        "Vilja Re-Imagined SSE",
+        "AvailablePluginsForNpcs",
+        "000D67:EMCompViljaSkyrim.esp=[\"Vilja Re-Imagined SE.esp\"]"
+      ],
+      [
+        "modSettings",
+        "Vilja Re-Imagined SSE",
+        "NpcFormKeys",
+        "\"000D67:EMCompViljaSkyrim.esp\""
+      ],
+      [
+        "modSettings",
+        "Vilja Re-Imagined SSE",
+        "NpcFormKeysToDisplayName",
+        "000D67:EMCompViljaSkyrim.esp=\"Vilja\""
+      ]
+    ]
+  },
+  "unstableExamples": {
+    "legacy": [
+      [
+        "inMemory",
+        "Base Game",
+        "AvailablePluginsForNpcs",
+        "0B28A5:Skyrim.esm=[\"Skyrim.esm\"]"
+      ],
+      [
+        "inMemory",
+        "Base Game",
+        "NpcFormKeys",
+        "\"0B28A5:Skyrim.esm\""
+      ],
+      [
+        "inMemory",
+        "Twisted's High Poly NPC Overhauls",
+        "AvailablePluginsForNpcs",
+        "0B28A5:Skyrim.esm=[\"TS - Lawless NPC Overhaul.esp\"]"
+      ],
+      [
+        "inMemory",
+        "Twisted's High Poly NPC Overhauls",
+        "NpcFormKeys",
+        "\"0B28A5:Skyrim.esm\""
+      ],
+      [
+        "inMemory",
+        "Vilja Re-Imagined SSE",
+        "AvailablePluginsForNpcs",
+        "000D67:EMCompViljaSkyrim.esp=[\"Vilja Re-Imagined SE.esp\"]"
+      ],
+      [
+        "inMemory",
+        "Vilja Re-Imagined SSE",
+        "NpcFormKeys",
+        "\"000D67:EMCompViljaSkyrim.esp\""
+      ],
+      [
+        "modSettings",
+        "Base Game",
+        "AvailablePluginsForNpcs",
+        "0B28A5:Skyrim.esm=[\"Skyrim.esm\"]"
+      ],
+      [
+        "modSettings",
+        "Base Game",
+        "NpcFormKeys",
+        "\"0B28A5:Skyrim.esm\""
+      ],
+      [
+        "modSettings",
+        "Base Game",
+        "NpcFormKeysToDisplayName",
+        "0B28A5:Skyrim.esm=\"dunHalldirs_LvlBanditGhostWizardAmbush\""
+      ],
+      [
+        "modSettings",
+        "Base Game",
+        "NpcFormKeysToNotifications",
+        "0B28A5:Skyrim.esm={\"Item1\": \"Template\", \"Item2\": \"This NPC from Skyrim.esm has the Traits flag so it inherits appearance from 0B289E:Skyrim.esm. Regardless of which mod you select here, if you see the Template icon, it'll use the appearance of the template.\", \"Item3\": \"0B289E:Skyrim.esm\"}"
+      ],
+      [
+        "modSettings",
+        "Twisted's High Poly NPC Overhauls",
+        "AvailablePluginsForNpcs",
+        "0B28A5:Skyrim.esm=[\"TS - Lawless NPC Overhaul.esp\"]"
+      ],
+      [
+        "modSettings",
+        "Twisted's High Poly NPC Overhauls",
+        "NpcFormKeys",
+        "\"0B28A5:Skyrim.esm\""
+      ],
+      [
+        "modSettings",
+        "Twisted's High Poly NPC Overhauls",
+        "NpcFormKeysToDisplayName",
+        "0B28A5:Skyrim.esm=\"dunHalldirs_LvlBanditGhostWizardAmbush\""
+      ],
+      [
+        "modSettings",
+        "Twisted's High Poly NPC Overhauls",
+        "NpcFormKeysToNotifications",
+        "0B28A5:Skyrim.esm={\"Item1\": \"Template\", \"Item2\": \"This NPC from TS - Lawless NPC Overhaul.esp has the Traits flag so it inherits appearance from 01E771:Skyrim.esm. Regardless of which mod you select here, if you see the Template icon, it'll use the appearance of the template.\", \"Item3\": \"01E771:Skyrim.esm\"}"
+      ],
+      [
+        "modSettings",
+        "Vilja Re-Imagined SSE",
+        "AvailablePluginsForNpcs",
+        "000D67:EMCompViljaSkyrim.esp=[\"Vilja Re-Imagined SE.esp\"]"
+      ],
+      [
+        "modSettings",
+        "Vilja Re-Imagined SSE",
+        "NpcFormKeys",
+        "\"000D67:EMCompViljaSkyrim.esp\""
+      ],
+      [
+        "modSettings",
+        "Vilja Re-Imagined SSE",
+        "NpcFormKeysToDisplayName",
+        "000D67:EMCompViljaSkyrim.esp=\"Vilja\""
+      ]
+    ],
+    "optimized": [
+      [
+        "inMemory",
+        "Base Game",
+        "AvailablePluginsForNpcs",
+        "0B28A5:Skyrim.esm=[\"Skyrim.esm\"]"
+      ],
+      [
+        "inMemory",
+        "Base Game",
+        "NpcFormKeys",
+        "\"0B28A5:Skyrim.esm\""
+      ],
+      [
+        "inMemory",
+        "Twisted's High Poly NPC Overhauls",
+        "AvailablePluginsForNpcs",
+        "0B28A5:Skyrim.esm=[\"TS - Lawless NPC Overhaul.esp\"]"
+      ],
+      [
+        "inMemory",
+        "Twisted's High Poly NPC Overhauls",
+        "NpcFormKeys",
+        "\"0B28A5:Skyrim.esm\""
+      ],
+      [
+        "modSettings",
+        "Base Game",
+        "AvailablePluginsForNpcs",
+        "0B28A5:Skyrim.esm=[\"Skyrim.esm\"]"
+      ],
+      [
+        "modSettings",
+        "Base Game",
+        "NpcFormKeys",
+        "\"0B28A5:Skyrim.esm\""
+      ],
+      [
+        "modSettings",
+        "Base Game",
+        "NpcFormKeysToDisplayName",
+        "0B28A5:Skyrim.esm=\"dunHalldirs_LvlBanditGhostWizardAmbush\""
+      ],
+      [
+        "modSettings",
+        "Base Game",
+        "NpcFormKeysToNotifications",
+        "0B28A5:Skyrim.esm={\"Item1\": \"Template\", \"Item2\": \"This NPC from Skyrim.esm has the Traits flag so it inherits appearance from 0B289E:Skyrim.esm. Regardless of which mod you select here, if you see the Template icon, it'll use the appearance of the template.\", \"Item3\": \"0B289E:Skyrim.esm\"}"
+      ],
+      [
+        "modSettings",
+        "Twisted's High Poly NPC Overhauls",
+        "AvailablePluginsForNpcs",
+        "0B28A5:Skyrim.esm=[\"TS - Lawless NPC Overhaul.esp\"]"
+      ],
+      [
+        "modSettings",
+        "Twisted's High Poly NPC Overhauls",
+        "NpcFormKeys",
+        "\"0B28A5:Skyrim.esm\""
+      ],
+      [
+        "modSettings",
+        "Twisted's High Poly NPC Overhauls",
+        "NpcFormKeysToDisplayName",
+        "0B28A5:Skyrim.esm=\"dunHalldirs_LvlBanditGhostWizardAmbush\""
+      ],
+      [
+        "modSettings",
+        "Twisted's High Poly NPC Overhauls",
+        "NpcFormKeysToNotifications",
+        "0B28A5:Skyrim.esm={\"Item1\": \"Template\", \"Item2\": \"This NPC from TS - Lawless NPC Overhaul.esp has the Traits flag so it inherits appearance from 01E771:Skyrim.esm. Regardless of which mod you select here, if you see the Template icon, it'll use the appearance of the template.\", \"Item3\": \"01E771:Skyrim.esm\"}"
+      ]
+    ]
+  },
+  "unstableEntities": [
+    "modSettings :: Twisted's High Poly NPC Overhauls (8 facts)",
+    "modSettings :: Base Game (8 facts)",
+    "inMemory :: Twisted's High Poly NPC Overhauls (4 facts)",
+    "inMemory :: Base Game (4 facts)",
+    "modSettings :: Vilja Re-Imagined SSE (3 facts)",
+    "inMemory :: Vilja Re-Imagined SSE (2 facts)"
+  ],
+  "equivalent": true
+}

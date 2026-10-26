@@ -1,0 +1,11 @@
+{
+  "modFolders": 717,
+  "legacy": {
+    "directoriesListed": 14998,
+    "pathsYielded": 162385
+  },
+  "optimized": {
+    "directoriesListed": 6835,
+    "pathsYielded": 84353
+  }
+}

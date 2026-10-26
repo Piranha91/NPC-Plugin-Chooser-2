@@ -172,6 +172,53 @@ by their subscription to a singleton. It has two layers:
   a tile's constructor kicks a fire-and-forget `LoadInitialImageAsync` with no cancellation token, and for
   NPCs whose image never resolves under the stub that task keeps the tile alive regardless of disposal.
 
+## FaceGen discovery tests and benchmark
+
+**Focused tests (`Harness/FaceGenDiscovery*Tests.cs`, run in the normal suite).** Contract tests for the targeted
+FaceGen discovery in `BackEnd/FaceGenDiscovery.cs`:
+
+- *Loose* — stated against the consumers: for each layout (FaceGen among many unrelated meshes/textures,
+  mesh-only, tint-only, none, mixed casing, nested backup folders, several plugin folders), `FaceGenScanner` and
+  `VM_ModSetting.FaceGenExists` must see exactly what they saw through the original cache of every mesh/texture
+  (re-implemented in the test as the oracle). Also: duplicate folder references are enumerated once, nothing is
+  cached across calls, textures are presented before meshes (which decides the persisted spelling of FaceGen-only
+  FormKeys when a mod's facetint/facegeom plugin folders differ only in case), and the refresh path's broader
+  "any loose mesh/texture?" question is preserved by its own probe. These tests read `DiscoveryMetrics`' static
+  counters, so they run in a non-parallel collection.
+- *Archives* — real BSAs written by `TestSupport/BsaFixtureWriter` (uncompressed SE v105 / LE v104, plus
+  deliberately malformed variants). The result must always equal enumerating every file through Mutagen; an
+  archive whose folder table proves it has no FaceGen is never opened for detail; unsupported versions, missing
+  name tables, inconsistent totals, duplicate folder names, truncated or non-BSA files and folders Mutagen cannot
+  address all fall back to the full reader (and fail the same way it does); changed archives are re-read, unchanged
+  ones are served from the in-process listing cache; and `BsaHandler`'s shared readers and full asset index still
+  serve non-FaceGen files afterwards.
+
+**Benchmark (`Integration/Benchmark/`, opt-in, local-only).** `DiscoveryBenchmark` drives the real startup
+population (`FrontendVmHarness.DriveStartupPopulationAsync`) against a Mod Organizer 2 instance — by default
+`S:\Skyrim NPC Selection`, profile `NPC Test` — in one fresh test-host process per run, for either the legacy or
+the targeted discovery (`FaceGenDiscovery.UseLegacyImplementation`, an internal switch the app never sets).
+`Mo2ProfileEnvironment` resolves the environment the way the MO2 VFS would (Data folder from `ModOrganizer.ini`'s
+`gamePath`, profile plugins resolved by `modlist.txt` priority) instead of auto-detecting, and the test **fails**
+rather than skipping when enabled but unable to resolve it. It is inert unless `NPC2_DISCOVERY_BENCH=1`.
+
+```sh
+python Tests/Benchmark/run_discovery_benchmark.py --scenarios cold,warm,refresh-all --runs 6
+python Tests/Benchmark/make_refresh_fixture.py        # disposable subset for the refresh-mod scenario
+python Tests/Benchmark/report_discovery_benchmark.py <results-dir> --out <prefix>
+python Tests/Benchmark/manifest_stability.py <results-dir> --scenario cold
+```
+
+The driver builds Release once (not timed), copies the test output to `Tests/bin/DiscoveryBench/bin` so every
+file the app writes (Settings.json, RaceEvalCache.json, ModIssuesCache.json, analysis logs) stays there, copies
+the Debug app's `Settings.json` as input without modifying it, and alternates the variants in ABBA order.
+Scenarios: `cold` (empty discovery caches), `warm` (persisted caches from a seeding cold run), `refresh-all`
+(Refresh All after a warm start; includes the method's fixed ~1.1 s of `Task.Delay`), `refresh-mod` (single-mod
+refresh of a fixture copy, optionally after a controlled archive + loose change). Every run writes a normalized
+manifest (`DiscoveryManifest`); `compare_manifests.py` diffs two, `manifest_stability.py` separates variant
+differences from run-to-run nondeterminism across many runs. Timings use process-wide counters
+(`GC.GetTotalAllocatedBytes(precise: true)`, `Process.TotalProcessorTime`), and `DiscoveryMetrics` counters are
+logical work counts, not physical I/O. The OS file cache is not flushed: runs are fresh *processes*, not cold disks.
+
 ## Known gaps / future work
 - **`EasyNpcTranslator` import/export** parse cores are coupled to file-dialog/UI calls; only the
   `TryGetDefaultPlugin` preset branch is unit-reachable. Extracting a pure `ParseProfileLine`

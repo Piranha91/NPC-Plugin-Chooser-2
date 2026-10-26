@@ -1,0 +1,196 @@
+{
+  "legacy": "Tests/bin/DiscoveryBench/results-20261025-235629/manifest-cold-legacy-r2.json",
+  "optimized": "Tests/bin/DiscoveryBench/results-20261025-235629/manifest-cold-optimized-r2.json",
+  "sections": {
+    "faceGenCache.loose": {
+      "foldersLegacy": 630,
+      "foldersOptimized": 578,
+      "pathsLegacy": 162385,
+      "pathsOptimized": 84353,
+      "faceGenPathsMissingFromOptimized": 0,
+      "examplesMissing": [],
+      "pathsOnlyInOptimized": 0,
+      "examplesExtra": [],
+      "nonFaceGenPathsNoLongerCached": 78032,
+      "droppedPathsLegacyConsumersWouldAccept": [],
+      "foldersOnlyInLegacyKeys": 52,
+      "foldersOnlyInLegacyKeysThatHadFaceGen": [],
+      "identicalFaceGenSubset": true
+    },
+    "faceGenCache.bsa": {
+      "onlyLegacy": [],
+      "onlyOptimized": [],
+      "changed": [],
+      "counts": {
+        "onlyLegacy": 0,
+        "onlyOptimized": 0,
+        "changed": 0,
+        "legacy": 719,
+        "optimized": 719
+      },
+      "paths": {
+        "legacy": 40125,
+        "optimized": 40125
+      },
+      "identical": true
+    },
+    "modSettings": {
+      "onlyLegacy": [],
+      "onlyOptimized": [],
+      "changed": [
+        "Base Game",
+        "Twisted's High Poly NPC Overhauls"
+      ],
+      "counts": {
+        "onlyLegacy": 0,
+        "onlyOptimized": 0,
+        "changed": 2,
+        "legacy": 619,
+        "optimized": 619
+      },
+      "identical": false,
+      "firstChangedFields": [
+        "AvailablePluginsForNpcs",
+        "NpcFormKeys",
+        "NpcFormKeysToDisplayName",
+        "NpcFormKeysToNotifications"
+      ],
+      "details": {
+        "Base Game": {
+          "AvailablePluginsForNpcs": {
+            "onlyLegacy": [
+              "\"0B28A5:Skyrim.esm\""
+            ],
+            "onlyOptimized": [],
+            "sameMembersDifferentOrder": false
+          },
+          "NpcFormKeys": {
+            "onlyLegacy": [
+              "\"0B28A5:Skyrim.esm\""
+            ],
+            "onlyOptimized": [],
+            "sameMembersDifferentOrder": false
+          },
+          "NpcFormKeysToDisplayName": {
+            "onlyLegacy": [
+              "\"0B28A5:Skyrim.esm\""
+            ],
+            "onlyOptimized": [],
+            "sameMembersDifferentOrder": false
+          },
+          "NpcFormKeysToNotifications": {
+            "onlyLegacy": [
+              "\"0B28A5:Skyrim.esm\""
+            ],
+            "onlyOptimized": [],
+            "sameMembersDifferentOrder": false
+          }
+        },
+        "Twisted's High Poly NPC Overhauls": {
+          "AvailablePluginsForNpcs": {
+            "onlyLegacy": [
+              "\"0B28A5:Skyrim.esm\""
+            ],
+            "onlyOptimized": [],
+            "sameMembersDifferentOrder": false
+          },
+          "NpcFormKeys": {
+            "onlyLegacy": [
+              "\"0B28A5:Skyrim.esm\""
+            ],
+            "onlyOptimized": [],
+            "sameMembersDifferentOrder": false
+          },
+          "NpcFormKeysToDisplayName": {
+            "onlyLegacy": [
+              "\"0B28A5:Skyrim.esm\""
+            ],
+            "onlyOptimized": [],
+            "sameMembersDifferentOrder": false
+          },
+          "NpcFormKeysToNotifications": {
+            "onlyLegacy": [
+              "\"0B28A5:Skyrim.esm\""
+            ],
+            "onlyOptimized": [],
+            "sameMembersDifferentOrder": false
+          }
+        }
+      }
+    },
+    "inMemory": {
+      "onlyLegacy": [],
+      "onlyOptimized": [],
+      "changed": [
+        "Base Game",
+        "Twisted's High Poly NPC Overhauls"
+      ],
+      "counts": {
+        "onlyLegacy": 0,
+        "onlyOptimized": 0,
+        "changed": 2,
+        "legacy": 1416,
+        "optimized": 1416
+      },
+      "identical": false,
+      "firstChangedFields": [
+        "AvailablePluginsForNpcs",
+        "NpcFormKeys"
+      ],
+      "details": {
+        "Base Game": {
+          "AvailablePluginsForNpcs": {
+            "onlyLegacy": [
+              "\"0B28A5:Skyrim.esm\""
+            ],
+            "onlyOptimized": [],
+            "sameMembersDifferentOrder": false
+          },
+          "NpcFormKeys": {
+            "onlyLegacy": [
+              "\"0B28A5:Skyrim.esm\""
+            ],
+            "onlyOptimized": [],
+            "sameMembersDifferentOrder": false
+          }
+        },
+        "Twisted's High Poly NPC Overhauls": {
+          "AvailablePluginsForNpcs": {
+            "onlyLegacy": [
+              "\"0B28A5:Skyrim.esm\""
+            ],
+            "onlyOptimized": [],
+            "sameMembersDifferentOrder": false
+          },
+          "NpcFormKeys": {
+            "onlyLegacy": [
+              "\"0B28A5:Skyrim.esm\""
+            ],
+            "onlyOptimized": [],
+            "sameMembersDifferentOrder": false
+          }
+        }
+      }
+    },
+    "npcCatalogue": {
+      "onlyLegacy": [],
+      "onlyOptimized": [],
+      "changed": [],
+      "counts": {
+        "onlyLegacy": 0,
+        "onlyOptimized": 0,
+        "changed": 0,
+        "legacy": 12509,
+        "optimized": 12509
+      },
+      "identical": true
+    },
+    "caches": {
+      "identical": true
+    },
+    "dialogs": {
+      "identical": true
+    }
+  },
+  "allMustMatchSectionsIdentical": false
+}

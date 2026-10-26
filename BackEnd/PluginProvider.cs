@@ -199,6 +199,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             
             try
             {
+                DiscoveryMetrics.Add(DiscoveryMetrics.Counter.PluginLoads);
                 plugin = asReadOnly
                     ? SkyrimMod.CreateFromBinaryOverlay(path, _environmentStateProvider.SkyrimVersion)
                     : SkyrimMod.CreateFromBinary(path, _environmentStateProvider.SkyrimVersion);
