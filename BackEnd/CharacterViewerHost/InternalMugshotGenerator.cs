@@ -382,7 +382,7 @@ public sealed class InternalMugshotGenerator
                 if (renderTimings == null) return;
                 host.PostRenderMs = sw.ElapsedMilliseconds - postRenderStart;
                 WriteRenderTimingsCsv(npcFormKey, modSetting, renderTimings, host, png.Length,
-                    hostElapsedMs: sw.ElapsedMilliseconds);
+                    hostElapsedMs: sw.ElapsedMilliseconds, targetNpcFormKey);
             }
 
             // Asset-validation gate (batch only). The renderer doesn't expose
@@ -685,9 +685,13 @@ public sealed class InternalMugshotGenerator
     // local wall-clock time of the write, for batch throughput/concurrency.
     // host*Ms split the host flow before/after the renderer (see HostPhases);
     // maxParallel and ddsPolicy name the run's configuration for A/B runs.
+    // selectedNpc = the target NPC whose NPCs-menu view requested the tile (the
+    // caller's targetNpcFormKey; empty for callers that pass none). npcFormKey is
+    // the SOURCE record, and Skyrim.esm has same-named NPCs (two Breyas), so
+    // grouping by npcName alone conflates separate selections.
     private const string TimingsCsvHeader =
         "mod,npcFormKey,npcName,setupMs,buildMs,resolveMs,parseMs,loadMs,buildShapesMs,installMs,decodeMs,uploadMs,drawMs,readbackMs,encodeMs,rendererTotalMs,hostRenderMs,pngBytes,prewarmDecodeMs,prewarmWallMs,hostElapsedMs,completedAt," +
-        "hostSlotWaitMs,hostResolveMs,hostArchivesMs,hostFaceGenCheckMs,hostAttireMs,hostScopesMs,hostPostRenderMs,maxParallel,ddsPolicy";
+        "hostSlotWaitMs,hostResolveMs,hostArchivesMs,hostFaceGenCheckMs,hostAttireMs,hostScopesMs,hostPostRenderMs,maxParallel,ddsPolicy,selectedNpc";
     private static bool _timingsCsvHeaderChecked;
 
     private static readonly AsyncLocal<(string Mod, string Npc)?> _currentTile = new();
@@ -744,7 +748,7 @@ public sealed class InternalMugshotGenerator
 
     private void WriteRenderTimingsCsv(
         FormKey npcFormKey, ModSetting? modSetting, RenderTimings t, HostPhases host, int bytes,
-        long hostElapsedMs)
+        long hostElapsedMs, FormKey? targetNpcFormKey)
     {
         try
         {
@@ -772,7 +776,8 @@ public sealed class InternalMugshotGenerator
                 host.SlotWaitMs.ToString(ci), host.ResolveMs.ToString(ci), host.ArchivesMs.ToString(ci),
                 host.FaceGenCheckMs.ToString(ci), host.AttireMs.ToString(ci), host.ScopesMs.ToString(ci),
                 host.PostRenderMs.ToString(ci), _renderSemaphore.Limit.ToString(ci),
-                TextureUploadPolicy.StampValue);
+                TextureUploadPolicy.StampValue,
+                Q(targetNpcFormKey is { IsNull: false } target ? target.ToString() : string.Empty));
 
             lock (_timingsCsvLock)
             {
