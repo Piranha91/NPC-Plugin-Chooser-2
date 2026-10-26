@@ -1547,6 +1547,28 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
         Debug.WriteLine("DeselectAll: All mugshot compare checkboxes cleared.");
     }
 
+    /// <summary>Ctrl+A in the NPCs view: if every visible tile is already checked,
+    /// clears all checks; otherwise checks every visible tile. Tiles filtered out of
+    /// view (e.g. hidden mods) are never checked, so a following Hide/Unhide Selected
+    /// can't act on something the user couldn't see.</summary>
+    public void ToggleCheckAllVisibleMugshots()
+    {
+        if (CurrentNpcAppearanceMods == null) return;
+        var visible = CurrentNpcAppearanceMods.Where(m => m.IsVisible).ToList();
+        if (!visible.Any()) return;
+
+        if (visible.All(m => m.IsCheckedForCompare))
+        {
+            ExecuteDeselectAll();
+            return;
+        }
+
+        foreach (var mugshotVM in visible)
+        {
+            mugshotVM.IsCheckedForCompare = true;
+        }
+    }
+
     /// <summary>Applies <see cref="LiveTileToggleLabel"/>'s state to every
     /// checked tile: "3D" makes them all live viewports, "2D" makes them all
     /// static mugshots. Recomputes the majority here rather than parsing the

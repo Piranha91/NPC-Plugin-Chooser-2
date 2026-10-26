@@ -504,7 +504,7 @@ Bulk actions on your whole set of choices:
 
 ![Mugshot actions](docs/Screenshots/NPCs/Mugshot_Action_Options.png)
 
-These act on the mugshots you’ve check-marked (using the checkbox in each tile’s top-right corner):
+These act on the mugshots you’ve check-marked (using the checkbox in each tile’s top-right corner). For a bigger target, hold **Ctrl** or **Shift** and click anywhere on a mugshot to toggle its check mark instead of selecting it. **Ctrl+A** checks every visible mugshot, or clears all check marks if they're already all checked:
 
 ![Checkbox selection](docs/Screenshots/NPCs/Multiple_Mugshot_Checkbox_Selection.png)
 

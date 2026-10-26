@@ -807,9 +807,13 @@
                                  </i:Interaction.Triggers>
                                  <!-- PreviewMouseRightButtonDown sits on the Grid (not the Image)
                                       so the Ctrl+RClick / Ctrl+Shift+RClick shortcuts keep working
-                                      when the Image is collapsed in Live Tile mode. -->
+                                      when the Image is collapsed in Live Tile mode.
+                                      MouseLeftButtonUp (bubbling) runs before the Border's select
+                                      trigger, so Ctrl/Shift+LClick can toggle the compare checkbox
+                                      instead of selecting. -->
                                  <Grid Background="Black"
-                                       PreviewMouseRightButtonDown="Image_PreviewMouseRightButtonDown"> <!-- This Grid is the reference for CheckBox width -->
+                                       PreviewMouseRightButtonDown="Image_PreviewMouseRightButtonDown"
+                                       MouseLeftButtonUp="MugshotGrid_MouseLeftButtonUp"> <!-- This Grid is the reference for CheckBox width -->
                                      <Image Source="{Binding MugshotSource}" Stretch="UniformToFill" ToolTip="{Binding ToolTipString}">
                                          <Image.Style>
                                              <Style TargetType="Image">
@@ -1281,7 +1285,7 @@
                                                BorderBrush="Transparent"
                                                Foreground="White"
                                                BorderThickness="0"
-                                               ToolTip="Select this mugshot for comparison or hiding others.">
+                                               ToolTip="Select this mugshot for comparison or hiding others.&#x0a;Tip: Ctrl+Click or Shift+Click anywhere on the mugshot also toggles this.&#x0a;Ctrl+A checks all visible mugshots (or clears all if already all checked).">
                                          <CheckBox.Style>
                                              <Style TargetType="CheckBox">
                                                  <Setter Property="FocusVisualStyle" Value="{x:Null}"/>

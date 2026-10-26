@@ -63,6 +63,10 @@ namespace NPC_Plugin_Chooser_2.Views
             // "did nothing". Attached on Loaded / detached on Unloaded to avoid dangling handlers.
             this.Loaded += AttachAutoAdvanceHotkey;
             this.Unloaded += DetachAutoAdvanceHotkey;
+            // Ctrl+A toggles all/none mugshot checks. Window-level for the same focus reason as
+            // above (clicking a tile doesn't move keyboard focus into this view).
+            this.Loaded += AttachSelectAllHotkey;
+            this.Unloaded += DetachSelectAllHotkey;
             this.Loaded += NpcsView_Loaded;
 
             this.Loaded += (s, e) =>
@@ -451,6 +455,39 @@ namespace NPC_Plugin_Chooser_2.Views
             }
         }
 
+        private Window? _selectAllHostWindow;
+
+        private void AttachSelectAllHotkey(object sender, RoutedEventArgs e)
+        {
+            var window = Window.GetWindow(this);
+            if (window == null || ReferenceEquals(window, _selectAllHostWindow)) return;
+            if (_selectAllHostWindow != null)
+                _selectAllHostWindow.PreviewKeyDown -= SelectAllHotkey_PreviewKeyDown;
+            _selectAllHostWindow = window;
+            _selectAllHostWindow.PreviewKeyDown += SelectAllHotkey_PreviewKeyDown;
+        }
+
+        private void DetachSelectAllHotkey(object sender, RoutedEventArgs e)
+        {
+            if (_selectAllHostWindow != null)
+                _selectAllHostWindow.PreviewKeyDown -= SelectAllHotkey_PreviewKeyDown;
+            _selectAllHostWindow = null;
+        }
+
+        private void SelectAllHotkey_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            // Exact Ctrl only, so Ctrl+Shift+A (auto-advance) is unaffected.
+            if (e.Key != Key.A || e.KeyboardDevice.Modifiers != ModifierKeys.Control) return;
+            // Leave Ctrl+A as select-all-text in the search/filter boxes.
+            if (e.OriginalSource is TextBoxBase or PasswordBox) return;
+
+            var vm = ViewModel ?? DataContext as VM_NpcSelectionBar;
+            if (vm == null) return;
+
+            vm.ToggleCheckAllVisibleMugshots();
+            e.Handled = true;
+        }
+
         private void NpcsView_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (e.KeyboardDevice.Modifiers != ModifierKeys.Alt) return;
@@ -600,6 +637,24 @@ namespace NPC_Plugin_Chooser_2.Views
                 }).DisposeWith(_viewBindings);
                 e.Handled = true;
             }
+        }
+
+        /// <summary>Ctrl+LClick or Shift+LClick anywhere on a tile toggles its compare
+        /// checkbox instead of selecting the appearance — a much larger target than the
+        /// corner checkbox. Bubbling (not Preview) so clicks the checkbox itself or a
+        /// Live Tile orbit-drag already handled are left alone; marking the event handled
+        /// keeps the Border's SelectCommand trigger from firing.</summary>
+        private void MugshotGrid_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is not FrameworkElement { DataContext: VM_NpcsMenuMugshot vm })
+                return;
+
+            var modifiers = Keyboard.Modifiers;
+            if (modifiers != ModifierKeys.Control && modifiers != ModifierKeys.Shift)
+                return;
+
+            vm.IsCheckedForCompare = !vm.IsCheckedForCompare;
+            e.Handled = true;
         }
 
         /// <summary>Classifies the tile's displayed image (curated / FaceFinder /
