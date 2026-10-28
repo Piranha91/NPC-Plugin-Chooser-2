@@ -1,7 +1,9 @@
 using Autofac;
 using Autofac.Extensions.DependencyInjection;
-using CharacterViewer.Rendering;
-using CharacterViewer.Rendering.Offscreen;
+using SkyRender;
+using SkyRender.Character;
+using SkyRender.Offscreen;
+using SkyRender.Character.Offscreen;
 using Microsoft.Extensions.DependencyInjection;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
@@ -76,7 +78,7 @@ public sealed class FrontendVmHarness : IDisposable
         builder.RegisterType<MasterAnalyzer>().AsSelf().SingleInstance();
 
         // --- CharacterViewer host adapters (bind NPC2 services behind the renderer's interfaces) ---
-        builder.RegisterType<NpcChooserViewerLoggerAdapter>().As<ICharacterViewerLogger>().SingleInstance();
+        builder.RegisterType<NpcChooserViewerLoggerAdapter>().As<IRenderLogger>().SingleInstance();
         builder.RegisterType<NpcChooserSettingsAdapter>().As<ICharacterViewerSettings>().SingleInstance();
         builder.RegisterType<NpcChooserDataFolderAdapter>().As<IDataFolderProvider>().SingleInstance();
         // AsSelf mirrors App.xaml.cs: BatchMugshotGenerator takes the concrete
@@ -88,7 +90,7 @@ public sealed class FrontendVmHarness : IDisposable
 
         // --- CharacterViewer support services + mugshot generators the VMs depend on ---
         builder.RegisterType<NpcMeshResolver>().AsSelf().SingleInstance();
-        builder.RegisterType<CharacterViewerLogGate>().AsSelf().SingleInstance();
+        builder.RegisterType<RenderLogGate>().AsSelf().SingleInstance();
         builder.RegisterType<GameAssetResolver>().AsSelf().SingleInstance();
         builder.RegisterType<CharacterPreviewCache>().AsSelf().SingleInstance();
         builder.RegisterType<VM_CharacterViewer>().AsSelf();
@@ -112,12 +114,12 @@ public sealed class FrontendVmHarness : IDisposable
         if (useRealRenderer)
         {
             // Production renderer: builds a GLFW window + FBO. Must be resolved on the WPF UI thread.
-            builder.Register(c => OffscreenRendererFactory.Create(
+            builder.Register(c => NpcOffscreenRendererFactory.Create(
                     c.Resolve<CharacterPreviewCache>(),
                     c.Resolve<GameAssetResolver>(),
                     c.Resolve<ICharacterViewerSettings>(),
-                    c.Resolve<CharacterViewerLogGate>(),
-                    c.Resolve<ICharacterViewerLogger>()))
+                    c.Resolve<RenderLogGate>(),
+                    c.Resolve<IRenderLogger>()))
                 .As<IOffscreenRenderer>()
                 .SingleInstance();
         }

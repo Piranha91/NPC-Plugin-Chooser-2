@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using CharacterViewer.Rendering;
+using SkyRender;
+using SkyRender.Character;
 using FluentAssertions;
 using Xunit;
 
@@ -47,7 +48,7 @@ public class DataFolderFallbackReportingTests : IDisposable
 
         _resolver = new GameAssetResolver(
             new FakeDataFolder(_dataDir), new FakeBsaProvider(),
-            new CharacterViewerLogGate(), new FakeLogger());
+            new RenderLogGate(), new FakeLogger());
     }
 
     public void Dispose()
@@ -152,7 +153,7 @@ public class DataFolderFallbackReportingTests : IDisposable
         { error = "fake"; return false; }
     }
 
-    private sealed class FakeLogger : ICharacterViewerLogger
+    private sealed class FakeLogger : IRenderLogger
     {
         public void LogMessage(string message) { }
         public void LogError(string message) { }

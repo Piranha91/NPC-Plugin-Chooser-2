@@ -1,4 +1,5 @@
-using CharacterViewer.Rendering;
+using SkyRender;
+using SkyRender.Character;
 using Mutagen.Bethesda.Plugins;
 
 namespace NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost.Adapters;

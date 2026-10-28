@@ -1,6 +1,7 @@
 using System;
 using System.Windows;
-using CharacterViewer.Rendering;
+using SkyRender;
+using SkyRender.Character;
 
 namespace NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost.Adapters;
 

@@ -2,7 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using CharacterViewer.Rendering;
+using SkyRender;
+using SkyRender.Character;
 using FluentAssertions;
 using NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
 using NPC_Plugin_Chooser_2.Models;
@@ -151,8 +152,8 @@ public class MugshotSettingsHashCoverageTests
     public void EditingTheSelectedLightingLayout_DriftsTheHash()
     {
         var cfg = new InternalMugshotSettings { LightingLayoutName = "MyRig" };
-        var mine = new CharacterViewerLightingLayout { Name = "MyRig", KeyIntensity = 1.0, Ambient = 0.2 };
-        var other = new CharacterViewerLightingLayout { Name = "Unrelated", KeyIntensity = 1.0 };
+        var mine = new LightingLayout { Name = "MyRig", KeyIntensity = 1.0, Ambient = 0.2 };
+        var other = new LightingLayout { Name = "Unrelated", KeyIntensity = 1.0 };
         cfg.UserLightingLayouts.Add(mine);
         cfg.UserLightingLayouts.Add(other);
 
@@ -171,7 +172,7 @@ public class MugshotSettingsHashCoverageTests
     public void EditingTheSelectedColorScheme_DriftsTheHash()
     {
         var cfg = new InternalMugshotSettings { LightingColorSchemeName = "Warm" };
-        var scheme = new CharacterViewerLightingColorScheme { Name = "Warm", KeyR = 1f, KeyG = 0.9f, KeyB = 0.8f };
+        var scheme = new LightingColorScheme { Name = "Warm", KeyR = 1f, KeyG = 0.9f, KeyB = 0.8f };
         cfg.UserLightingColorSchemes.Add(scheme);
 
         string before = InternalMugshotMetadata.ComputeSettingsHash(cfg);
@@ -186,7 +187,7 @@ public class MugshotSettingsHashCoverageTests
     public void DeletingTheSelectedLightingLayout_DriftsTheHash()
     {
         var cfg = new InternalMugshotSettings { LightingLayoutName = "MyRig" };
-        cfg.UserLightingLayouts.Add(new CharacterViewerLightingLayout
+        cfg.UserLightingLayouts.Add(new LightingLayout
         {
             Name = "MyRig", Ambient = 0.9, KeyIntensity = 4.2, RimElevation = 33,
         });
@@ -203,7 +204,7 @@ public class MugshotSettingsHashCoverageTests
     public void LightingContents_AreExcludedBelowSchema18()
     {
         var cfg = new InternalMugshotSettings { LightingLayoutName = "MyRig" };
-        var mine = new CharacterViewerLightingLayout { Name = "MyRig", KeyIntensity = 1.0 };
+        var mine = new LightingLayout { Name = "MyRig", KeyIntensity = 1.0 };
         cfg.UserLightingLayouts.Add(mine);
 
         string before = InternalMugshotMetadata.ComputeSettingsHashAtSchema(cfg, 17);

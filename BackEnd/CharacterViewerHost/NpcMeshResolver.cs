@@ -2,7 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using CharacterViewer.Rendering;
+using SkyRender;
+using SkyRender.Character;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Plugins.Records;
@@ -35,8 +36,8 @@ namespace NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
 /// </summary>
 public class NpcMeshResolver
 {
-    private readonly ICharacterViewerLogger _logger;
-    private readonly CharacterViewerLogGate _logGate;
+    private readonly IRenderLogger _logger;
+    private readonly RenderLogGate _logGate;
     private readonly Settings _settings;
     private readonly NpcConsistencyProvider _consistency;
     private readonly RecordHandler _recordHandler;
@@ -45,8 +46,8 @@ public class NpcMeshResolver
     private readonly OutfitDisplayResolver _outfitDisplayResolver;
 
     public NpcMeshResolver(
-        ICharacterViewerLogger logger,
-        CharacterViewerLogGate logGate,
+        IRenderLogger logger,
+        RenderLogGate logGate,
         Settings settings,
         NpcConsistencyProvider consistency,
         RecordHandler recordHandler,
@@ -558,7 +559,7 @@ public class NpcMeshResolver
             return null;
         }
 
-        var sex = Auxilliary.IsFemale(npcGetter) ? Sex.Female : Sex.Male;
+        var sex = Auxilliary.IsFemale(npcGetter) ? NpcGender.Female : NpcGender.Male;
         string npcName = npcGetter.Name?.String ?? npcGetter.EditorID ?? npcFormKey.ToString();
         LogVerbose("CharacterViewer: Resolving NPC " + npcName + " (" + npcFormKey + ")");
 
@@ -574,7 +575,7 @@ public class NpcMeshResolver
         string? tailPath = null;
         var chains = new Dictionary<string, string>();
         var txstTextures = new Dictionary<string, Dictionary<int, string>>();
-        string sexLabel = sex == Sex.Female ? "Female" : "Male";
+        string sexLabel = sex == NpcGender.Female ? "Female" : "Male";
 
         if (armorGetter?.Armature != null)
         {
@@ -747,7 +748,7 @@ public class NpcMeshResolver
         // cannot be found anywhere (loose under any preferred mod folder, loose
         // in the vanilla data folder, or inside any indexed BSA). This is the
         // ONLY place that has full visibility — the renderer's GameAssetResolver
-        // logs internally only when CharacterViewerLogGate.Verbose is on, and
+        // logs internally only when RenderLogGate.Verbose is on, and
         // that doesn't tell us about absolute paths it never resolves.
         TraceAssetResolution(npcFormKey, npcName, context, bodyPath, handsPath, feetPath,
             finalHeadPath, skeletonPath, finalFaceTintPath, hairPath, tailPath, txstTextures);
@@ -760,7 +761,7 @@ public class NpcMeshResolver
             HeadMeshPath = finalHeadPath,
             HairMeshPath = hairPath,
             TailMeshPath = tailPath,
-            Sex = sex,
+            Gender = sex,
             SkeletonPath = skeletonPath,
             ResolutionChains = chains,
             TxstTextures = txstTextures,
@@ -1189,7 +1190,7 @@ public class NpcMeshResolver
 
         FormKey? npcRaceKey = npc.Race.IsNull ? null : npc.Race.FormKey;
         FormKey? armorRaceKey = ResolveArmorRaceKey(npc, linkCache, context);
-        var sex = Auxilliary.IsFemale(npc) ? Sex.Female : Sex.Male;
+        var sex = Auxilliary.IsFemale(npc) ? NpcGender.Female : NpcGender.Male;
         var seen = new HashSet<FormKey>();
         foreach (var armaLink in wnam.Armature)
         {
@@ -1348,7 +1349,7 @@ public class NpcMeshResolver
             return result;
         }
 
-        var sex = Auxilliary.IsFemale(npcGetter) ? Sex.Female : Sex.Male;
+        var sex = Auxilliary.IsFemale(npcGetter) ? NpcGender.Female : NpcGender.Male;
         FormKey? npcRaceKey = (npcGetter.Race != null && !npcGetter.Race.IsNull) ? npcGetter.Race.FormKey : null;
         FormKey? armorRaceKey = ResolveArmorRaceKey(npcGetter, linkCache, context);
         string npcName = npcGetter.Name?.String ?? npcGetter.EditorID ?? npcFormKey.ToString();
@@ -2039,7 +2040,7 @@ public class NpcMeshResolver
     /// <param name="pluginSink">Collects the ARMA / TXST donor plugins so their archives can
     /// be indexed before the render. Passed only alongside
     /// <paramref name="allowLoadOrderFallback"/>; null everywhere else.</param>
-    private void AppendArmorMeshOverrides(IArmorGetter armor, string source, Sex sex, FormKey? npcRaceKey,
+    private void AppendArmorMeshOverrides(IArmorGetter armor, string source, NpcGender sex, FormKey? npcRaceKey,
         FormKey? armorRaceKey,
         ILinkCache linkCache, NpcResolutionContext? context, bool includeBody, bool includeHeadgear,
         bool hairCountsAsHeadgear, List<MeshOverride> result, HashSet<string> seenKeys,
@@ -2558,13 +2559,13 @@ public class NpcMeshResolver
 
     /// <summary>The ARMA's per-sex weight-slider flag — the engine's own signal
     /// for whether this piece morphs between a _0/_1 world-model pair.</summary>
-    private static bool GetWeightSliderEnabled(IArmorAddonGetter armaGetter, Sex sex)
-        => sex == Sex.Female ? armaGetter.WeightSliderEnabled.Female : armaGetter.WeightSliderEnabled.Male;
+    private static bool GetWeightSliderEnabled(IArmorAddonGetter armaGetter, NpcGender sex)
+        => sex == NpcGender.Female ? armaGetter.WeightSliderEnabled.Female : armaGetter.WeightSliderEnabled.Male;
 
-    private static string? GetWorldModelPath(IArmorAddonGetter armaGetter, Sex sex)
+    private static string? GetWorldModelPath(IArmorAddonGetter armaGetter, NpcGender sex)
     {
         if (armaGetter.WorldModel == null) return null;
-        var model = sex == Sex.Female ? armaGetter.WorldModel.Female : armaGetter.WorldModel.Male;
+        var model = sex == NpcGender.Female ? armaGetter.WorldModel.Female : armaGetter.WorldModel.Male;
         if (model?.File == null) return null;
         string path = model.File.GivenPath;
         if (string.IsNullOrWhiteSpace(path)) return null;
@@ -2577,14 +2578,14 @@ public class NpcMeshResolver
     }
 
     private Dictionary<int, string> ResolveTxstTextures(
-        IArmorAddonGetter armaGetter, Sex sex, ILinkCache linkCache, NpcResolutionContext? context, FormKey armaFormKey,
+        IArmorAddonGetter armaGetter, NpcGender sex, ILinkCache linkCache, NpcResolutionContext? context, FormKey armaFormKey,
         HashSet<ModKey>? pluginSink = null)
     {
         var result = new Dictionary<int, string>();
         try
         {
             if (armaGetter.SkinTexture == null) return result;
-            var skinTextureLink = sex == Sex.Female ? armaGetter.SkinTexture.Female : armaGetter.SkinTexture.Male;
+            var skinTextureLink = sex == NpcGender.Female ? armaGetter.SkinTexture.Female : armaGetter.SkinTexture.Male;
             if (skinTextureLink == null || skinTextureLink.IsNull) return result;
             var txst = ResolveRecord<ITextureSetGetter>(skinTextureLink, linkCache, context, pluginSink);
             if (txst == null)
@@ -2621,13 +2622,13 @@ public class NpcMeshResolver
     /// with a log line. Duplicate targets are preserved; the renderer applies
     /// them in order (later wins per slot).</summary>
     private List<(string ShapeName, int ShapeIndex, Dictionary<int, string> Slots)> ResolveAlternateTextures(
-        IArmorAddonGetter armaGetter, Sex sex, ILinkCache linkCache, NpcResolutionContext? context, FormKey armaFormKey,
+        IArmorAddonGetter armaGetter, NpcGender sex, ILinkCache linkCache, NpcResolutionContext? context, FormKey armaFormKey,
         HashSet<ModKey>? pluginSink = null)
     {
         var result = new List<(string, int, Dictionary<int, string>)>();
         try
         {
-            var model = sex == Sex.Female ? armaGetter.WorldModel?.Female : armaGetter.WorldModel?.Male;
+            var model = sex == NpcGender.Female ? armaGetter.WorldModel?.Female : armaGetter.WorldModel?.Male;
             var alts = model?.AlternateTextures;
             if (alts == null || alts.Count == 0) return result;
 
@@ -2721,12 +2722,12 @@ public class NpcMeshResolver
         return "textures\\actors\\character\\FaceGenData\\FaceTint\\" + plugin + "\\" + formId + ".dds";
     }
 
-    private string? ResolveSkeletonPath(INpcGetter npcGetter, Sex sex, ILinkCache linkCache, NpcResolutionContext? context)
+    private string? ResolveSkeletonPath(INpcGetter npcGetter, NpcGender sex, ILinkCache linkCache, NpcResolutionContext? context)
     {
         if (npcGetter.Race == null || npcGetter.Race.IsNull) return null;
         var raceGetter = ResolveRecord<IRaceGetter>(npcGetter.Race, linkCache, context);
         if (raceGetter?.SkeletalModel == null) return null;
-        var skelModel = sex == Sex.Female ? raceGetter.SkeletalModel.Female : raceGetter.SkeletalModel.Male;
+        var skelModel = sex == NpcGender.Female ? raceGetter.SkeletalModel.Female : raceGetter.SkeletalModel.Male;
         if (skelModel?.File == null) return null;
         string path = skelModel.File.GivenPath;
         if (string.IsNullOrWhiteSpace(path)) return null;

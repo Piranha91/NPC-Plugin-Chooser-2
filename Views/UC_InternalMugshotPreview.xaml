@@ -5,7 +5,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:vm="clr-namespace:NPC_Plugin_Chooser_2.View_Models"
              xmlns:glWpf="clr-namespace:OpenTK.Wpf;assembly=GLWpfControl"
-             xmlns:cvrv="clr-namespace:CharacterViewer.Rendering.Views;assembly=CharacterViewer.Rendering"
+             xmlns:cvrv="clr-namespace:SkyRender.Character.Views;assembly=SkyRender.Character"
              mc:Ignorable="d"
              d:DesignHeight="540" d:DesignWidth="600"
              d:DataContext="{d:DesignInstance Type=vm:VM_InternalMugshotPreview}">

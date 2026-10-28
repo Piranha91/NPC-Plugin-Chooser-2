@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
-using CharacterViewer.Rendering;
+using SkyRender;
+using SkyRender.Character;
 
 namespace NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost.Adapters;
 
@@ -11,7 +12,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost.Adapters;
 /// in the VS output window during development. EventLogger expects an opcode
 /// and isn't a great fit for the viewer's free-form messages.
 /// </summary>
-public sealed class NpcChooserViewerLoggerAdapter : ICharacterViewerLogger
+public sealed class NpcChooserViewerLoggerAdapter : IRenderLogger
 {
     // Per-flow diagnostic sink override. Installed by the offscreen renderer
     // for the duration of each render so the renderer's dedicated render thread

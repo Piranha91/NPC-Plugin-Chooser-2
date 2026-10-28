@@ -2,7 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using CharacterViewer.Rendering;
+using SkyRender;
+using SkyRender.Character;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.View_Models;
 
@@ -24,25 +25,25 @@ public sealed class NpcChooserSettingsAdapter : ICharacterViewerSettings
 {
     private readonly Settings _settings;
     private readonly Lazy<VM_Settings> _lazyVmSettings;
-    private readonly ObservableCollection<CharacterViewerLightingLayout> _userLayouts;
-    private readonly ObservableCollection<CharacterViewerLightingColorScheme> _userColorSchemes;
+    private readonly ObservableCollection<LightingLayout> _userLayouts;
+    private readonly ObservableCollection<LightingColorScheme> _userColorSchemes;
 
     public NpcChooserSettingsAdapter(Settings settings, Lazy<VM_Settings> lazyVmSettings)
     {
         _settings = settings;
         _lazyVmSettings = lazyVmSettings;
-        _userLayouts = new ObservableCollection<CharacterViewerLightingLayout>(_settings.InternalMugshot.UserLightingLayouts);
-        _userColorSchemes = new ObservableCollection<CharacterViewerLightingColorScheme>(_settings.InternalMugshot.UserLightingColorSchemes);
+        _userLayouts = new ObservableCollection<LightingLayout>(_settings.InternalMugshot.UserLightingLayouts);
+        _userColorSchemes = new ObservableCollection<LightingColorScheme>(_settings.InternalMugshot.UserLightingColorSchemes);
 
         // Persist additions/removals back to the settings model so they survive a restart.
         _userLayouts.CollectionChanged += (_, _) =>
         {
-            _settings.InternalMugshot.UserLightingLayouts = new List<CharacterViewerLightingLayout>(_userLayouts);
+            _settings.InternalMugshot.UserLightingLayouts = new List<LightingLayout>(_userLayouts);
             RequestSave();
         };
         _userColorSchemes.CollectionChanged += (_, _) =>
         {
-            _settings.InternalMugshot.UserLightingColorSchemes = new List<CharacterViewerLightingColorScheme>(_userColorSchemes);
+            _settings.InternalMugshot.UserLightingColorSchemes = new List<LightingColorScheme>(_userColorSchemes);
             RequestSave();
         };
     }
@@ -75,8 +76,8 @@ public sealed class NpcChooserSettingsAdapter : ICharacterViewerSettings
         }
     }
 
-    public IList<CharacterViewerLightingLayout> UserLightingLayouts => _userLayouts;
-    public IList<CharacterViewerLightingColorScheme> UserLightingColorSchemes => _userColorSchemes;
+    public IList<LightingLayout> UserLightingLayouts => _userLayouts;
+    public IList<LightingColorScheme> UserLightingColorSchemes => _userColorSchemes;
 
     public bool CharacterViewerVerboseLog
     {

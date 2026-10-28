@@ -906,10 +906,10 @@ public class ModIssueScannerRuleTests
         Assert.Equal(expected, ModIssueScanner.IsVanillaPath(rel, vanilla));
     }
 
-    private static CharacterViewer.Rendering.AssetSource FallbackSource(string gamePath, string? bsaPath = null)
+    private static SkyRender.AssetSource FallbackSource(string gamePath, string? bsaPath = null)
         => new(bsaPath == null
-                    ? CharacterViewer.Rendering.AssetOriginKind.Loose
-                    : CharacterViewer.Rendering.AssetOriginKind.Bsa,
+                    ? SkyRender.AssetOriginKind.Loose
+                    : SkyRender.AssetOriginKind.Bsa,
                 gamePath,
                 ResolvedDiskPath: @"C:\resolved\file",
                 LoosePath: bsaPath == null ? @"C:\Game\Data\" + gamePath : null,

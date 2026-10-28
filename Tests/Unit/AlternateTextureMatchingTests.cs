@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
-using CharacterViewer.Rendering;
+using SkyRender;
+using SkyRender.Character;
 using FluentAssertions;
 using Xunit;
 
@@ -8,7 +9,7 @@ namespace NPC_Plugin_Chooser_2.Tests.Unit;
 
 /// <summary>
 /// Pins the AlternateTextures (MODS) shape-matching contract the renderer uses
-/// (CharacterViewer.Rendering.AlternateTextureMatching): 3D Name first, and only
+/// (SkyRender.Character.AlternateTextureMatching): 3D Name first, and only
 /// entries whose name matches NO shape of the mesh fall back to 3D-Index
 /// matching. Name-only matching silently lost variants on BodySlide-rebuilt
 /// meshes (renamed shapes → "black skirt" that renders fine in game/CK, which

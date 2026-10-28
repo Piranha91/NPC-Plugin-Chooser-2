@@ -1,7 +1,8 @@
 using System;
 using System.Globalization;
 using System.Threading;
-using CharacterViewer.Rendering;
+using SkyRender;
+using SkyRender.Character;
 
 namespace NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
 
