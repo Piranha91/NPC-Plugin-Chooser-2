@@ -263,7 +263,7 @@ public sealed class InternalMugshotGenerator
             var resolutionScopes = _resolver.BuildResolutionScopes(modSetting, npcFormKey);
             host.ScopesMs = sw.ElapsedMilliseconds - preScopes;
 
-            var request = new OffscreenRenderRequest
+            var request = new NpcRenderRequest
             {
                 MeshPaths = paths,
                 MeshOverrides = meshOverrides.Count > 0 ? meshOverrides : null,
@@ -624,7 +624,7 @@ public sealed class InternalMugshotGenerator
                 targetNpcFormKey, out _, alwaysRenderOutfitWigsAndAntlers: true);
             var cfg = _settings.InternalMugshot;
             var fallbackHits = new List<string>();
-            var request = new OffscreenRenderRequest
+            var request = new NpcRenderRequest
             {
                 MeshPaths = paths,
                 MeshOverrides = meshOverrides.Count > 0 ? meshOverrides : null,
