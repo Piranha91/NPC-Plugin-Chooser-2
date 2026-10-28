@@ -291,9 +291,6 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterType<NpcMeshResolver>().AsSelf().SingleInstance();
             builder.RegisterType<CharacterViewerLogGate>().AsSelf().SingleInstance();
             builder.RegisterType<GameAssetResolver>().AsSelf().SingleInstance();
-            builder.RegisterType<BsdFileParser>().AsSelf().SingleInstance();
-            builder.RegisterType<BodyTriFileParser>().AsSelf().SingleInstance();
-            builder.RegisterType<BodySlideDeformer>().AsSelf().SingleInstance();
             builder.RegisterType<CharacterPreviewCache>().AsSelf().SingleInstance();
             builder.RegisterType<VM_CharacterViewer>().AsSelf();  // transient — one per preview window
 
@@ -321,9 +318,6 @@ namespace NPC_Plugin_Chooser_2
             // eager resolution below in InitializeCoreApplicationAsync.
             builder.Register(c => OffscreenRendererFactory.Create(
                     c.Resolve<CharacterPreviewCache>(),
-                    c.Resolve<BodySlideDeformer>(),
-                    c.Resolve<BsdFileParser>(),
-                    c.Resolve<BodyTriFileParser>(),
                     c.Resolve<GameAssetResolver>(),
                     c.Resolve<ICharacterViewerSettings>(),
                     c.Resolve<CharacterViewerLogGate>(),

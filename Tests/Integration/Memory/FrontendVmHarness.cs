@@ -90,9 +90,6 @@ public sealed class FrontendVmHarness : IDisposable
         builder.RegisterType<NpcMeshResolver>().AsSelf().SingleInstance();
         builder.RegisterType<CharacterViewerLogGate>().AsSelf().SingleInstance();
         builder.RegisterType<GameAssetResolver>().AsSelf().SingleInstance();
-        builder.RegisterType<BsdFileParser>().AsSelf().SingleInstance();
-        builder.RegisterType<BodyTriFileParser>().AsSelf().SingleInstance();
-        builder.RegisterType<BodySlideDeformer>().AsSelf().SingleInstance();
         builder.RegisterType<CharacterPreviewCache>().AsSelf().SingleInstance();
         builder.RegisterType<VM_CharacterViewer>().AsSelf();
 
@@ -117,9 +114,6 @@ public sealed class FrontendVmHarness : IDisposable
             // Production renderer: builds a GLFW window + FBO. Must be resolved on the WPF UI thread.
             builder.Register(c => OffscreenRendererFactory.Create(
                     c.Resolve<CharacterPreviewCache>(),
-                    c.Resolve<BodySlideDeformer>(),
-                    c.Resolve<BsdFileParser>(),
-                    c.Resolve<BodyTriFileParser>(),
                     c.Resolve<GameAssetResolver>(),
                     c.Resolve<ICharacterViewerSettings>(),
                     c.Resolve<CharacterViewerLogGate>(),
