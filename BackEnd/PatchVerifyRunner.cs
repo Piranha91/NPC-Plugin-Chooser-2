@@ -116,7 +116,8 @@ public static class PatchVerifyRunner
         // silently repoint the user's real output folder or flip their patching mode.
         string origOutputDir = settings.OutputDirectory;
         bool origAppendTimestamp = settings.AppendTimestampToOutputDirectory;
-        bool origSkyPatcher = settings.UseSkyPatcherMode;
+        var origBackend = settings.OutputBackend;
+        var origRecastMode = settings.RecastMode;
         var origTemplateHandling = settings.TemplateHandlingMode;
 
         try
@@ -124,9 +125,15 @@ public static class PatchVerifyRunner
             settings.OutputDirectory = outDir;
             settings.AppendTimestampToOutputDirectory = false; // keep the path predictable for the manifest
             if (string.Equals(config.ModeOverride, "SkyPatcher", StringComparison.OrdinalIgnoreCase))
-                settings.UseSkyPatcherMode = true;
-            else if (string.Equals(config.ModeOverride, "Record", StringComparison.OrdinalIgnoreCase))
-                settings.UseSkyPatcherMode = false;
+                settings.OutputBackend = OutputBackend.SkyPatcher;
+            else if (string.Equals(config.ModeOverride, "Record", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(config.ModeOverride, nameof(OutputBackend.ESP), StringComparison.OrdinalIgnoreCase))
+                settings.OutputBackend = OutputBackend.ESP;
+            else if (string.Equals(config.ModeOverride, "Recast", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(config.ModeOverride, "RecastHybrid", StringComparison.OrdinalIgnoreCase))
+                (settings.OutputBackend, settings.RecastMode) = (OutputBackend.Recast, RecastMode.Hybrid);
+            else if (string.Equals(config.ModeOverride, "RecastOnly", StringComparison.OrdinalIgnoreCase))
+                (settings.OutputBackend, settings.RecastMode) = (OutputBackend.Recast, RecastMode.RecastOnly);
 
             if (string.Equals(config.TemplateHandlingOverride, "OwnCopy", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(config.TemplateHandlingOverride, nameof(TemplateHandlingMode.GiveEachNpcOwnCopy), StringComparison.OrdinalIgnoreCase))
@@ -138,7 +145,7 @@ public static class PatchVerifyRunner
                 log.AppendLine($"WARNING: unrecognized TemplateHandlingOverride '{config.TemplateHandlingOverride}' — using the settings value.");
 
             log.AppendLine($"Output      : {outDir}");
-            log.AppendLine($"Mode        : {(settings.UseSkyPatcherMode ? "SkyPatcher" : "Record")}");
+            log.AppendLine($"Mode        : {settings.OutputBackend switch { OutputBackend.SkyPatcher => "SkyPatcher", OutputBackend.Recast => $"Recast ({settings.RecastMode})", _ => "Record" }}");
             log.AppendLine($"Templates   : {settings.TemplateHandlingMode}");
             log.AppendLine($"Environment : {env.Status}");
 
@@ -177,7 +184,7 @@ public static class PatchVerifyRunner
 
             var spawns = BuildSpawnEntries(sample, env, log);
             WriteSpawnBats(spawns, outDir, config.SpawnChunkSize, log);
-            WriteManifest(spawns, settings, reportDir, outDir, settings.UseSkyPatcherMode, log);
+            WriteManifest(spawns, settings, reportDir, outDir, settings.UsesSurrogates, log);
         }
         catch (Exception ex)
         {
@@ -187,7 +194,8 @@ public static class PatchVerifyRunner
         {
             settings.OutputDirectory = origOutputDir;
             settings.AppendTimestampToOutputDirectory = origAppendTimestamp;
-            settings.UseSkyPatcherMode = origSkyPatcher;
+            settings.OutputBackend = origBackend;
+            settings.RecastMode = origRecastMode;
             settings.TemplateHandlingMode = origTemplateHandling;
 
             try { File.WriteAllText(Path.Combine(outDir, "_PatchVerify", "PatchVerify.log"), log.ToString()); }

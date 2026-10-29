@@ -1696,7 +1696,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                     g => g.Select(npc => npc.FormKey).ToHashSet(),
                     StringComparer.OrdinalIgnoreCase);
 
-            var guests = await vmToRefresh.GetSkyPatcherImportsAsync(environmentEditorIdMap, modEditorIdMap);
+            var guests = await vmToRefresh.GetReplacerImportsAsync(environmentEditorIdMap, modEditorIdMap);
             foreach (var (target, source, modDisplayName, npcDisplayName) in guests)
             {
                 // An NPC pointed at itself is not a share (see AddGuestAppearanceToSettings);
@@ -1727,8 +1727,8 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             // Mirror the analysis-time cache so a subsequent CleanupCorrespondingFolders
             // call recognises SkyPatcher-targeted foundations as NPC sources to exclude.
             // Widened lookup catches foundations on disk but not in the user's LO.
-            vmToRefresh.SkyPatcherTargetModKeys =
-                await vmToRefresh.GetSkyPatcherTargetModKeysAsync(environmentEditorIdMap, modEditorIdMap);
+            vmToRefresh.ReplacerTargetModKeys =
+                await vmToRefresh.GetReplacerTargetModKeysAsync(environmentEditorIdMap, modEditorIdMap);
 
             // Prune dependency folders that FindAndAddMissingMasters would not re-add now that
             // NpcFormKeys reflects the post-Refresh state (so plugins whose NPCs this mod patches
@@ -2645,7 +2645,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                                     g => g.Select(npc => npc.FormKey).ToHashSet(), 
                                     StringComparer.OrdinalIgnoreCase);
 
-                            var guests = await vm.GetSkyPatcherImportsAsync(environmentEditorIdMap, modEditorIdMap);
+                            var guests = await vm.GetReplacerImportsAsync(environmentEditorIdMap, modEditorIdMap);
                             foreach (var guest in guests)
                             {
                                 allSkyPatcherGuests.Add(guest);
@@ -2662,8 +2662,8 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                             // foundation folder during CleanupCorrespondingFolders. Use the
                             // widened lookup (env→mod fallback) because the foundation may
                             // be attached as a VM resource without being in the user's LO.
-                            vm.SkyPatcherTargetModKeys =
-                                await vm.GetSkyPatcherTargetModKeysAsync(environmentEditorIdMap, modEditorIdMap);
+                            vm.ReplacerTargetModKeys =
+                                await vm.GetReplacerTargetModKeysAsync(environmentEditorIdMap, modEditorIdMap);
                         }
 
                         // Only runs for cache-miss / newly-imported mods (this loop), so unchanged
@@ -3358,27 +3358,27 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         // Optional: source plugins of NPCs in this VM. When excludeNpcSourcePlugins is true,
         // these are skipped as candidate missing masters since they are the NPC-providing
         // plugins themselves rather than resources to be pulled in. Augmented with
-        // SkyPatcherTargetModKeys so SkyPatcher-style replacers (which don't override the
-        // foundation's NPC records, but do patch them at runtime via INI) get the same
-        // exclusion. SkyPatcherTargetModKeys is empty during the initial parallel scan and
+        // ReplacerTargetModKeys so runtime replacers (which don't override the foundation's
+        // NPC records, but replace them at runtime via a SkyPatcher ini or a Recast patch) get
+        // the same exclusion. ReplacerTargetModKeys is empty during the initial parallel scan and
         // is only populated by AnalyzeModSettingsAsync, which means the initial run still
         // attaches the foundation folder so Mutagen can resolve masters; the subsequent
         // CleanupCorrespondingFolders pass then prunes it because the targets are now known.
         var npcSourcePluginKeys = excludeNpcSourcePlugins
             ? vm.NpcFormKeys.Select(fk => fk.ModKey)
-                .Concat(vm.SkyPatcherTargetModKeys)
+                .Concat(vm.ReplacerTargetModKeys)
                 .ToHashSet()
             : new HashSet<ModKey>();
 
-        StartupLogger.Log($"{LogTag} '{vm.DisplayName}' enter; excludeNpcSourcePlugins={excludeNpcSourcePlugins}, NpcFormKeys.Count={vm.NpcFormKeys.Count}, SkyPatcherTargets.Count={vm.SkyPatcherTargetModKeys.Count}");
+        StartupLogger.Log($"{LogTag} '{vm.DisplayName}' enter; excludeNpcSourcePlugins={excludeNpcSourcePlugins}, NpcFormKeys.Count={vm.NpcFormKeys.Count}, ReplacerTargets.Count={vm.ReplacerTargetModKeys.Count}");
         StartupLogger.Log($"{LogTag} '{vm.DisplayName}' currentFolders=[{string.Join(", ", currentFoldersInVm.Select(Path.GetFileName))}]");
         StartupLogger.Log($"{LogTag} '{vm.DisplayName}' knownPluginKeysInVm=[{string.Join(", ", knownPluginKeysInVm.Select(k => k.FileName.String))}]");
         StartupLogger.Log($"{LogTag} '{vm.DisplayName}' npcSourcePluginKeys ({npcSourcePluginKeys.Count})=[{string.Join(", ", npcSourcePluginKeys.Select(k => k.FileName.String))}]");
 
-        CleanupTrace(vm, $"FindAndAddMissingMasters enter; excludeNpcSourcePlugins={excludeNpcSourcePlugins}, NpcFormKeys.Count={vm.NpcFormKeys.Count}, SkyPatcherTargets.Count={vm.SkyPatcherTargetModKeys.Count}");
+        CleanupTrace(vm, $"FindAndAddMissingMasters enter; excludeNpcSourcePlugins={excludeNpcSourcePlugins}, NpcFormKeys.Count={vm.NpcFormKeys.Count}, ReplacerTargets.Count={vm.ReplacerTargetModKeys.Count}");
         CleanupTrace(vm, $"  currentFolders=[{string.Join(", ", currentFoldersInVm.Select(Path.GetFileName))}]");
         CleanupTrace(vm, $"  knownPluginKeysInVm=[{string.Join(", ", knownPluginKeysInVm.Select(k => k.FileName.String))}]");
-        CleanupTrace(vm, $"  SkyPatcherTargetModKeys ({vm.SkyPatcherTargetModKeys.Count})=[{string.Join(", ", vm.SkyPatcherTargetModKeys.Select(k => k.FileName.String))}]");
+        CleanupTrace(vm, $"  ReplacerTargetModKeys ({vm.ReplacerTargetModKeys.Count})=[{string.Join(", ", vm.ReplacerTargetModKeys.Select(k => k.FileName.String))}]");
         CleanupTrace(vm, $"  npcSourcePluginKeys ({npcSourcePluginKeys.Count})=[{string.Join(", ", npcSourcePluginKeys.Select(k => k.FileName.String))}]");
 
         // Masters genuinely missing from the load order: if no source folder is found, this is a real

@@ -121,7 +121,36 @@ public class Settings
     public bool AppendTimestampToOutputDirectory { get; set; } = false; 
     public string OutputPluginName { get; set; } = string.Empty;
     public PatchingMode PatchingMode { get; set; } = PatchingMode.CreateAndPatch;
-    public bool UseSkyPatcherMode { get; set; } = false;
+    public OutputBackend OutputBackend { get; set; } = OutputBackend.ESP;
+    // Only read when OutputBackend is Recast.
+    public RecastMode RecastMode { get; set; } = RecastMode.Hybrid;
+    // [manifest] priority of the generated Recast TOML. Recast resolves two patches on one NPC by
+    // priority (higher wins); replacer packs typically ship 100, and the user's NPC2 choice should
+    // normally beat them.
+    public int RecastPatchPriority { get; set; } = 1000;
+
+    // Settings files written before OutputBackend existed carry "UseSkyPatcherMode": true/false.
+    // Write-only, so it is read from old files and never written back.
+    [JsonProperty("UseSkyPatcherMode")]
+    private bool LegacyUseSkyPatcherMode
+    {
+        set { if (value) OutputBackend = OutputBackend.SkyPatcher; }
+    }
+
+    /// <summary>Output delivers appearances through a surrogate NPC applied at runtime
+    /// (SkyPatcher or Recast) rather than through NPC record overrides.</summary>
+    [JsonIgnore] public bool UsesSurrogates => OutputBackend != OutputBackend.ESP;
+
+    /// <summary>SkyPatcher carries the appearance itself (copyVisualStyle, skin, height, weight,
+    /// gender, Traits clear). Never true for a Recast target, even in Hybrid.</summary>
+    [JsonIgnore] public bool UsesSkyPatcherAppearance => OutputBackend == OutputBackend.SkyPatcher;
+
+    /// <summary>A SkyPatcher INI may carry race, outfit and keyword directives.</summary>
+    [JsonIgnore] public bool SkyPatcherDirectivesAvailable =>
+        OutputBackend == OutputBackend.SkyPatcher ||
+        (OutputBackend == OutputBackend.Recast && RecastMode == RecastMode.Hybrid);
+
+    [JsonIgnore] public bool UsesRecast => OutputBackend == OutputBackend.Recast;
     // How Traits-templated NPCs are patched (see Models.TemplateHandlingMode). Applies to
     // record and SkyPatcher output alike. Default keeps the inheritance, so selections on
     // templated NPCs stay inert as they always have; an absent field in an old
@@ -212,7 +241,7 @@ public class Settings
     /// "your mode is Leave As Is", hence public rather than folded into the
     /// resolvers (see <c>OutfitDisplayResolver.ComputeWigPersistence</c>).</summary>
     public bool WigHandlingActiveForOutputMode =>
-        UseSkyPatcherMode || PatchingMode == PatchingMode.CreateAndPatch;
+        UsesSurrogates || PatchingMode == PatchingMode.CreateAndPatch;
 
     /// <summary>
     /// The wig handling mode that will actually apply to
@@ -256,12 +285,16 @@ public class Settings
     /// <summary>
     /// True when a DefaultOutfit written to <paramref name="writtenRecord"/> would never be worn:
     /// the engine takes the whole inventory, outfit included, from the Inventory template.
-    /// Always false in SkyPatcher mode, where the outfit is delivered by directive rather than by
-    /// the record field.
+    /// Always false when a SkyPatcher INI is written (SkyPatcher output, or Recast Hybrid), where the
+    /// outfit is delivered by directive rather than by the record field; always true for Recast
+    /// alone, which has no way to deliver an outfit at all.
     /// </summary>
     public bool OutfitFieldIsInert(INpcGetter? writtenRecord) =>
-        !UseSkyPatcherMode
-        && writtenRecord != null
+        !SkyPatcherDirectivesAvailable
+        && (UsesRecast || OutfitFieldIsInertByTemplate(writtenRecord));
+
+    private static bool OutfitFieldIsInertByTemplate(INpcGetter? writtenRecord) =>
+        writtenRecord != null
         && writtenRecord.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Inventory)
         && writtenRecord.Template is { IsNull: false };
 

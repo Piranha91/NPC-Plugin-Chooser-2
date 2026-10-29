@@ -46,6 +46,35 @@ public static class HandlingModeDisplay
         _ => mode.ToString(),
     };
 
+    public static string ToDisplayString(OutputBackend backend) => backend switch
+    {
+        OutputBackend.ESP => "ESP (NPC records)",
+        OutputBackend.SkyPatcher => "SkyPatcher",
+        OutputBackend.Recast => "Recast",
+        _ => backend.ToString(),
+    };
+
+    // Recast is left out until the patcher writes Recast output; the enum value exists so settings
+    // and tokens can carry it.
+    public static readonly IReadOnlyList<OutputBackend> OutputBackendsInDisplayOrder = new[]
+    {
+        OutputBackend.ESP,
+        OutputBackend.SkyPatcher,
+    };
+
+    public static string ToDisplayString(RecastMode mode) => mode switch
+    {
+        RecastMode.Hybrid => "Hybrid (SkyPatcher for race, outfits, keywords)",
+        RecastMode.RecastOnly => "Recast only",
+        _ => mode.ToString(),
+    };
+
+    public static readonly IReadOnlyList<RecastMode> RecastModesInDisplayOrder = new[]
+    {
+        RecastMode.Hybrid,
+        RecastMode.RecastOnly,
+    };
+
     public static readonly IReadOnlyList<TemplateHandlingMode> TemplateModesInDisplayOrder = new[]
     {
         TemplateHandlingMode.InheritFromTemplate,

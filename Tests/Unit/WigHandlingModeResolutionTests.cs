@@ -41,7 +41,7 @@ public class WigHandlingModeResolutionTests
         AntlerHandlingMode antlerDefault = AntlerHandlingMode.ForwardToSkin) => new()
     {
         PatchingMode = mode,
-        UseSkyPatcherMode = skyPatcher,
+        OutputBackend = skyPatcher ? OutputBackend.SkyPatcher : OutputBackend.ESP,
         DefaultWigHandlingMode = globalDefault,
         DefaultAntlerHandlingMode = antlerDefault,
     };

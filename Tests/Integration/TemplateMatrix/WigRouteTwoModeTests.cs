@@ -37,7 +37,7 @@ namespace NPC_Plugin_Chooser_2.Tests.Integration.TemplateMatrix;
 /// or a break in that wiring would leave these tests green while nothing reached the game.</para>
 ///
 /// <para><b>The mode axis.</b> <c>Settings.WigHandlingActiveForOutputMode</c> is
-/// <c>UseSkyPatcherMode || PatchingMode == CreateAndPatch</c>, so wig handling is active in three
+/// <c>UsesSurrogates || PatchingMode == CreateAndPatch</c>, so wig handling is active in three
 /// combinations, not two — plain Create record mode is the only inert one. Each route's
 /// <c>[Theory]</c> covers the two Create-and-Patch ones; the third (SkyPatcher + plain Create) takes
 /// a different Patcher branch — <c>CreateSkyPatcherNpc</c> with no <c>CopyAppearanceData</c> after

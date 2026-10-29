@@ -246,7 +246,7 @@ public class OutputValidatorLastRunCoverageTests
     // lets the report say so up front instead.
 
     private static Settings ModeSettings(PatchingMode mode, bool skyPatcher = false) =>
-        new() { PatchingMode = mode, UseSkyPatcherMode = skyPatcher };
+        new() { PatchingMode = mode, OutputBackend = skyPatcher ? OutputBackend.SkyPatcher : OutputBackend.ESP };
 
     [Fact]
     public void ModeMismatch_FiresWhenThePatchingModeChanged()
@@ -273,6 +273,37 @@ public class OutputValidatorLastRunCoverageTests
         OutputValidator.DescribeModeMismatch(ledger, ModeSettings(PatchingMode.CreateAndPatch))
             .Should().NotBeNull().And.BeOfType<string>()
             .Which.Should().Contain("SkyPatcher");
+    }
+
+    [Fact]
+    public void ModeMismatch_FiresWhenOnlyTheRecastModeChanged()
+    {
+        var ledger = Ledger();
+        ledger.PatchingMode = nameof(PatchingMode.CreateAndPatch);
+        ledger.OutputBackend = nameof(OutputBackend.Recast);
+        ledger.RecastMode = nameof(RecastMode.Hybrid);
+        var settings = new Settings
+        {
+            PatchingMode = PatchingMode.CreateAndPatch,
+            OutputBackend = OutputBackend.Recast,
+            RecastMode = RecastMode.RecastOnly,
+        };
+
+        OutputValidator.DescribeModeMismatch(ledger, settings)
+            .Should().NotBeNull().And.BeOfType<string>()
+            .Which.Should().Contain("CreateAndPatch + Recast (Hybrid)")
+            .And.Contain("CreateAndPatch + Recast (RecastOnly)");
+    }
+
+    [Fact]
+    public void ModeMismatch_NewBackendFieldWinsOverTheLegacyBool()
+    {
+        var ledger = Ledger();
+        ledger.PatchingMode = nameof(PatchingMode.Create);
+        ledger.OutputBackend = nameof(OutputBackend.SkyPatcher);
+
+        OutputValidator.DescribeModeMismatch(ledger, ModeSettings(PatchingMode.Create, skyPatcher: true))
+            .Should().BeNull();
     }
 
     [Fact]

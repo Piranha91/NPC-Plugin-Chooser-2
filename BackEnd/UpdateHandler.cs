@@ -92,6 +92,11 @@ public class UpdateHandler
 
         if (settingsVersion < "2.2.6")
         {
+            // Also how an already-installed Recast replacer pack gets imported on upgrade: replacer
+            // files are read only on an analysis cache miss, and this nulls every mod's snapshot, so
+            // the next population re-reads each mod's Recast TOMLs, adds the guest shares and caches
+            // their donors (VM_Mods.ResolveAndApplySkyPatcherGuests). Keep it unconditional while
+            // that is true.
             InvalidateCachesForContextFreeRaceVerdicts_Initial();
         }
 
@@ -189,7 +194,7 @@ public class UpdateHandler
 
     /// <summary>
     /// 2.1.6 migration. Three passes over every mod setting:
-    ///   1. Populate <see cref="VM_ModSetting.SkyPatcherTargetModKeys"/> by re-parsing the
+    ///   1. Populate <see cref="VM_ModSetting.ReplacerTargetModKeys"/> by re-parsing the
     ///      mod's SkyPatcher INIs against the live load order + the plugins currently
     ///      attached to the VM. SkyPatcher template replacers (e.g. <c>t_Amalee_Replacer.esp</c>
     ///      patching Amalee in <c>3DNPC.esp</c>) don't override the foundation's NPC records,
@@ -843,7 +848,7 @@ public class UpdateHandler
     /// <summary>
     /// Loads the plugins currently associated with <paramref name="vm"/>, builds a per-VM
     /// editor-id map from them, and uses it to resolve the SkyPatcher INI targets so
-    /// <see cref="VM_ModSetting.SkyPatcherTargetModKeys"/> reflects the foundation plugins
+    /// <see cref="VM_ModSetting.ReplacerTargetModKeys"/> reflects the foundation plugins
     /// the mod patches. Must run BEFORE <see cref="VM_Mods.CleanupCorrespondingFolders"/>
     /// so the cleanup pass sees the targets and excludes them from missing-master discovery.
     /// </summary>
@@ -870,12 +875,12 @@ public class UpdateHandler
                     StringComparer.OrdinalIgnoreCase);
 
             // .Result is acceptable here: we're already on a Task.Run thread, and
-            // GetSkyPatcherTargetModKeysAsync's only async work is File.ReadAllLinesAsync.
+            // GetReplacerTargetModKeysAsync's only async work is File.ReadAllLinesAsync.
             // Widened lookup (env→mod fallback) catches foundations that exist on disk but
             // aren't enabled in the user's LO — exactly the polluted-state case the
             // migration is designed to clean up.
-            vm.SkyPatcherTargetModKeys = vm
-                .GetSkyPatcherTargetModKeysAsync(environmentEditorIdMap, modEditorIdMap).Result;
+            vm.ReplacerTargetModKeys = vm
+                .GetReplacerTargetModKeysAsync(environmentEditorIdMap, modEditorIdMap).Result;
         }
         finally
         {
@@ -1377,7 +1382,7 @@ public class UpdateHandler
     {
         splashReporter?.UpdateStep("Caching SkyPatcher Templates...");
 
-        // We need empty maps because GetSkyPatcherImportsAsync requires them for resolving editor IDs,
+        // We need empty maps because GetReplacerImportsAsync requires them for resolving editor IDs,
         // though for this specific update we are mostly interested in FormKey matches which don't need the map.
         // If your mods rely heavily on EditorID mapping for SkyPatcher, we might miss some here without full maps,
         // but building full maps is expensive. 
@@ -1394,7 +1399,7 @@ public class UpdateHandler
                 try
                 {
                     // Re-parse the INIs for this mod
-                    var imports = await mod.GetSkyPatcherImportsAsync(emptyMap, emptyMap);
+                    var imports = await mod.GetReplacerImportsAsync(emptyMap, emptyMap);
 
                     foreach (var import in imports)
                     {

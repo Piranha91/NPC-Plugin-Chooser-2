@@ -45,7 +45,7 @@ public class NpcChoiceImportTests
     {
         var token = new NpcToken
         {
-            UseSkyPatcherMode = skyPatcher,
+            OutputBackend = skyPatcher ? nameof(OutputBackend.SkyPatcher) : nameof(OutputBackend.ESP),
             CreatedPlugins = [ModKey.FromNameAndExtension("NPC.esp")],
             ProcessedNpcs = new()
             {

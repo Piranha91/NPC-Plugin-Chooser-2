@@ -184,9 +184,12 @@ public class Validator : OptionalUIModule
 
         var selectionsList = selectionsToScreen.ToList();
         int totalToScreen = selectionsList.Count;
-        // The SkyPatcher/templated-NPC limitation is explained once, not once per NPC — a load order
-        // can have hundreds of templated selections and the reason is identical for all of them.
+        // The runtime-backend/templated-NPC limitation is explained once, not once per NPC — a load
+        // order can have hundreds of templated selections and the reason is identical for all of them.
         bool explainedSkyPatcherTemplateLimit = false;
+        // Same for RecastOnly's race limit.
+        bool explainedRecastRaceLimit = false;
+        string backendLabel = _settings.UsesRecast ? "Recast" : "SkyPatcher";
         // Likewise for donors that reference a plugin the output cannot point at — one mod entry can
         // produce hundreds of these and the remedy is identical for all of them.
         bool explainedUnreferenceablePluginLimit = false;
@@ -251,10 +254,11 @@ public class Validator : OptionalUIModule
             using (ContextualPerformanceTracer.Trace("Validator.CheckFaceSwap"))
             {
                 // A cross-NPC appearance swap (donor FormKey != target FormKey) is only impossible in
-                // plain Create mode, which can merely forward a single plugin record. SkyPatcher mode
-                // performs the swap at runtime (filterByNPCs=target : copyVisualStyle=donor), so it is
-                // permitted there regardless of PatchingMode.
-                if (_settings.PatchingMode != PatchingMode.CreateAndPatch && !_settings.UseSkyPatcherMode &&
+                // plain Create mode, which can merely forward a single plugin record. The runtime
+                // backends perform the swap from a surrogate (SkyPatcher filterByNPCs=target :
+                // copyVisualStyle=surrogate, Recast target/face), so it is permitted there regardless
+                // of PatchingMode.
+                if (_settings.PatchingMode != PatchingMode.CreateAndPatch && !_settings.UsesSurrogates &&
                     !npcFormKey.Equals(appearanceNpcFormKey))
                 {
                     var appearanceNpcIdenentifier = appearanceNpcFormKey.ToString();
@@ -407,15 +411,15 @@ public class Validator : OptionalUIModule
                 }
             }
 
-            using (ContextualPerformanceTracer.Trace("Validator.CheckSkyPatcherTemplateChain"))
+            using (ContextualPerformanceTracer.Trace("Validator.CheckRuntimeBackendTemplateChain"))
             {
-                if (!CanSkyPatcherApplyAppearance(appearanceNpcFormKey, appearanceModSetting, out var terminusDetail))
+                if (!CanRuntimeBackendApplyAppearance(appearanceNpcFormKey, appearanceModSetting, out var terminusDetail))
                 {
                     if (!explainedSkyPatcherTemplateLimit)
                     {
                         explainedSkyPatcherTemplateLimit = true;
                         AppendLog(
-                            "  NOTE: SkyPatcher mode cannot apply a chosen appearance to a TEMPLATED NPC while " +
+                            $"  NOTE: {backendLabel} output cannot apply a chosen appearance to a TEMPLATED NPC while " +
                             "Templated NPCs is set to \"Use the template's appearance\". Such an NPC has no face of " +
                             "its own — the game resolves it through the Traits chain and draws the FaceGen belonging " +
                             "to the record at the end of that chain, so the appearance selected here never reaches " +
@@ -429,11 +433,37 @@ public class Validator : OptionalUIModule
                     // the user has to see whether or not verbose logging is on.
                     AppendLog(
                         $"  SCREENING WARNING: {npcIdentifier} inherits its appearance ({terminusDetail}), and " +
-                        $"SkyPatcher mode cannot redirect an inherited face. This selection will be skipped.",
+                        $"{backendLabel} output cannot redirect an inherited face. This selection will be skipped.",
                         forceLog: true);
                     Reject(npcFormKey, npcIdentifier, selectedModDisplayName,
-                        "Templated NPC — SkyPatcher can't apply an appearance through a template chain; " +
+                        $"Templated NPC — {backendLabel} can't apply an appearance through a template chain; " +
                         "set Templated NPCs to \"Give each NPC its own copy\"");
+                    continue;
+                }
+            }
+
+            using (ContextualPerformanceTracer.Trace("Validator.CheckRecastOnlyRace"))
+            {
+                var raceFailure = FindRecastOnlyRaceFailure(winningNpcOverride, appearanceNpcFormKey, appearanceModSetting);
+                if (raceFailure != null)
+                {
+                    if (!explainedRecastRaceLimit)
+                    {
+                        explainedRecastRaceLimit = true;
+                        AppendLog(
+                            "  NOTE: Recast-only output cannot change an NPC's race. Recast copies the donor's face, " +
+                            "head parts, skin and sex but keeps the target's race, so a donor of another race is " +
+                            "drawn on the target race's body. That is only correct when the target would render the " +
+                            "same body the donor does; the selections below would not. Switch the Recast mode to " +
+                            "Hybrid, which delivers the race through SkyPatcher, or choose a donor of the target's race.",
+                            false, true);
+                    }
+
+                    AppendLog($"  SCREENING WARNING: {npcIdentifier}: {raceFailure}. This selection will be skipped.",
+                        forceLog: true);
+                    Reject(npcFormKey, npcIdentifier, selectedModDisplayName,
+                        "Race change needed — Recast-only output can't change race; use Recast Hybrid",
+                        raceFailure);
                     continue;
                 }
             }
@@ -508,7 +538,12 @@ public class Validator : OptionalUIModule
     }
 
     /// <summary>
-    /// Whether SkyPatcher can actually deliver the chosen appearance to this NPC.
+    /// Whether a runtime backend (SkyPatcher or Recast) can actually deliver the chosen appearance to
+    /// this NPC.
+    ///
+    /// <para>Measured in game for both (houseCARL faceswap runs, 2026-10-28): a Traits-templated
+    /// SOURCE renders as its template ROOT's face in SkyPatcher 8.0.0 and in Recast 1.6.3 alike, so the
+    /// rule below holds for either backend.</para>
     ///
     /// <para>It cannot, for an NPC that inherits its appearance through a Traits template chain, while
     /// Templated NPCs is set to <see cref="TemplateHandlingMode.InheritFromTemplate"/>. Such an NPC has
@@ -518,7 +553,7 @@ public class Validator : OptionalUIModule
     /// face instead — which, once the appearance plugin has been merged away, is a mod's mesh judged
     /// against a vanilla record. That mismatch is the dark-face bug.</para>
     ///
-    /// <para>Selecting an appearance for the terminus as well does NOT rescue it: SkyPatcher patches
+    /// <para>Selecting an appearance for the terminus as well does NOT rescue it: the backend patches
     /// the terminus through its own surrogate and redirects only the terminus's own actor, while
     /// inheritors read the terminus's FaceGen path. So this is a per-NPC hard no, and the remedy is
     /// <see cref="TemplateHandlingMode.GiveEachNpcOwnCopy"/>, which clears the Traits flag and gives
@@ -530,12 +565,12 @@ public class Validator : OptionalUIModule
     /// keeps inheriting and the engine reads its head parts and its mesh from the same place.</para>
     /// </summary>
     /// <param name="terminusDetail">Human-readable chain outcome, for the per-NPC log.</param>
-    private bool CanSkyPatcherApplyAppearance(FormKey appearanceNpcFormKey, ModSetting appearanceModSetting,
+    private bool CanRuntimeBackendApplyAppearance(FormKey appearanceNpcFormKey, ModSetting appearanceModSetting,
         out string terminusDetail)
     {
         terminusDetail = string.Empty;
 
-        if (!_settings.UseSkyPatcherMode) return true;
+        if (!_settings.UsesSurrogates) return true;
         if (_settings.GetEffectiveTemplateHandlingMode(appearanceModSetting) !=
             TemplateHandlingMode.InheritFromTemplate)
         {
@@ -544,7 +579,7 @@ public class Validator : OptionalUIModule
 
         // Resolved through the selected mod's own plugins, exactly as the patcher resolves the donor
         // and every chain hop — a mod may set or clear the Traits flag, and screening has to judge the
-        // record that will actually be patched. Reached only in SkyPatcher + Inherit, so record-mode
+        // record that will actually be patched. Reached only for a runtime backend + Inherit, so record-mode
         // runs never pay for the lookup.
         bool isFaceGenOnly = appearanceModSetting.IsFaceGenOnlyEntry ||
                              appearanceModSetting.FaceGenOnlyNpcFormKeys.Contains(appearanceNpcFormKey);
@@ -569,6 +604,69 @@ public class Validator : OptionalUIModule
         // an arrow — otherwise the trail reads "-> A -> -> B".
         terminusDetail = $"chain {donor.FormKey} {string.Join(" ", hops)}".TrimEnd();
         return false;
+    }
+
+    /// <summary>
+    /// Recast-only output, cross-race selection: why the target would not render the donor's body,
+    /// or null when it would (or the race is unchanged, or the backend can deliver race). Judged by
+    /// <see cref="RecastRaceCompatibility"/> against the record the surrogate is built from — the
+    /// donor, or under <see cref="TemplateHandlingMode.GiveEachNpcOwnCopy"/> its template terminus,
+    /// whose race and skin the surrogate is given.
+    /// </summary>
+    private string? FindRecastOnlyRaceFailure(INpcGetter target, FormKey appearanceNpcFormKey,
+        ModSetting appearanceModSetting)
+    {
+        if (!_settings.UsesRecast || _settings.RecastMode != RecastMode.RecastOnly) return null;
+
+        bool isFaceGenOnly = appearanceModSetting.IsFaceGenOnlyEntry ||
+                             appearanceModSetting.FaceGenOnlyNpcFormKeys.Contains(appearanceNpcFormKey);
+        var folderPaths = appearanceModSetting.CorrespondingFolderPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var donor = _recordHandler.ResolveNpcPreferringMod(appearanceNpcFormKey, appearanceModSetting,
+            folderPaths, isFaceGenOnly);
+        if (donor == null) return null; // unresolvable donor is another check's business
+
+        if (_settings.GetEffectiveTemplateHandlingMode(appearanceModSetting) == TemplateHandlingMode.GiveEachNpcOwnCopy &&
+            Auxilliary.TryResolveAppearanceTerminus(donor,
+                fk => _recordHandler.ResolveNpcPreferringMod(fk, appearanceModSetting, folderPaths, isFaceGenOnly),
+                out var terminusFk) == FaceGenChainStatus.Resolved &&
+            _recordHandler.ResolveNpcPreferringMod(terminusFk, appearanceModSetting, folderPaths, isFaceGenOnly) is { } terminus)
+        {
+            donor = terminus;
+        }
+
+        if (donor.Race.IsNull || target.Race.IsNull || donor.Race.FormKey.Equals(target.Race.FormKey)) return null;
+
+        var linkCache = _environmentStateProvider.LinkCache;
+        var donorRace = _recordHandler.ResolveRacePreferringMod(donor.Race.FormKey, appearanceModSetting, folderPaths);
+        IRaceGetter? targetRace = null;
+        if (donorRace == null || linkCache == null || !linkCache.TryResolve<IRaceGetter>(target.Race.FormKey, out targetRace))
+        {
+            return null; // nothing to judge against; the race check in RefreshNpcLists owns unresolvable races
+        }
+
+        // Records the skin is built from: the mod's own version first (the WNAM and its addons are
+        // merged from there), then the load-order winner.
+        T? Resolve<T>(FormKey fk) where T : class, IMajorRecordGetter
+        {
+            var link = new FormLink<T>(fk);
+            for (int i = appearanceModSetting.CorrespondingModKeys.Count - 1; i >= 0; i--)
+            {
+                if (_recordHandler.TryGetRecordGetterFromMod(link, appearanceModSetting.CorrespondingModKeys[i],
+                        folderPaths, RecordHandler.RecordLookupFallBack.None, out var rec) && rec is T typed)
+                {
+                    return typed;
+                }
+            }
+            return linkCache.TryResolve<T>(fk, out var winner) ? winner : null;
+        }
+
+        var verdict = RecastRaceCompatibility.Check(donor, donorRace, targetRace!,
+            Resolve<IArmorGetter>, Resolve<IArmorAddonGetter>);
+        if (verdict.Note != null)
+        {
+            NpcDiagnosticLogger.Log($"  Recast race note: {verdict.Note}.");
+        }
+        return verdict.Failure;
     }
 
     /// <summary>One link this selection would write that the output cannot honour.</summary>
@@ -697,7 +795,7 @@ public class Validator : OptionalUIModule
 
         bool includeOutfit = ResolveIncludeOutfit(appearanceModSetting, npcFormKey, _settings.NpcOutfitOverrides);
         var candidates = EnumerateWrittenLinks(appearanceRecord, donor, includeOutfit,
-            _settings.UseSkyPatcherMode);
+            _settings.UsesSurrogates);
 
         // The named set above is the complete write set only for Create-and-Patch, which overrides
         // the WINNING record (record mode) or strips the surrogate down to appearance data
@@ -891,7 +989,7 @@ public class Validator : OptionalUIModule
     /// <para>Pure — no state, no logging — so it can be tested directly.</para>
     /// </summary>
     private static IEnumerable<(string Field, FormKey Key, Type? Type)> EnumerateWrittenLinks(
-        INpcGetter appearanceRecord, INpcGetter donor, bool includeOutfit, bool useSkyPatcherMode)
+        INpcGetter appearanceRecord, INpcGetter donor, bool includeOutfit, bool usesSurrogate)
     {
         if (!appearanceRecord.Race.IsNull)
             yield return ("Race", appearanceRecord.Race.FormKey, typeof(IRaceGetter));
@@ -914,12 +1012,12 @@ public class Validator : OptionalUIModule
             yield return ("DefaultOutfit", appearanceRecord.DefaultOutfit.FormKey, typeof(IOutfitGetter));
         }
 
-        if ((useSkyPatcherMode || Auxilliary.HasTraitsFlag(donor)) && donor.Template is { IsNull: false })
+        if ((usesSurrogate || Auxilliary.HasTraitsFlag(donor)) && donor.Template is { IsNull: false })
         {
             yield return ("Template", donor.Template.FormKey, typeof(INpcSpawnGetter));
         }
 
-        if (useSkyPatcherMode && !donor.Class.IsNull)
+        if (usesSurrogate && !donor.Class.IsNull)
         {
             yield return ("Class", donor.Class.FormKey, typeof(IClassGetter));
         }

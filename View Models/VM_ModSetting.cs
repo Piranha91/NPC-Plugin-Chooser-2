@@ -252,19 +252,19 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     public Dictionary<FormKey, string> NpcFormKeysToDisplayName { get; set; } = new();
 
     /// <summary>
-    /// ModKeys of NPCs that this mod patches via SkyPatcher templates (the "target" NPC
-    /// in <c>filterByNpcs=...</c>). Populated during AnalyzeModSettingsAsync from
-    /// <see cref="GetSkyPatcherImportsAsync"/>'s guest list. Used by
-    /// <see cref="VM_Mods.FindAndAddMissingMasters"/> to treat the foundation plugin as an
-    /// effective NPC source so the cleanup pass doesn't re-attach the foundation folder
-    /// for SkyPatcher-style replacers (e.g. <c>t_Amalee_Replacer.esp</c> → <c>3DNPC.esp</c>).
+    /// ModKeys of NPCs that this mod replaces at runtime through a SkyPatcher ini (the "target"
+    /// NPC in <c>filterByNpcs=...</c>) or a Recast patch (the <c>target</c> of a face entry).
+    /// Populated during AnalyzeModSettingsAsync by <see cref="GetReplacerTargetModKeysAsync"/>.
+    /// Used by <see cref="VM_Mods.FindAndAddMissingMasters"/> to treat the foundation plugin as an
+    /// effective NPC source so the cleanup pass doesn't re-attach the foundation folder for
+    /// runtime replacers (e.g. <c>t_Amalee_Replacer.esp</c> → <c>3DNPC.esp</c>).
     ///
     /// Intentionally NOT persisted: it's only consulted by the cleanup pass that runs
     /// inside the same <c>PopulateModSettingsAsync</c> call that populates it. On
     /// subsequent launches the persisted folder list is already correct, so an empty
     /// transient set is fine.
     /// </summary>
-    public HashSet<ModKey> SkyPatcherTargetModKeys { get; set; } = new();
+    public HashSet<ModKey> ReplacerTargetModKeys { get; set; } = new();
 
     public Dictionary<FormKey, List<ModKey>> AvailablePluginsForNpcs { get; set; } =
         new(); // tracks which plugins contain which Npc entry
@@ -884,22 +884,22 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
 
         // Wig / Antler dropdown visibility: each dropdown shows only when the
         // analysis scan detected that class AND the output mode activates the
-        // handling — Create-and-Patch record mode, or SkyPatcher mode in either
-        // PatchingMode (mirrors Settings.GetEffectiveWigMode/GetEffectiveAntlerMode).
+        // handling — Create-and-Patch record mode, or surrogate output (SkyPatcher or
+        // Recast) in either PatchingMode (mirrors Settings.WigHandlingActiveForOutputMode).
         // Wigs and antlers are gated on their own detection sets (not the union),
         // so a mod with antlers-only shows only the Antler dropdown and vice versa.
         this.WhenAnyValue(x => x.HasWigs)
             .CombineLatest(
-                _lazySettingsVm.Value.WhenAnyValue(x => x.SelectedPatchingMode, x => x.UseSkyPatcherMode),
+                _lazySettingsVm.Value.WhenAnyValue(x => x.SelectedPatchingMode, x => x.SelectedOutputBackend),
                 (hasWigs, output) => hasWigs &&
-                                     (output.Item2 || output.Item1 == PatchingMode.CreateAndPatch))
+                                     (output.Item2 != OutputBackend.ESP || output.Item1 == PatchingMode.CreateAndPatch))
             .Subscribe(visible => IsWigHandlingVisible = visible)
             .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.HasAntlers)
             .CombineLatest(
-                _lazySettingsVm.Value.WhenAnyValue(x => x.SelectedPatchingMode, x => x.UseSkyPatcherMode),
+                _lazySettingsVm.Value.WhenAnyValue(x => x.SelectedPatchingMode, x => x.SelectedOutputBackend),
                 (hasAntlers, output) => hasAntlers &&
-                                        (output.Item2 || output.Item1 == PatchingMode.CreateAndPatch))
+                                        (output.Item2 != OutputBackend.ESP || output.Item1 == PatchingMode.CreateAndPatch))
             .Subscribe(visible => IsAntlerHandlingVisible = visible)
             .DisposeWith(_disposables);
 
@@ -2275,7 +2275,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             }
         }
 
-        // Lexical INI scan: works at initial-scan time, before SkyPatcherTargetModKeys exists.
+        // Lexical INI scan: works at initial-scan time, before ReplacerTargetModKeys exists.
         int skyPatcherTargets = MergeInClassifier.CountSkyPatcherVisualTargets(this.CorrespondingFolderPaths);
 
         var verdict = isBaseGame
@@ -2957,7 +2957,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     }
 
     public async Task<List<(FormKey TargetNpc, FormKey SourceNpc, string ModDisplayName, string SourceNpcDisplayName)>>
-        GetSkyPatcherImportsAsync(
+        GetReplacerImportsAsync(
             IReadOnlyDictionary<string, HashSet<FormKey>> environmentEditorIdMap,
             IReadOnlyDictionary<string, HashSet<FormKey>> modEditorIdMap)
     {
@@ -2974,9 +2974,10 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             }
         }
 
-        if (!iniFiles.Any()) return guestAppearances;
-
-        StartupLogger.Log($"  [{DisplayName}] Parsing {iniFiles.Count} SkyPatcher INI files");
+        if (iniFiles.Any())
+        {
+            StartupLogger.Log($"  [{DisplayName}] Parsing {iniFiles.Count} SkyPatcher INI files");
+        }
 
         foreach (var iniFile in iniFiles)
         {
@@ -3015,11 +3016,51 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             }
         }
 
+        // Recast replacer packs: the same (target, source) pairs, from the pack's patch TOMLs.
+        foreach (var (target, source) in ReadRecastFaces())
+        {
+            foreach (var targetNpcKey in RecastPatchReader.Resolve(target, environmentEditorIdMap))
+            {
+                foreach (var sourceNpcKey in RecastPatchReader.Resolve(source, modEditorIdMap))
+                {
+                    if (!NpcFormKeysToDisplayName.TryGetValue(sourceNpcKey, out var npcDisplayName))
+                    {
+                        npcDisplayName = "No Name";
+                    }
+
+                    guestAppearances.Add((targetNpcKey, sourceNpcKey, DisplayName, npcDisplayName));
+                }
+            }
+        }
+
         return guestAppearances;
     }
 
     /// <summary>
-    /// Lightweight variant of <see cref="GetSkyPatcherImportsAsync"/> that returns just the
+    /// Every face entry in this mod's own Recast patch TOMLs
+    /// (<c>SKSE\Plugins\Recast\Patches\**.toml</c> in each of its folders), all three Recast
+    /// syntaxes included. Files and entries Recast itself would skip are skipped and logged.
+    /// </summary>
+    private List<(RecastSelector Target, RecastSelector Source)> ReadRecastFaces()
+    {
+        var faces = new List<(RecastSelector, RecastSelector)>();
+        foreach (var modPath in CorrespondingFolderPaths)
+        {
+            foreach (var file in RecastPatchReader.EnumeratePatchFiles(modPath))
+            {
+                var patch = RecastPatchReader.ReadFile(file);
+                foreach (var error in patch.Errors)
+                {
+                    StartupLogger.Log($"  [{DisplayName}] Recast: {error}");
+                }
+                faces.AddRange(patch.Faces.Select(f => (f.Target, f.Source)));
+            }
+        }
+        return faces;
+    }
+
+    /// <summary>
+    /// Lightweight variant of <see cref="GetReplacerImportsAsync"/> that returns just the
     /// distinct <see cref="ModKey"/>s this mod targets via SkyPatcher INIs (the
     /// <c>filterByNpcs=...</c> side). Unlike the full importer — which only resolves targets
     /// against the load order so guest-appearance entries in <c>_settings.SelectedAppearanceMods</c>
@@ -3034,7 +3075,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     /// → <c>3DNPC.esp</c>) would slip through the cleanup whenever the user hasn't enabled
     /// the foundation in their LO.
     /// </summary>
-    public async Task<HashSet<ModKey>> GetSkyPatcherTargetModKeysAsync(
+    public async Task<HashSet<ModKey>> GetReplacerTargetModKeysAsync(
         IReadOnlyDictionary<string, HashSet<FormKey>> environmentEditorIdMap,
         IReadOnlyDictionary<string, HashSet<FormKey>> modEditorIdMap)
     {
@@ -3049,8 +3090,6 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                 iniFiles.AddRange(Directory.EnumerateFiles(skyPatcherNpcDir, "*.ini", SearchOption.AllDirectories));
             }
         }
-
-        if (!iniFiles.Any()) return targetModKeys;
 
         foreach (var iniFile in iniFiles)
         {
@@ -3075,6 +3114,17 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                 {
                     targetModKeys.Add(fk.ModKey);
                 }
+            }
+        }
+
+        // Recast replacer packs, with the same env-then-mod fallback for EditorID targets.
+        foreach (var (target, _) in ReadRecastFaces())
+        {
+            var resolved = RecastPatchReader.Resolve(target, environmentEditorIdMap).ToList();
+            if (resolved.Count == 0) resolved = RecastPatchReader.Resolve(target, modEditorIdMap).ToList();
+            foreach (var fk in resolved)
+            {
+                targetModKeys.Add(fk.ModKey);
             }
         }
 

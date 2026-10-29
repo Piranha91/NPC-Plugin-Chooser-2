@@ -330,7 +330,21 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     // --- New Output Settings Properties ---
     [Reactive] public string OutputDirectory { get; set; }
     [Reactive] public bool AppendTimestampToOutputDirectory { get; set; }
-    [Reactive] public bool UseSkyPatcherMode { get; set; }
+    // Output backend (Settings.OutputBackend) and, under Recast, how the fields Recast cannot carry
+    // are delivered (Settings.RecastMode). Dropdowns bind SelectedValue/Key like the other mode
+    // dropdowns so the persisted enums stay the source of truth.
+    [Reactive] public OutputBackend SelectedOutputBackend { get; set; }
+    public IEnumerable<KeyValuePair<OutputBackend, string>> OutputBackends { get; } =
+        HandlingModeDisplay.OutputBackendsInDisplayOrder
+            .Select(b => new KeyValuePair<OutputBackend, string>(b, HandlingModeDisplay.ToDisplayString(b)))
+            .ToList();
+    [Reactive] public RecastMode SelectedRecastMode { get; set; }
+    public IEnumerable<KeyValuePair<RecastMode, string>> RecastModes { get; } =
+        HandlingModeDisplay.RecastModesInDisplayOrder
+            .Select(m => new KeyValuePair<RecastMode, string>(m, HandlingModeDisplay.ToDisplayString(m)))
+            .ToList();
+    [Reactive] public int RecastPatchPriority { get; set; }
+    [ObservableAsProperty] public bool IsRecastOptionsVisible { get; }
     [Reactive] public bool AutoEslIfy { get; set; } = true;
     [Reactive] public bool AutoSplitOutput { get; set; } = true;
     [Reactive] public bool SplitOutput { get; set; }
@@ -807,7 +821,9 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         SelectedMugshotSearchModePC = MugshotSearchMode.Fast;
         
         OutputDirectory = _model.OutputDirectory;
-        UseSkyPatcherMode = _model.UseSkyPatcherMode;
+        SelectedOutputBackend = _model.OutputBackend;
+        SelectedRecastMode = _model.RecastMode;
+        RecastPatchPriority = _model.RecastPatchPriority;
         AutoEslIfy = _model.AutoEslIfy;
         AutoSplitOutput = _model.AutoSplitOutput;
         SplitOutput = _model.SplitOutput;
@@ -1303,7 +1319,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                     warning = HandlingModeDisplay.ConvertToHeadPartsWarning;
                     title = HandlingModeDisplay.ConvertToHeadPartsWarningTitle;
                 }
-                else if (current == WigHandlingMode.ForwardToOutfit && UseSkyPatcherMode)
+                else if (current == WigHandlingMode.ForwardToOutfit && _model.SkyPatcherDirectivesAvailable)
                 {
                     warning = HandlingModeDisplay.SkyPatcherForwardToOutfitWarning +
                               "\n\nUse Forward To Outfit anyway?";
@@ -1604,11 +1620,17 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             })
             .DisposeWith(_disposables);
 
-        this.WhenAnyValue(x => x.UseSkyPatcherMode)
-            .Skip(1) // Skip initial value set on load
-            .Subscribe(useSkyPatcher =>
+        // Buffer(2, 1) yields (previous, current) for every change after the load-time assignment,
+        // so a declined confirmation can restore whatever was selected before.
+        this.WhenAnyValue(x => x.SelectedOutputBackend)
+            .Buffer(2, 1)
+            .Subscribe(pair =>
             {
-                if (useSkyPatcher) // If the checkbox was just checked
+                var previous = pair[0];
+                var current = pair[1];
+                if (current == previous) return;
+
+                if (current == OutputBackend.SkyPatcher)
                 {
                     var message = new StringBuilder(
                         "SkyPatcher is a powerful tool for overwriting conflicts. Be aware that it might conflict with other runtime editing tools such as RSV and SynthEBD.");
@@ -1626,14 +1648,30 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                     if (!SuppressPopupWarnings &&
                         !ScrollableMessageBox.Confirm(message.ToString(), "Confirm SkyPatcher Mode"))
                     {
-                        // If user clicks "No", revert the checkbox state
-                        UseSkyPatcherMode = false;
+                        // Declined: restore the previous backend. The assignment re-enters this
+                        // subscription with (SkyPatcher, previous), which persists it below.
+                        SelectedOutputBackend = previous;
+                        return;
                     }
                 }
 
-                // Persist the final state (whether confirmed true or set to false) to the model
-                _model.UseSkyPatcherMode = UseSkyPatcherMode;
+                _model.OutputBackend = current;
             })
+            .DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.SelectedRecastMode)
+            .Skip(1)
+            .Subscribe(m => _model.RecastMode = m)
+            .DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.RecastPatchPriority)
+            .Skip(1)
+            .Subscribe(p => _model.RecastPatchPriority = p)
+            .DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.SelectedOutputBackend)
+            .Select(b => b == OutputBackend.Recast)
+            .ToPropertyEx(this, x => x.IsRecastOptionsVisible)
             .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.AutoEslIfy)
@@ -4282,7 +4320,8 @@ Options:
         sb.AppendLine("Output Directory: " + OutputDirectory);
         sb.AppendLine("Output Name: " + TargetPluginName);
         sb.AppendLine("Default Override Handling: " + SelectedRecordOverrideHandlingMode);
-        sb.AppendLine("SkyPatcher Mode: " + UseSkyPatcherMode);
+        sb.AppendLine("Output Backend: " + SelectedOutputBackend +
+                      (SelectedOutputBackend == OutputBackend.Recast ? $" ({SelectedRecastMode})" : ""));
         sb.AppendLine("AutoEslIfy: " + AutoEslIfy);
         sb.AppendLine("AutoSplitOutput: " + AutoSplitOutput);
         return sb.ToString();

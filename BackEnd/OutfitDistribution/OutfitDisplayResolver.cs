@@ -309,7 +309,7 @@ public class OutfitDisplayResolver
         FormKey? inheritedWornOutfit = writtenNpc == null
             ? null
             : ResolveWornOutfit(writtenNpc, linkCache, modSetting, out inventoryTemplateSource);
-        bool recordOutfitInert = !_settings.UseSkyPatcherMode && inventoryTemplateSource != null;
+        bool recordOutfitInert = !_settings.SkyPatcherDirectivesAvailable && inventoryTemplateSource != null;
 
         bool includeOutfit = ComputeIncludeOutfitIntent(targetNpcFormKey, modSetting);
 
@@ -321,9 +321,9 @@ public class OutfitDisplayResolver
         {
             (pluginLevel, pluginLevelSource, pluginLevelModScoped) = (winnerOutfit, OutfitDisplaySource.WinningOverride, false);
         }
-        else if (_settings.UseSkyPatcherMode)
+        else if (_settings.UsesSurrogates)
         {
-            // Recipient record is untouched at plugin level in SkyPatcher mode.
+            // Recipient record is untouched at plugin level whenever a surrogate carries the appearance (SkyPatcher or Recast).
             (pluginLevel, pluginLevelSource, pluginLevelModScoped) = (winnerOutfit, OutfitDisplaySource.WinningOverride, false);
         }
         else if (recordOutfitInert)
@@ -352,7 +352,7 @@ public class OutfitDisplayResolver
         // the distributors see; NPC2's own plugin edit is modeled through
         // pluginLevel, which doubles as SPID's "initial outfit").
         var facts = winnerNpc != null ? GetFacts(targetNpcFormKey, winnerNpc, linkCache) : null;
-        bool npc2IniActive = _settings.UseSkyPatcherMode && modSetting != null && includeOutfit && donorOutfit != null;
+        bool npc2IniActive = _settings.SkyPatcherDirectivesAvailable && modSetting != null && includeOutfit && donorOutfit != null;
 
         FormKey? skyOutfit = null;
         string? skySourceFile = null;
@@ -489,7 +489,7 @@ public class OutfitDisplayResolver
                           $"{DescribeNpc(inventoryTemplateSource!.Value, linkCache)} — the outfit written to " +
                           $"its own record is never worn in game. {actual} is worn instead of {intended}.";
             }
-            else if (_settings.UseSkyPatcherMode && skyOutfit != null && !skyIsNpc2)
+            else if (_settings.SkyPatcherDirectivesAvailable && skyOutfit != null && !skyIsNpc2)
             {
                 warning = $"NPC2's SkyPatcher outfit entry is not conflict-winning: '{skySourceFile}' " +
                           $"(line {skySourceLine}) loads later and sets {actual} instead of {intended}.";
@@ -759,7 +759,7 @@ public class OutfitDisplayResolver
         // the record's template flag says, so the donor's own outfit IS what gets worn and the
         // chain must not be followed. (The WNAM segment further down is Traits-governed, not
         // Inventory-governed, and deliberately does not walk this chain at all.)
-        var outfitSource = _settings.UseSkyPatcherMode
+        var outfitSource = _settings.SkyPatcherDirectivesAvailable
             ? donor
             : ResolveInventoryOutfitSource(donor, linkCache, modSetting, out _);
 

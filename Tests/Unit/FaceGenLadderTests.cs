@@ -124,7 +124,7 @@ public class FaceGenLadderTests
         var d = FaceGenLadder.Classify(Inputs(
             sourceDds: FaceGenAssetPresence.NotFound,
             originDds: FaceGenAssetPresence.NotFound,
-            mode: FaceGenDestinationMode.SkyPatcher));
+            mode: FaceGenDestinationMode.Surrogate));
 
         d.DdsChoice.Should().Be(FaceGenSourceChoice.Winner, "the surrogate's path is new, so nothing can fall through to it");
     }
@@ -170,7 +170,7 @@ public class FaceGenLadderTests
 
     [Theory]
     [InlineData(FaceGenDestinationMode.FaceSwap)]
-    [InlineData(FaceGenDestinationMode.SkyPatcher)]
+    [InlineData(FaceGenDestinationMode.Surrogate)]
     public void Row3_CopiesTheWinnerWhenTheDestinationIsADifferentFormKey(FaceGenDestinationMode mode)
     {
         var d = FaceGenLadder.Classify(Inputs(
@@ -455,9 +455,9 @@ public class FaceGenLadderTests
     {
         // SkyPatcher's destination is the surrogate's own path — a record this pass DOES write — so
         // the rule does not apply. That combination is inert rather than wrong, and the validator
-        // rejects it per NPC upstream (Validator.CanSkyPatcherApplyAppearance).
+        // rejects it per NPC upstream (Validator.CanRuntimeBackendApplyAppearance).
         var d = FaceGenLadder.Classify(Inputs(
-            mode: FaceGenDestinationMode.SkyPatcher,
+            mode: FaceGenDestinationMode.Surrogate,
             chain: FaceGenChainStatus.Resolved,
             subject: Terminus));
 
@@ -473,7 +473,7 @@ public class FaceGenLadderTests
     [InlineData(FaceGenDestinationMode.Record, FaceGenChainStatus.Resolved, false, true)]
     [InlineData(FaceGenDestinationMode.FaceSwap, FaceGenChainStatus.Resolved, false, true)]
     [InlineData(FaceGenDestinationMode.Record, FaceGenChainStatus.Resolved, true, false)]
-    [InlineData(FaceGenDestinationMode.SkyPatcher, FaceGenChainStatus.Resolved, false, false)]
+    [InlineData(FaceGenDestinationMode.Surrogate, FaceGenChainStatus.Resolved, false, false)]
     [InlineData(FaceGenDestinationMode.Record, FaceGenChainStatus.NotTemplated, false, false)]
     [InlineData(FaceGenDestinationMode.Record, FaceGenChainStatus.LeveledTerminus, false, false)]
     [InlineData(FaceGenDestinationMode.Record, FaceGenChainStatus.Unfollowable, false, false)]
@@ -663,13 +663,13 @@ public class FaceGenLadderTests
         // SkyPatcher already copies everything (the surrogate's path is brand new), so the flag
         // must not alter its choices.
         var inherit = FaceGenLadder.Classify(Inputs(
-            mode: FaceGenDestinationMode.SkyPatcher,
+            mode: FaceGenDestinationMode.Surrogate,
             chain: FaceGenChainStatus.Resolved, subject: Terminus,
             sourceNif: FaceGenAssetPresence.NotFound, sourceDds: FaceGenAssetPresence.NotFound,
             hasPluginRecord: false,
             originNif: FaceGenAssetPresence.NotFound, originDds: FaceGenAssetPresence.NotFound));
         var flattened = FaceGenLadder.Classify(Inputs(
-            mode: FaceGenDestinationMode.SkyPatcher,
+            mode: FaceGenDestinationMode.Surrogate,
             chain: FaceGenChainStatus.Resolved, subject: Terminus,
             sourceNif: FaceGenAssetPresence.NotFound, sourceDds: FaceGenAssetPresence.NotFound,
             hasPluginRecord: false,

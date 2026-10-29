@@ -450,10 +450,28 @@
                         </StackPanel>
                     </StackPanel>
 
-                    <CheckBox Content="SkyPatcher Mode"
-                              IsChecked="{Binding UseSkyPatcherMode, Mode=TwoWay}"
-                              Margin="0,5,0,0"
-                              ToolTip="Generates a SkyPatcher .ini file for runtime patching instead of a traditional ESP. This is an advanced feature that may conflict with other runtime patchers."/>
+                    <StackPanel Orientation="Horizontal" Margin="0,5,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="Output Backend:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <ComboBox ItemsSource="{Binding OutputBackends}"
+                                  SelectedValuePath="Key" DisplayMemberPath="Value"
+                                  SelectedValue="{Binding SelectedOutputBackend, Mode=TwoWay}"
+                                  MinWidth="160" VerticalAlignment="Center"
+                                  ToolTip="ESP: the selected appearances are written as NPC records in the output plugin. SkyPatcher: the output plugin carries a copy of each chosen appearance, and a SkyPatcher .ini applies it at runtime; an advanced feature that may conflict with other runtime patchers."/>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Margin="20,5,0,0" VerticalAlignment="Center"
+                                Visibility="{Binding IsRecastOptionsVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <TextBlock Text="Recast Mode:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <ComboBox ItemsSource="{Binding RecastModes}"
+                                  SelectedValuePath="Key" DisplayMemberPath="Value"
+                                  SelectedValue="{Binding SelectedRecastMode, Mode=TwoWay}"
+                                  MinWidth="220" VerticalAlignment="Center"
+                                  ToolTip="Recast changes the face, body, skin, height, weight, hair color and sex, but never race, outfits or keywords. Hybrid adds a SkyPatcher .ini for those. Recast only drops outfits and keywords, and rejects NPCs whose race change would render a broken body."/>
+                        <TextBlock Text="Patch Priority:" VerticalAlignment="Center" Margin="15,0,8,0"/>
+                        <TextBox Text="{Binding RecastPatchPriority, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                 Width="60" VerticalAlignment="Center"
+                                 ToolTip="Recast lets the patch with the higher priority win when two patches change the same NPC. Replacer mods usually use 100."/>
+                    </StackPanel>
 
                     <CheckBox Content="Auto-ESLify If Possible"
                               IsChecked="{Binding AutoEslIfy, Mode=TwoWay}"

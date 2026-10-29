@@ -69,6 +69,7 @@
       <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
       <PackageReference Include="Splat.Autofac" Version="19.4.1" />
       <PackageReference Include="System.IO.Hashing" Version="9.0.6" />
+      <PackageReference Include="Tomlyn" Version="2.10.1" />
     </ItemGroup>
 
     <ItemGroup>

@@ -6881,7 +6881,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
         public TemplateTreeResolver(VM_NpcSelectionBar bar)
         {
             _bar = bar;
-            _useSelectedModRecord = bar._settings.PatchingMode == PatchingMode.Create && !bar._settings.UseSkyPatcherMode;
+            _useSelectedModRecord = bar._settings.PatchingMode == PatchingMode.Create && !bar._settings.UsesSurrogates;
             foreach (var mod in bar._lazyModsVm.Value.AllModSettings)
             {
                 _modsByName.TryAdd(mod.DisplayName, mod);

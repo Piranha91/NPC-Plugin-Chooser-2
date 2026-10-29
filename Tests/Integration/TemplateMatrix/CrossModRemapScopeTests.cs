@@ -164,7 +164,7 @@ public class CrossModRemapScopeTests
                 AutoEslIfy = false,
                 AutoSplitOutput = false,
                 PatchingMode = PatchingMode.CreateAndPatch,
-                UseSkyPatcherMode = skyPatcherMode,
+                OutputBackend = skyPatcherMode ? OutputBackend.SkyPatcher : OutputBackend.ESP,
                 DefaultWigHandlingMode = WigHandlingMode.None,
                 DefaultAntlerHandlingMode = AntlerHandlingMode.None,
                 TemplateHandlingMode = TemplateHandlingMode.InheritFromTemplate,

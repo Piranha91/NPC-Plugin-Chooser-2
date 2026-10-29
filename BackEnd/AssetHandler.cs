@@ -21,7 +21,7 @@ public class AssetHandler : OptionalUIModule
     private readonly BsaHandler _bsaHandler;
     private readonly RecordHandler _recordHandler;
     private readonly Lazy<VM_Run> _runVM;
-    private readonly SkyPatcherInterface _skyPatcherInterface;
+    private readonly SurrogateNpcRegistry _surrogates;
     private readonly Settings _settings;
     
     private bool _copyExtraTexturesInNifs = true;
@@ -142,12 +142,12 @@ public class AssetHandler : OptionalUIModule
     private readonly SemaphoreSlim _nifProcessingSemaphore = new(Environment.ProcessorCount);
 
     public AssetHandler(EnvironmentStateProvider environmentStateProvider, BsaHandler bsaHandler, RecordHandler recordHandler,
-        SkyPatcherInterface skyPatcherInterface, Settings settings, Lazy<VM_Run> runVM)
+        SurrogateNpcRegistry surrogates, Settings settings, Lazy<VM_Run> runVM)
     {
         _environmentStateProvider = environmentStateProvider;
         _bsaHandler = bsaHandler;
         _recordHandler = recordHandler;
-        _skyPatcherInterface = skyPatcherInterface;
+        _surrogates = surrogates;
         _settings = settings;
         _runVM = runVM;
     }
@@ -1807,7 +1807,7 @@ public class AssetHandler : OptionalUIModule
 
         FormKey surrogateNpcFormKey = FormKey.Null;
         bool useSkyPatcher =
-            _skyPatcherInterface.TryGetSurrogateFormKey(targetNpcFormKey, out surrogateNpcFormKey);
+            _surrogates.TryGetSurrogateFormKey(targetNpcFormKey, out surrogateNpcFormKey);
         bool isFaceSwap = !targetNpcFormKey.Equals(appearanceNpcRecord.FormKey);
 
         // Which FormKey's FaceGen paths this pass may write to — always the record it is itself

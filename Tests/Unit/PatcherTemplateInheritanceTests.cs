@@ -4,6 +4,7 @@ using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.BackEnd;
+using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.Tests.TestSupport;
 using Xunit;
 
@@ -139,18 +140,11 @@ public class PatcherTemplateInheritanceTests
         var env = Reflect.Uninitialized<EnvironmentStateProvider>();
         Reflect.SetField(env, "OutputMod", output);
 
-        var skyPatcher = Reflect.Uninitialized<SkyPatcherInterface>();
-        Reflect.SetField(skyPatcher, "_environmentStateProvider", env);
-        Reflect.SetField(skyPatcher, "_outputs", CreateBackingDictionary(skyPatcher, "_outputs"));
-        Reflect.SetField(skyPatcher, "_keyOriginalValSurrogate", new Dictionary<FormKey, FormKey>());
-        Reflect.SetField(skyPatcher, "_keySurrogateValOrriginal", new Dictionary<FormKey, FormKey>());
-
         var recipientFk = MutagenFixtures.Fk("0B85AB:Skyrim.esm");
-        // appearanceOnly:false — Reflect.Invoke matches on arg count, so the optional parameters
-        // must be passed explicitly. These tests are about the traits/flattening overlay, not the
+        // appearanceOnly:false — these tests are about the traits/flattening overlay, not the
         // non-appearance strip (SurrogateAppearanceOnlyTests owns that), so keep it off.
-        var surrogate = Reflect.Invoke<Npc>(skyPatcher, "CreateSkyPatcherNpc",
-            recipientFk, (INpcGetter)donor, (INpcGetter)template, false, false)!;
+        var surrogate = new SurrogateNpcRegistry(env).CreateSurrogate(
+            recipientFk, donor, template, appearanceOnly: false, includeOutfit: false);
 
         HasTraits(surrogate).Should().BeFalse("the surrogate must own its face, not inherit it");
         surrogate.EditorID.Should().Be("RedguardWomanHighPoly_Template");
@@ -169,16 +163,6 @@ public class PatcherTemplateInheritanceTests
         surrogate.EditorID.Should().Be("PlainDonor_Template");
     }
 
-    /// <summary>Builds the private NpcContainer dictionary the surrogate factory writes into,
-    /// whose value type is not visible from the test assembly.</summary>
-    private static object CreateBackingDictionary(object owner, string fieldName)
-    {
-        var fieldType = owner.GetType()
-            .GetField(fieldName, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
-            .FieldType;
-        return System.Activator.CreateInstance(fieldType)!;
-    }
-
     // ---- SkyPatcher-mode Traits directives ---------------------------------------------------
     //
     // The directive lands on the RECIPIENT (filterByNPCs=recipient) while the appearance arrives
@@ -191,17 +175,15 @@ public class PatcherTemplateInheritanceTests
         var env = Reflect.Uninitialized<EnvironmentStateProvider>();
         Reflect.SetField(env, "OutputMod", MutagenFixtures.NewMod("NPC.esp"));
 
-        var sky = Reflect.Uninitialized<SkyPatcherInterface>();
-        Reflect.SetField(sky, "_environmentStateProvider", env);
-        Reflect.SetField(sky, "_outputs", CreateBackingDictionary(sky, "_outputs"));
-        Reflect.SetField(sky, "_keyOriginalValSurrogate", new Dictionary<FormKey, FormKey>());
-        Reflect.SetField(sky, "_keySurrogateValOrriginal", new Dictionary<FormKey, FormKey>());
+        var surrogates = new SurrogateNpcRegistry(env);
+        var sky = new SkyPatcherInterface(env, surrogates);
 
         // Null terminus = "the donor does not inherit", which is what these traits-directive tests
         // are about; the flattening path has its own tests below. appearanceOnly:false for the same
         // reason as above — the strip is SurrogateAppearanceOnlyTests' subject, not this file's.
-        var surrogate = Reflect.Invoke<Npc>(sky, "CreateSkyPatcherNpc",
-            recipientFk, donor, null, false, false)!;
+        var surrogate = surrogates.CreateSurrogate(recipientFk, donor, null,
+            appearanceOnly: false, includeOutfit: false);
+        sky.AddNpc(recipientFk);
         return (sky, surrogate);
     }
 
@@ -218,11 +200,13 @@ public class PatcherTemplateInheritanceTests
         return texts;
     }
 
-    private static List<string> EmitDirectives(INpcGetter recipient, FormKey recipientFk, INpcGetter donor)
+    private static List<string> EmitDirectives(INpcGetter recipient, FormKey recipientFk, INpcGetter donor,
+        OutputBackend backend = OutputBackend.SkyPatcher)
     {
         var (sky, surrogate) = NewSurrogate(recipientFk, donor);
         var patcher = Reflect.Uninitialized<Patcher>();
         Reflect.SetField(patcher, "_skyPatcherInterface", sky);
+        Reflect.SetField(patcher, "_settings", new Settings { OutputBackend = backend, RecastMode = RecastMode.Hybrid });
         Reflect.InvokeVoid(patcher, "ApplySkyPatcherDirectives", recipientFk, recipient, surrogate, false);
         return QueuedActions(sky, recipientFk);
     }
@@ -252,6 +236,26 @@ public class PatcherTemplateInheritanceTests
 
         EmitDirectives(recipient, recipient.FormKey, donor)
             .Should().NotContain(a => a.Contains("TemplateFlags"));
+    }
+
+    [Fact]
+    public void RecastHybrid_EmitsRaceButNoAppearanceDirective()
+    {
+        // Recast's face= copies the female flag and resolves a Traits-templated target itself, and a
+        // SkyPatcher appearance directive beside a Recast face flips winner between a new game and a
+        // loaded save. Hybrid's ini therefore carries race= but never the gender or traits lines the
+        // SkyPatcher backend emits for the same pair.
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var template = MutagenFixtures.NewNpc(mod, "Template");
+        var recipient = MutagenFixtures.NewNpc(mod, "Recipient", traitsTemplate: true, template: template);
+        var donor = MutagenFixtures.NewNpc(mod, "Donor", female: true);
+        donor.Race.SetTo(MutagenFixtures.Fk("013746:Skyrim.esm"));
+
+        EmitDirectives(recipient, recipient.FormKey, donor)
+            .Should().Contain(new[] { "removeTemplateFlags=traits", "setFlags=female", "race" },
+                "the SkyPatcher backend is the control");
+        EmitDirectives(recipient, recipient.FormKey, donor, OutputBackend.Recast)
+            .Should().Equal("race");
     }
 
     [Fact]

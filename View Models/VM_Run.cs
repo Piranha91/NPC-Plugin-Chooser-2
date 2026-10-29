@@ -39,6 +39,7 @@ public class VM_Run : ReactiveObject, IDisposable
     private readonly AssetHandler _assetHandler;
     private readonly BsaHandler _bsaHandler;
     private readonly SkyPatcherInterface _skyPatcherInterface;
+    private readonly RecastInterface _recastInterface;
     private readonly RecordDeltaPatcher _recordDeltaPatcher;
     private readonly PluginProvider _pluginProvider;
     private readonly RecordHandler _recordHandler;
@@ -118,6 +119,7 @@ public class VM_Run : ReactiveObject, IDisposable
         AssetHandler assetHandler,
         BsaHandler bsaHandler,
         SkyPatcherInterface skyPatcherInterface,
+        RecastInterface recastInterface,
         RecordDeltaPatcher recordDeltaPatcher,
         Auxilliary aux,
         PluginProvider pluginProvider,
@@ -136,6 +138,7 @@ public class VM_Run : ReactiveObject, IDisposable
         _assetHandler = assetHandler;
         _bsaHandler = bsaHandler;
         _skyPatcherInterface = skyPatcherInterface;
+        _recastInterface = recastInterface;
         _recordDeltaPatcher = recordDeltaPatcher;
         _aux = aux;
         _pluginProvider = pluginProvider;
@@ -149,6 +152,7 @@ public class VM_Run : ReactiveObject, IDisposable
         _bsaHandler.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
         _recordDeltaPatcher.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
         _skyPatcherInterface.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
+        _recastInterface.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
         forwardedOutfitDistributor.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
 
         this.WhenAnyValue(x => x.IsRunning)
@@ -376,7 +380,7 @@ public class VM_Run : ReactiveObject, IDisposable
             // override — and the one that catches ForwardToSkin's silent per-NPC fallback to
             // ForwardToOutfit for appearance plugins that assign no WNAM. Raised before any
             // real work so declining costs nothing.
-            if (_settings.UseSkyPatcherMode && !_settings.SuppressPopupWarnings)
+            if (_settings.SkyPatcherDirectivesAvailable && !_settings.SuppressPopupWarnings)
             {
                 var outfitForwardingMods = modSettingsMap.Values
                     .Where(ms => _settings.GetEffectiveWigMode(ms) == WigHandlingMode.ForwardToOutfit)
@@ -409,6 +413,60 @@ public class VM_Run : ReactiveObject, IDisposable
                     {
                         AppendLog("Patching aborted: SkyPatcher mode with wigs forwarded to outfits.", true);
                         return; // Abort
+                    }
+                }
+            }
+
+            // Recast-only drops whatever only SkyPatcher can deliver. Say what, once, and offer
+            // Hybrid, which keeps the Recast face and adds an ini for the rest.
+            if (_settings.UsesRecast && _settings.RecastMode == RecastMode.RecastOnly && !_settings.SuppressPopupWarnings)
+            {
+                var outfitMods = modSettingsMap.Values.Where(ms => ms.IncludeOutfits)
+                    .Select(ms => ms.DisplayName).Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
+                var keywordMods = modSettingsMap.Values.Where(ms => ms.Keywords.Any(k => !string.IsNullOrWhiteSpace(k)))
+                    .Select(ms => ms.DisplayName).Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
+
+                if (outfitMods.Any() || keywordMods.Any())
+                {
+                    CurrentProgressMessage = "Waiting for user input...";
+
+                    var message = new StringBuilder(
+                        "Recast-only output applies faces but cannot deliver race changes, outfits or keywords. " +
+                        "Cross-race selections that would not render correctly are skipped during screening.");
+                    message.AppendLine().AppendLine();
+                    if (outfitMods.Any())
+                    {
+                        message.AppendLine($"Include Outfits is on for {outfitMods.Count} mod(s); their outfits will not be applied:");
+                        foreach (var name in outfitMods) message.AppendLine("    " + name);
+                        message.AppendLine();
+                    }
+                    if (keywordMods.Any())
+                    {
+                        message.AppendLine($"{keywordMods.Count} mod(s) add keywords, which will not be applied:");
+                        foreach (var name in keywordMods) message.AppendLine("    " + name);
+                        message.AppendLine();
+                    }
+                    message.Append("Hybrid keeps the Recast faces and delivers these through SkyPatcher.");
+
+                    bool? switchToHybrid = null;
+                    Application.Current?.Dispatcher.Invoke(() =>
+                    {
+                        switchToHybrid = ScrollableMessageBox.ChooseWithCancel(message.ToString(),
+                            "Recast-only output", "Switch to Hybrid", "Continue Recast-only", MessageBoxImage.Warning);
+                    });
+
+                    if (switchToHybrid == null)
+                    {
+                        AppendLog("Patching aborted at the Recast-only warning.", true);
+                        return; // Abort
+                    }
+                    if (switchToHybrid == true)
+                    {
+                        Application.Current?.Dispatcher.Invoke(() => _vmSettings.SelectedRecastMode = RecastMode.Hybrid);
+                        _settings.RecastMode = RecastMode.Hybrid;
+                        AppendLog("Recast mode switched to Hybrid for this and later runs.", false, true);
                     }
                 }
             }

@@ -144,7 +144,7 @@ public class SyntheticPluginInjectionTests
                 AutoEslIfy = false,
                 AutoSplitOutput = false,
                 PatchingMode = PatchingMode.Create,
-                UseSkyPatcherMode = false,
+                OutputBackend = OutputBackend.ESP,
                 DefaultRecordOverrideHandlingMode = RecordOverrideHandlingMode.Ignore,
                 DefaultMaxNestedIntervalDepth = 2,
                 DefaultIncludeAllOverrides = false,

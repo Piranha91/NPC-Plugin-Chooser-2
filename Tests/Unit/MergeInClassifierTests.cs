@@ -163,6 +163,20 @@ public class MergeInClassifierTests
     }
 
     [Fact]
+    public void CountSkyPatcherVisualTargets_AlsoCountsRecastFaceTargets()
+    {
+        using var tmp = new TempDir("skypatcher");
+        System.IO.File.WriteAllText(tmp.Combine("SKSE", "Plugins", "Recast", "Patches", "pack.toml"),
+            "[manifest]\napi_version = 1\n" +
+            "[[npcs]]\ntarget = \"0x000A2C8E~Skyrim.esm\"\nface = \"0x801~Pack.esp\"\n" +
+            "[[npcs]]\ntarget = \"0xA2C8E~skyrim.esm\"\nface = \"0x802~Pack.esp\"\n" + // same target
+            "[[npcs]]\ntarget = \"Aela\"\nbody = \"SomeSkin\"\n" +                       // no face
+            "[replacements]\nMjoll = \"Pack_Mjoll\"\n");
+
+        MergeInClassifier.CountSkyPatcherVisualTargets(new[] { tmp.Path }).Should().Be(2);
+    }
+
+    [Fact]
     public void CountSkyPatcherVisualTargets_NoIniFolder_ReturnsZero()
     {
         using var tmp = new TempDir("skypatcher");

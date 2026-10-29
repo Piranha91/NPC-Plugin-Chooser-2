@@ -60,7 +60,7 @@ internal static class TemplateMatrixSettingsBuilder
             AutoEslIfy = false,
             AutoSplitOutput = false,
             PatchingMode = cell.PatchingMode,
-            UseSkyPatcherMode = cell.UseSkyPatcher,
+            OutputBackend = cell.UseSkyPatcher ? OutputBackend.SkyPatcher : OutputBackend.ESP,
             TemplateHandlingMode = cell.TemplateMode,
             DefaultRecordOverrideHandlingMode = RecordOverrideHandlingMode.Ignore,
             DefaultMaxNestedIntervalDepth = 2,

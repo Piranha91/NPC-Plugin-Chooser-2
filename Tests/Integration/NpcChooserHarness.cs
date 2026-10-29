@@ -34,7 +34,9 @@ public sealed class NpcChooserHarness : IDisposable
         builder.RegisterType<BsaHandler>().AsSelf().SingleInstance();
         builder.RegisterType<RecordHandler>().AsSelf().SingleInstance();
         builder.RegisterType<RecordDeltaPatcher>().AsSelf().SingleInstance();
+        builder.RegisterType<SurrogateNpcRegistry>().AsSelf().SingleInstance();
         builder.RegisterType<SkyPatcherInterface>().AsSelf().SingleInstance();
+        builder.RegisterType<RecastInterface>().AsSelf().SingleInstance();
         builder.RegisterType<AssetHandler>().AsSelf().SingleInstance();
         builder.RegisterType<BackEnd.OutfitDistribution.OutfitDisplayResolver>().AsSelf().SingleInstance();
         builder.RegisterType<BackEnd.OutfitDistribution.ForwardedOutfitDistributor>().AsSelf().SingleInstance();

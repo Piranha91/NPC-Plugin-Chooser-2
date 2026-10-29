@@ -69,7 +69,7 @@ public class OutputValidator
         var result = new ValidationRunResult();
         var log = new StringBuilder();
         log.AppendLine("=== Validate Output ===");
-        log.AppendLine($"Mode: {(_settings.UseSkyPatcherMode ? "SkyPatcher" : _settings.PatchingMode.ToString())}");
+        log.AppendLine($"Mode: {(_settings.OutputBackend switch { OutputBackend.SkyPatcher => "SkyPatcher", OutputBackend.Recast => $"Recast ({_settings.RecastMode})", _ => _settings.PatchingMode.ToString() })}");
         log.AppendLine($"NPCs requested: {npcsToValidate.Count}");
 
         // Opt-in performance breakdown: phase timings go to the validation log, and a
@@ -108,8 +108,9 @@ public class OutputValidator
         string outputModName = Path.GetFileNameWithoutExtension(_environmentStateProvider.OutputPluginName ?? EnvironmentStateProvider.DefaultPluginName);
         string skyPatcherNpcRoot = Path.Combine(dataFolder, "SKSE", "Plugins", "SkyPatcher", "npc");
         string npc2IniPath = Path.Combine(skyPatcherNpcRoot, "NPC Plugin Chooser", outputModName + ".ini");
+        string npc2TomlPath = Path.Combine(RecastInterface.GetOutputDir(dataFolder), outputModName + ".toml");
 
-        var gateBlock = EvaluateDeployGate(listings, npc2IniPath, log);
+        var gateBlock = EvaluateDeployGate(listings, npc2IniPath, npc2TomlPath, log);
         if (gateBlock != null)
         {
             result.Blocked = true;
@@ -133,9 +134,23 @@ public class OutputValidator
                 "despite a clean report, review them manually.");
         }
 
+        // --- Recast index (parse all patch TOMLs once) ---
+        // A third-party Recast face replaces this app's appearance at runtime whatever backend wrote it.
+        progress?.Report((0, 0, "Scanning Recast patches..."));
+        var recastIndex = BuildRecastIndex(dataFolder, log);
+        AppendPerfLine(log, $"[perf] Recast index built in {swPhase.ElapsedMilliseconds} ms.");
+        swPhase.Restart();
+        if (recastIndex.SkippedFiles.Count > 0)
+        {
+            result.Notes.Add(
+                $"{recastIndex.SkippedFiles.Count} Recast patch file(s) are skipped by Recast itself (TOML error, " +
+                "missing [manifest] or unsupported api_version), so they change nothing in game: " +
+                string.Join(", ", recastIndex.SkippedFiles.Select(f => f.RelPath)) + ". See the log for each reason.");
+        }
+
         // In SkyPatcher mode, parse this app's own .ini once to map each recipient NPC to its
         // surrogate template (for the .ini-line and surrogate record/FaceGen checks).
-        var npc2IniMap = _settings.UseSkyPatcherMode ? ParseNpc2SkyPatcherIni(npc2IniPath) : null;
+        var npc2IniMap = _settings.UsesSkyPatcherAppearance ? ParseNpc2SkyPatcherIni(npc2IniPath) : null;
 
         // --- What the last run actually patched ---
         // Read from the DEPLOYED Data folder rather than the configured output directory, so it
@@ -197,7 +212,7 @@ public class OutputValidator
                 try
                 {
                     using (ContextualPerformanceTracer.Trace("ValidateNpc"))
-                        ValidateNpc(npcFk, linkCache, listings, modSettingsByName, skyIndex, npc2IniMap, dataFolder, scopedNpcs, lastRun, run, result, log);
+                        ValidateNpc(npcFk, linkCache, listings, modSettingsByName, skyIndex, recastIndex, npc2IniMap, dataFolder, scopedNpcs, lastRun, run, result, log);
                 }
                 catch (Exception ex)
                 {
@@ -289,20 +304,24 @@ public class OutputValidator
         var dataFolder = env.DataFolderPath.Path;
         string outputModName = Path.GetFileNameWithoutExtension(_environmentStateProvider.OutputPluginName ?? EnvironmentStateProvider.DefaultPluginName);
         string npc2IniPath = Path.Combine(dataFolder, "SKSE", "Plugins", "SkyPatcher", "npc", "NPC Plugin Chooser", outputModName + ".ini");
+        string npc2TomlPath = Path.Combine(RecastInterface.GetOutputDir(dataFolder), outputModName + ".toml");
 
-        var block = EvaluateDeployGate(listings, npc2IniPath, log: null);
+        var block = EvaluateDeployGate(listings, npc2IniPath, npc2TomlPath, log: null);
         return new DeployReadiness(block == null, block);
     }
 
     /// <summary>
     /// The deploy gate: is this app's output installed and active in the real load order
-    /// (and, in SkyPatcher mode, is its .ini deployed)? Returns null when ready, else a
+    /// (and, in SkyPatcher mode, is its .ini deployed; under Recast, its patch TOML)? The Hybrid
+    /// ini is not required: it is written only when some NPC needed a race, outfit or keyword
+    /// directive. Returns null when ready, else a
     /// human-readable block reason. Shared by <see cref="Validate"/> and
     /// <see cref="CheckDeployReadiness"/> so both apply identical rules.
     /// </summary>
     private string? EvaluateDeployGate(
         IReadOnlyList<IModListingGetter<ISkyrimModGetter>> listings,
         string npc2IniPath,
+        string npc2TomlPath,
         StringBuilder? log)
     {
         string outputPluginFileName = _environmentStateProvider.OutputPluginFileName;
@@ -321,11 +340,18 @@ public class OutputValidator
                    "mod manager first. Deploy the generated output (and sort/activate the plugin), then re-run Validate Output.";
         }
 
-        if (_settings.UseSkyPatcherMode && !File.Exists(npc2IniPath))
+        if (_settings.UsesSkyPatcherAppearance && !File.Exists(npc2IniPath))
         {
             return "SkyPatcher mode is selected, but this app's SkyPatcher .ini was not found in the deployed Data folder at:\n" +
                    npc2IniPath + "\n\n" +
                    "Install/activate the generated SkyPatcher output, then re-run Validate Output.";
+        }
+
+        if (_settings.UsesRecast && !File.Exists(npc2TomlPath))
+        {
+            return "Recast output is selected, but this app's Recast patch was not found in the deployed Data folder at:\n" +
+                   npc2TomlPath + "\n\n" +
+                   "Install/activate the generated output, then re-run Validate Output.";
         }
         return null;
     }
@@ -336,6 +362,7 @@ public class OutputValidator
         List<IModListingGetter<ISkyrimModGetter>> listings,
         Dictionary<string, ModSetting> modSettingsByName,
         SkyPatcherIndex skyIndex,
+        RecastIndex recastIndex,
         Dictionary<string, Npc2SkyPatcherLine>? npc2IniMap,
         string dataFolder,
         IReadOnlySet<FormKey> scopedNpcs,
@@ -382,6 +409,10 @@ public class OutputValidator
             return;
         }
 
+        // Recast patches name the RECIPIENT, never its template, and apply in every backend.
+        using (ContextualPerformanceTracer.Trace("CheckRecast"))
+            CheckRecast(npcFk, displayName, selectedModName, recipientRecord, recastIndex, result);
+
         // --- Traits template --------------------------------------------------------------
         // An NPC with the Traits flag renders the TEMPLATE's appearance: the game never loads
         // this record's head parts nor this FormID's FaceGen, and the user's selection here has
@@ -402,13 +433,19 @@ public class OutputValidator
         // output already reads as untemplated so the branch self-disarms; in SkyPatcher mode the
         // recipient's record is never patched, so it still looks templated and only this gate stops
         // the wrong row. (SkyPatcher + Inherit does not reach the output at all — the pre-patch
-        // Validator.CanSkyPatcherApplyAppearance rejects those NPCs per NPC.)
+        // Validator.CanRuntimeBackendApplyAppearance rejects those NPCs per NPC.)
         bool inheritsFaceFromTemplate =
             _settings.GetEffectiveTemplateHandlingMode(modSetting) == TemplateHandlingMode.InheritFromTemplate;
 
-        if (inheritsFaceFromTemplate && recipientRecord != null && Auxilliary.IsValidTemplatedNpc(recipientRecord))
+        if (_settings.UsesRecast && recipientRecord != null && Auxilliary.IsValidTemplatedNpc(recipientRecord))
         {
-            if (_settings.UseSkyPatcherMode)
+            // Recast fills a Traits-templated target with the face's data and clears the flag itself
+            // (measured), so the recipient's template never decides what renders.
+            log.AppendLine("  TEMPLATE inheritance cleared at runtime by Recast; no row");
+        }
+        else if (inheritsFaceFromTemplate && recipientRecord != null && Auxilliary.IsValidTemplatedNpc(recipientRecord))
+        {
+            if (_settings.UsesSkyPatcherAppearance)
             {
                 // ...unless this run already told SkyPatcher to clear the bit. The recipient's
                 // record still READS as templated — SkyPatcher removes the flag at load, not in the
@@ -453,7 +490,7 @@ public class OutputValidator
         // way (Validator.FindUnwritableLink); this is the post-run half of it.
         donorFk = ResolveFlattenedDonor(modSetting, donorFk, out bool donorInheritsFace, log);
 
-        if (_settings.UseSkyPatcherMode)
+        if (_settings.UsesSkyPatcherAppearance)
         {
             // SkyPatcher mode doesn't patch the recipient's record. It builds a surrogate "_Template"
             // NPC (a copy of the donor) in the output plugin and an .ini line that copies the
@@ -461,6 +498,15 @@ public class OutputValidator
             // the surrogate — not the recipient's record/FaceGen.
             ValidateNpcSkyPatcher(npcFk, donorFk, donorInheritsFace, selectedModName, displayName, recipientRecord,
                 modSetting, npc2IniMap ?? new(), linkCache, listings, skyIndex, dataFolder, run, result, log);
+            return;
+        }
+
+        if (_settings.UsesRecast)
+        {
+            // Same shape as SkyPatcher mode: this app's patch names a surrogate whose face Recast
+            // copies onto the recipient at load, so validate the TOML entry and the surrogate.
+            ValidateNpcRecast(npcFk, donorFk, donorInheritsFace, selectedModName, displayName, recipientRecord,
+                modSetting, recastIndex, linkCache, listings, skyIndex, dataFolder, run, result, log);
             return;
         }
 
@@ -520,16 +566,26 @@ public class OutputValidator
     internal static string? DescribeModeMismatch(NpcToken? lastRun, Settings settings)
     {
         if (lastRun?.PatchingMode == null) return null;
-        bool tokenSkyPatcher = lastRun.UseSkyPatcherMode ?? false;
+        string tokenBackend = lastRun.GetEffectiveOutputBackend() ?? nameof(OutputBackend.ESP);
+        // Tokens from before RecastMode existed can only be Recast-free, so a null mode never mismatches.
+        string? tokenRecastMode = string.Equals(tokenBackend, nameof(OutputBackend.Recast), StringComparison.OrdinalIgnoreCase)
+            ? lastRun.RecastMode
+            : null;
+        string currentBackend = settings.OutputBackend.ToString();
+        string? currentRecastMode = settings.UsesRecast ? settings.RecastMode.ToString() : null;
         if (string.Equals(lastRun.PatchingMode, settings.PatchingMode.ToString(), StringComparison.OrdinalIgnoreCase) &&
-            tokenSkyPatcher == settings.UseSkyPatcherMode)
+            string.Equals(tokenBackend, currentBackend, StringComparison.OrdinalIgnoreCase) &&
+            (tokenRecastMode == null || string.Equals(tokenRecastMode, currentRecastMode, StringComparison.OrdinalIgnoreCase)))
         {
             return null;
         }
 
-        static string Describe(string mode, bool skyPatcher) => skyPatcher ? $"{mode} + SkyPatcher" : mode;
-        return $"The deployed output was produced in {Describe(lastRun.PatchingMode, tokenSkyPatcher)} mode, " +
-               $"but you are validating with {Describe(settings.PatchingMode.ToString(), settings.UseSkyPatcherMode)} " +
+        static string Describe(string mode, string backend, string? recastMode) =>
+            string.Equals(backend, nameof(OutputBackend.ESP), StringComparison.OrdinalIgnoreCase)
+                ? mode
+                : recastMode == null ? $"{mode} + {backend}" : $"{mode} + {backend} ({recastMode})";
+        return $"The deployed output was produced in {Describe(lastRun.PatchingMode, tokenBackend, tokenRecastMode)} mode, " +
+               $"but you are validating with {Describe(settings.PatchingMode.ToString(), currentBackend, currentRecastMode)} " +
                "settings. The checks below grade against the current mode's expectations, so intentional " +
                "differences from the old mode (e.g. wig conversions) will read as errors. Re-run the patcher " +
                "before trusting this report.";
@@ -1154,7 +1210,7 @@ public class OutputValidator
     }
 
     /// <summary>
-    /// Applies the same Traits-template rule to a SkyPatcher surrogate. The surrogate is a copy of
+    /// Applies the same Traits-template rule to a runtime-backend surrogate. The surrogate is a copy of
     /// the donor, so a templated donor produces a templated surrogate — and then neither the
     /// surrogate's head parts nor its FaceGen are what the game renders. Follows both chains (the
     /// surrogate through the load order, the donor through the selected mod) so checks B and C see
@@ -1171,6 +1227,7 @@ public class OutputValidator
         ref FormKey subjectFk,
         ref FormKey subjectDonorFk,
         ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
+        string backendLabel,
         ValidationRunResult result,
         StringBuilder log)
     {
@@ -1179,8 +1236,8 @@ public class OutputValidator
         var (rootRec, rootModKey, chain, failure) = ResolveTraitsAppearanceSource(surrogateRec, linkCache);
         string chainText = "Surrogate template chain: " + string.Join(" -> ", chain.Prepend(surrogateRec.FormKey));
 
-        const string preamble =
-            "SkyPatcher mode: the surrogate NPC this app created takes its appearance from another NPC " +
+        string preamble =
+            $"{backendLabel} mode: the surrogate NPC this app created takes its appearance from another NPC " +
             "(the Traits template flag), so its own head parts and FaceGen are not what the game renders. ";
 
         void AddRow(string tail, string winningSource) => result.Issues.Add(new ValidationIssue
@@ -1198,7 +1255,7 @@ public class OutputValidator
         if (rootRec == null)
         {
             AddRow("Its appearance could not be checked because " + failure + ".", string.Empty);
-            log.AppendLine($"  SKYPATCHER surrogate template unresolved ({failure}); {chainText}");
+            log.AppendLine($"  SURROGATE template unresolved ({failure}); {chainText}");
             return SurrogateRedirect.Unresolved;
         }
 
@@ -1215,14 +1272,14 @@ public class OutputValidator
                    $"so the appearance could not be compared against '{selectedModName}' — only its FaceGen was checked. " +
                    "That usually means the selected mod does not change the face this NPC actually shows.",
                    $"{rootName} [{subjectFk}]");
-            log.AppendLine($"  SKYPATCHER surrogate -> {rootName} [{subjectFk}]; donor root unresolved in '{selectedModName}'");
+            log.AppendLine($"  SURROGATE -> {rootName} [{subjectFk}]; donor root unresolved in '{selectedModName}'");
             return SurrogateRedirect.ConsistencyOnly;
         }
 
         // Both sides resolved: the checks below now look at the right record and the right .nif,
         // and will speak up if either is wrong. A redirect that worked is not news — stay silent.
         subjectDonorFk = donorRootFk;
-        log.AppendLine($"  SKYPATCHER surrogate -> {rootName} [{subjectFk}]; donor root {donorRootFk}");
+        log.AppendLine($"  SURROGATE -> {rootName} [{subjectFk}]; donor root {donorRootFk}");
         return SurrogateRedirect.Redirected;
     }
 
@@ -1347,8 +1404,89 @@ public class OutputValidator
             CheckSkyPatcher(npcFk, displayName, selectedModName, recipientRecord, linkCache, skyIndex, result);
             return;
         }
-        FormKey surrogateFk = iniLine.Surrogate;
+        ValidateNpcSurrogate(npcFk, iniLine.Surrogate, donorFk, donorInheritsFace, selectedModName, displayName,
+            modSetting, "SkyPatcher", "copyVisualStyle", iniLine.RawLine, linkCache, listings, dataFolder, run, result, log);
 
+        // ---- Check 3: other SkyPatcher mods that also set this NPC's visual style ----
+        CheckSkyPatcher(npcFk, displayName, selectedModName, recipientRecord, linkCache, skyIndex, result);
+    }
+
+    // ----------------------------------------------------------------------------------
+    // Recast-mode per-NPC validation
+    // ----------------------------------------------------------------------------------
+    private void ValidateNpcRecast(
+        FormKey npcFk,
+        FormKey donorFk,
+        bool donorInheritsFace,
+        string selectedModName,
+        string displayName,
+        INpcGetter? recipientRecord,
+        ModSetting modSetting,
+        RecastIndex recastIndex,
+        ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
+        List<IModListingGetter<ISkyrimModGetter>> listings,
+        SkyPatcherIndex skyIndex,
+        string dataFolder,
+        RunContext run,
+        ValidationRunResult result,
+        StringBuilder log)
+    {
+        // ---- Check A: this app's own patch must carry a face entry for this NPC ----
+        // The writer emits FormID selectors only, so the entry is keyed by the target FormKey.
+        var entry = recastIndex.Npc2File?.Faces.LastOrDefault(f => npcFk.Equals(f.Target.FormKey));
+        if (entry?.Source.FormKey is not FormKey surrogateFk)
+        {
+            result.Issues.Add(new ValidationIssue
+            {
+                Severity = ValidationSeverity.Error,
+                Check = ValidationCheckKind.Recast,
+                NpcDisplayName = displayName,
+                NpcFormKey = npcFk.ToString(),
+                SelectedMod = selectedModName,
+                Issue = recastIndex.Npc2File == null
+                    ? "Recast mode: this app's Recast patch could not be read, so this NPC's appearance is never applied."
+                    : "Recast mode: this app's Recast patch has no face entry for this NPC, so its appearance is never applied.",
+                WinningSource = "this app's Recast patch",
+                Details = entry == null ? string.Empty : $"target = {entry.Target}, face = {entry.Source}",
+            });
+            CheckSkyPatcher(npcFk, displayName, selectedModName, recipientRecord, linkCache, skyIndex, result);
+            return;
+        }
+
+        ValidateNpcSurrogate(npcFk, surrogateFk, donorFk, donorInheritsFace, selectedModName, displayName,
+            modSetting, "Recast", "face", $"target = {entry.Target}, face = {entry.Source}",
+            linkCache, listings, dataFolder, run, result, log);
+
+        // ---- Check 3: SkyPatcher lines that also set this NPC's appearance (the flip case) ----
+        CheckSkyPatcher(npcFk, displayName, selectedModName, recipientRecord, linkCache, skyIndex, result);
+    }
+
+    /// <summary>
+    /// The surrogate half of a runtime backend's per-NPC checks: the surrogate this app's config
+    /// names must resolve (check B) with the donor's appearance, and whatever renders must carry the
+    /// donor's FaceGen (check C). Shared by SkyPatcher and Recast, which apply the same surrogate.
+    /// </summary>
+    /// <param name="backendLabel">"SkyPatcher" or "Recast", for the report text.</param>
+    /// <param name="directive">What names the surrogate in that backend's config.</param>
+    /// <param name="configLine">The config entry, quoted in the Details column.</param>
+    private void ValidateNpcSurrogate(
+        FormKey npcFk,
+        FormKey surrogateFk,
+        FormKey donorFk,
+        bool donorInheritsFace,
+        string selectedModName,
+        string displayName,
+        ModSetting modSetting,
+        string backendLabel,
+        string directive,
+        string configLine,
+        ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
+        List<IModListingGetter<ISkyrimModGetter>> listings,
+        string dataFolder,
+        RunContext run,
+        ValidationRunResult result,
+        StringBuilder log)
+    {
         // Whose record and FaceGen the game actually uses for the surrogate, and which donor
         // FormKey the selected mod supplies them under. Both move to the template root when the
         // surrogate carries the Traits flag (see RedirectSurrogateToTemplate).
@@ -1368,9 +1506,9 @@ public class OutputValidator
                 NpcDisplayName = displayName,
                 NpcFormKey = npcFk.ToString(),
                 SelectedMod = selectedModName,
-                Issue = "SkyPatcher mode: the surrogate template NPC referenced by copyVisualStyle could not be resolved in the load order (the output plugin may not be active, or the template is missing).",
+                Issue = $"{backendLabel} mode: the surrogate template NPC referenced by {directive} could not be resolved in the load order (the output plugin may not be active, or the template is missing).",
                 WinningSource = surrogateFk.ToString(),
-                Details = iniLine.RawLine,
+                Details = configLine,
             });
         }
         else
@@ -1382,7 +1520,7 @@ public class OutputValidator
             redirect = RedirectSurrogateToTemplate(
                 npcFk, displayName, selectedModName, modSetting, surrogateRec,
                 ref subjectRec, ref subjectModKey, ref subjectFk, ref subjectDonorFk,
-                linkCache, result, log);
+                linkCache, backendLabel, result, log);
 
             if (redirect is SurrogateRedirect.None or SurrogateRedirect.Redirected)
             {
@@ -1398,7 +1536,7 @@ public class OutputValidator
                             NpcDisplayName = displayName,
                             NpcFormKey = npcFk.ToString(),
                             SelectedMod = selectedModName,
-                            Issue = "SkyPatcher mode: could not resolve the selected mod's appearance NPC to compare against the surrogate template.",
+                            Issue = $"{backendLabel} mode: could not resolve the selected mod's appearance NPC to compare against the surrogate template.",
                             Details = $"Donor FormKey {subjectDonorFk}",
                         });
                     }
@@ -1416,12 +1554,12 @@ public class OutputValidator
                             NpcFormKey = npcFk.ToString(),
                             SelectedMod = selectedModName,
                             Issue = redirect == SurrogateRedirect.Redirected
-                                ? "SkyPatcher mode: the appearance the surrogate inherits from its template does not match the selected mod's appearance NPC, so the face shown in game will be wrong."
-                                : "SkyPatcher mode: the surrogate template's appearance does not match the selected mod's appearance NPC, so the visual style copied at runtime will be wrong.",
+                                ? $"{backendLabel} mode: the appearance the surrogate inherits from its template does not match the selected mod's appearance NPC, so the face shown in game will be wrong."
+                                : $"{backendLabel} mode: the surrogate template's appearance does not match the selected mod's appearance NPC, so the face copied at runtime will be wrong.",
                             WinningSource = DescribeWinner(subjectModKey, modSetting, listings),
                             Details = "Differing fields: " + string.Join(" | ", diffs),
                         });
-                        log.AppendLine($"  SKYPATCHER surrogate mismatch ({string.Join(" | ", diffs)})");
+                        log.AppendLine($"  SURROGATE mismatch ({string.Join(" | ", diffs)})");
                     }
                 }
             }
@@ -1456,9 +1594,6 @@ public class OutputValidator
                     selectedModName, modSetting, dataFolder, linkCache, run, result, log);
                 break;
         }
-
-        // ---- Check 3: other SkyPatcher mods that also set this NPC's visual style ----
-        CheckSkyPatcher(npcFk, displayName, selectedModName, recipientRecord, linkCache, skyIndex, result);
     }
 
     // ----------------------------------------------------------------------------------
@@ -2436,12 +2571,12 @@ public class OutputValidator
 
             result.Issues.Add(new ValidationIssue
             {
-                Severity = _settings.UseSkyPatcherMode ? ValidationSeverity.Error : ValidationSeverity.Warning,
+                Severity = _settings.UsesSurrogates ? ValidationSeverity.Error : ValidationSeverity.Warning,
                 Check = ValidationCheckKind.Asset,
                 NpcDisplayName = displayName,
                 NpcFormKey = npcFk.ToString(),
                 SelectedMod = selectedModName,
-                Issue = _settings.UseSkyPatcherMode
+                Issue = _settings.UsesSurrogates
                     ? "No FaceGen exists for this NPC anywhere: none loose in Data, none from the selected mod, " +
                       "and no active BSA provides one. In SkyPatcher mode the appearance is carried by a new " +
                       "record of this app's own, so nothing in your load order can supply the missing face — it " +
@@ -2994,7 +3129,7 @@ public class OutputValidator
             // For broad-filter hits, spell out which filter dimension captured the NPC.
             string via = hit.MatchNote != null ? $" (captured by broad filter: {hit.MatchNote})" : string.Empty;
 
-            if (_settings.UseSkyPatcherMode)
+            if (_settings.UsesSkyPatcherAppearance)
             {
                 bool higherPriority = string.Compare(hit.SortKey, skyIndex.Npc2SortKey, StringComparison.OrdinalIgnoreCase) > 0;
                 if (higherPriority)
@@ -3026,6 +3161,22 @@ public class OutputValidator
                     });
                 }
             }
+            else if (_settings.UsesRecast)
+            {
+                // Measured: a SkyPatcher visual style and a Recast face on one NPC flip winner — SkyPatcher
+                // on a new game, Recast after a save load. Neither order is the user's choice.
+                result.Issues.Add(new ValidationIssue
+                {
+                    Severity = ValidationSeverity.Error,
+                    Check = ValidationCheckKind.SkyPatcher,
+                    NpcDisplayName = displayName,
+                    NpcFormKey = npcFk.ToString(),
+                    SelectedMod = selectedModName,
+                    Issue = "A SkyPatcher .ini changes this NPC's appearance. Combined with this app's Recast face, which appearance shows changes between a new game and a loaded save." + via,
+                    WinningSource = hit.IniRelPath,
+                    Details = hit.RawLine,
+                });
+            }
             else
             {
                 result.Issues.Add(new ValidationIssue
@@ -3040,6 +3191,166 @@ public class OutputValidator
                     Details = hit.RawLine,
                 });
             }
+        }
+    }
+
+    // ----------------------------------------------------------------------------------
+    // Recast
+    // ----------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Flags third-party Recast face entries on this NPC. Recast applies after the game loads, so in
+    /// ESP and SkyPatcher output a Recast face replaces whatever this app delivered (with SkyPatcher
+    /// it is worse: which one shows flips between a new game and a loaded save, measured in
+    /// houseCARL 2026-10-28). Under the Recast backend only an entry that outranks this app's own
+    /// patch wins.
+    /// </summary>
+    private void CheckRecast(
+        FormKey npcFk,
+        string displayName,
+        string selectedModName,
+        INpcGetter? npcRecord,
+        RecastIndex recastIndex,
+        ValidationRunResult result)
+    {
+        foreach (var hit in recastIndex.Lookup(npcFk, npcRecord?.EditorID))
+        {
+            if (hit.IsNpc2) continue; // Don't flag this app's own patch.
+
+            string where = $"{hit.RelPath} (priority {hit.File.Priority})";
+            string fix = " Disable that patch file, or import the replacer's donor NPCs as appearance " +
+                         "choices (add the replacer as a mod) and then remove the replacer.";
+            string viaEditorId = hit.Entry.Target.FormKey == null
+                ? " It names the NPC by EditorID, which Recast resolves only with powerofthree's Tweaks installed."
+                : string.Empty;
+
+            ValidationSeverity severity;
+            string issue;
+            if (!_settings.UsesRecast)
+            {
+                severity = ValidationSeverity.Error;
+                issue = _settings.UsesSkyPatcherAppearance
+                    ? "A Recast patch replaces this NPC's face. Combined with this app's SkyPatcher output, which face shows changes between a new game and a loaded save."
+                    : "A Recast patch replaces this NPC's face at runtime, overriding the appearance this app wrote.";
+            }
+            else if (hit.Entry.Target.FormKey == null)
+            {
+                // Recast ranks only entries with the same selector identity; an EditorID entry and
+                // this app's FormID entry both apply, in patch-file path order.
+                severity = ValidationSeverity.Warning;
+                issue = "Another Recast patch names this NPC by EditorID. Recast does not rank it against this app's FormID entry, so which face shows depends on file order.";
+            }
+            else if (recastIndex.Npc2File != null && !RecastPatchReader.Outranks(hit.File, recastIndex.Npc2File))
+            {
+                severity = ValidationSeverity.Info;
+                issue = "Another Recast patch sets this NPC's face at lower precedence than this app's patch (this app's patch wins).";
+                fix = string.Empty;
+            }
+            else
+            {
+                severity = ValidationSeverity.Error;
+                issue = recastIndex.Npc2File == null
+                    ? "Another Recast patch sets this NPC's face, and this app's own Recast patch was not found."
+                    : "Another Recast patch sets this NPC's face with higher precedence (priority, then file name) than this app's patch, so it overrides the output.";
+            }
+
+            result.Issues.Add(new ValidationIssue
+            {
+                Severity = severity,
+                Check = ValidationCheckKind.Recast,
+                NpcDisplayName = displayName,
+                NpcFormKey = npcFk.ToString(),
+                SelectedMod = selectedModName,
+                Issue = issue + viaEditorId + fix,
+                WinningSource = where,
+                Details = $"[{hit.Entry.Section}] target = {hit.Entry.Target}, face = {hit.Entry.Source}",
+            });
+        }
+    }
+
+    private RecastIndex BuildRecastIndex(string dataFolder, StringBuilder log)
+    {
+        var index = new RecastIndex();
+        string patchesDir = RecastPatchReader.GetPatchesDir(dataFolder);
+        var files = RecastPatchReader.EnumeratePatchFiles(dataFolder);
+        if (files.Count == 0)
+        {
+            log.AppendLine("No Recast patch files found.");
+            return index;
+        }
+
+        string npc2Dir = RecastInterface.GetOutputDir(dataFolder);
+        string outputModName = Path.GetFileNameWithoutExtension(_environmentStateProvider.OutputPluginName ?? EnvironmentStateProvider.DefaultPluginName);
+        string npc2Path = Path.Combine(npc2Dir, outputModName + ".toml");
+
+        foreach (var path in files)
+        {
+            var file = RecastPatchReader.ReadFile(path);
+            string relPath = Path.GetRelativePath(patchesDir, path);
+            bool isNpc2 = path.StartsWith(npc2Dir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+            foreach (var error in file.Errors)
+            {
+                log.AppendLine($"Recast: {error}");
+            }
+
+            if (!file.IsLoaded)
+            {
+                index.SkippedFiles.Add(new RecastIndex.Hit(file, null!, relPath, isNpc2));
+                continue;
+            }
+
+            if (string.Equals(path, npc2Path, StringComparison.OrdinalIgnoreCase))
+            {
+                index.Npc2File = file;
+            }
+
+            foreach (var entry in file.Faces)
+            {
+                index.Add(new RecastIndex.Hit(file, entry, relPath, isNpc2));
+            }
+        }
+
+        log.AppendLine($"Recast: indexed {files.Count} patch file(s), {index.Count} face entr(ies).");
+        return index;
+    }
+
+    /// <summary>Every Recast face entry in the deployed Data folder, by target.</summary>
+    private sealed class RecastIndex
+    {
+        /// <param name="IsNpc2">Lives in this app's own patch subfolder (any output plugin's file).</param>
+        public sealed record Hit(RecastPatchFile File, RecastFaceEntry Entry, string RelPath, bool IsNpc2);
+
+        private readonly Dictionary<FormKey, List<Hit>> _byFormKey = new();
+        private readonly Dictionary<string, List<Hit>> _byEditorId = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>This run's own output-plugin patch, when deployed and loadable.</summary>
+        public RecastPatchFile? Npc2File { get; set; }
+
+        /// <summary>Files Recast itself skips whole; their entries are not indexed.</summary>
+        public List<Hit> SkippedFiles { get; } = new();
+
+        public int Count { get; private set; }
+
+        public void Add(Hit hit)
+        {
+            Count++;
+            if (hit.Entry.Target.FormKey is { } fk)
+            {
+                (_byFormKey.TryGetValue(fk, out var list) ? list : _byFormKey[fk] = new()).Add(hit);
+            }
+            else
+            {
+                var editorId = hit.Entry.Target.EditorId!;
+                (_byEditorId.TryGetValue(editorId, out var list) ? list : _byEditorId[editorId] = new()).Add(hit);
+            }
+        }
+
+        public List<Hit> Lookup(FormKey npcFk, string? editorId)
+        {
+            var hits = new List<Hit>();
+            if (_byFormKey.TryGetValue(npcFk, out var byFk)) hits.AddRange(byFk);
+            if (!string.IsNullOrEmpty(editorId) && _byEditorId.TryGetValue(editorId, out var byEid)) hits.AddRange(byEid);
+            return hits;
         }
     }
 
