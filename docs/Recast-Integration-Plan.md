@@ -1,8 +1,9 @@
 # Recast output backend — implementation plan
 
-Status (branch `recast-backend`): **Phases 1–7 done; Phase 8 (in game) open.** Written 2026-10-28;
-Phases 2–7 landed 2026-10-29. Open: Phase 8, and check 6 of Phase 5 (head parts outside their
-`ValidRaces`), which waits on Phase 8's measurement. `RecastRaceCompatibility` repeats the
+Status (branch `recast-backend`): **Phases 1–8 done.** Written 2026-10-28; Phases 2–8 landed
+2026-10-29. Phase 8 ran in game on 2026-10-29 (houseCARL run `2026-10-29-npc2-recast-ingame`) and
+showed check 6 of Phase 5 is not needed: head parts outside their `ValidRaces` are kept, not
+dropped (see Phase 5). `RecastRaceCompatibility` repeats the
 effective-skin rule `NpcMeshResolver` uses; fold the two together after the viewer extraction merges.
 
 The shared TOML reader is `BackEnd/RecastPatchReader.cs` (Tomlyn 2.10.1). It follows Recast 1.6.3's
@@ -191,7 +192,7 @@ configs are written.
    flips" case. This matters most when the output folder is reused without a clean.
 7. `NpcToken` stamp (`Patcher.cs:2482`): the backend and mode.
 
-### Phase 5 — pre-run screening (`Validator.cs`, `VM_Run.cs`) (done except check 6)
+### Phase 5 — pre-run screening (`Validator.cs`, `VM_Run.cs`) (done; check 6 not needed)
 **Done:** item 1 already held after Phase 1; item 2 is `CanRuntimeBackendApplyAppearance`; item 3's
 checks 1–5 are `BackEnd/RecastRaceCompatibility.cs`, called from `Validator.FindRecastOnlyRaceFailure`
 (mesh and skin texture are reported separately). It judges the donor, or under GiveEachNpcOwnCopy its
@@ -242,12 +243,12 @@ donor: skin texture; Gerdur ← Kharjo: beast hands) and passes the other six.
      `CharacterViewerHost/NpcMeshResolver` already resolves the effective skin (WNAM, then `Race.Skin`) and picks
      ArmorAddons for rendering. Share that logic once the viewer extraction lands rather than writing a second copy.
 
-     **Unmeasured: head parts outside their `ValidRaces`.** Recast copies the donor's head parts; Orc head parts, for
-     example, list only Orc races. Nobody has measured whether the engine drops hair or eyes for an NPC whose race
-     isn't in that list when a baked FaceGen is present. Phase 8 measures it (Orc→Nord, Khajiit→Nord, custom race
-     with and without skin coverage, and Breton→Nord as the control). If parts drop, add a check 6: every copied
-     head part's `ValidRaces` FormList contains `T`'s race → reject. The same Phase 8 cases confirm that checks 2–4
-     predict what renders.
+     **Measured: head parts outside their `ValidRaces` are kept.** Recast copies the donor's head parts; Orc head
+     parts, for example, list only Orc races. Phase 8 (2026-10-29, Recast 1.6.3, hand-written TOML, no race change)
+     put Orc (Ghorbash) and Khajiit (Kharjo) faces on Nord targets with Breton (Belethor) as the control. All three
+     targets carried every donor head part in telemetry, and the renders show the Orc brows and hair and the whole
+     Khajiit head. Nothing was dropped, so no check 6 was added. Not measured: a custom race. The Orc→Nord render
+     shows Nord-toned hands under an Orc face; check 3 (skin texture) already rejects that pairing under RecastOnly.
 
      The rejection text names which check failed and points at Hybrid, which delivers `race=` and makes every check
      moot.
@@ -393,6 +394,15 @@ Re-run the houseCARL faceswap harness (`_claude/harness/faceswap/`) on NPC2's ow
 templated target, one cross-sex swap, one race change, one Include Outfit, one ForwardToOutfit wig, one switch
 from SkyPatcher to Recast with the output folder reused (checks the stale-output sweep), and one imported Recast
 replacer donor applied to its target through each backend with the replacer's own TOML disabled.
+
+**Result (2026-10-29, houseCARL run `2026-10-29-npc2-recast-ingame`, 4 smoke + 5 full launches):** every case
+passed its expected column in both arms (templated target, cross-sex, race change, Include Outfit, the switched
+output folder, the imported replacer donor). RecastOnly rejected Revyn Sadri (skin texture) and Kharjo (beast
+hands), and both targets were left unchanged. Muiri's head on a Nord body under RecastOnly shows no clavicle seam
+in the clothed renders. Telemetry was identical across new game, in-process reload and fresh-process load. The
+fresh-process portraits were mostly UNASSESSED because the harness couldn't hold actors in the studio after a
+main-menu load; that's a harness issue, and telemetry covers those passes. The ForwardToOutfit wig case was not
+run.
 
 ## 4. Decisions
 

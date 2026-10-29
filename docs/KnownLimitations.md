@@ -203,10 +203,10 @@ the design is `docs/Recast-Integration-Plan.md`.
   addons, meshes, skin textures and skeleton). Include Outfits and mod keywords are not delivered;
   the Run popup lists the affected mods and offers Hybrid. Hybrid delivers all three through a
   SkyPatcher ini beside the Recast TOML.
-- **Unmeasured: head parts outside their `ValidRaces`.** A cross-race swap that passes the body
-  checks copies head parts whose ValidRaces may not include the target race (Orc head parts list only
-  Orc races). Whether the engine then drops hair or eyes behind a baked FaceGen is not measured
-  (plan Phase 8). If it does, screening needs a sixth check.
+- **Head parts outside their `ValidRaces` are kept.** A cross-race swap copies head parts whose
+  ValidRaces may not include the target race (Orc head parts list only Orc races). Measured in game
+  on 2026-10-29 (Recast 1.6.3): Orc and Khajiit faces on Nord targets kept every head part, so
+  screening has no head-part check. A custom race was not measured.
 - **`force_female_animations`.** The Nexus package ships `Settings.toml` with it `true` (the source
   default is `false`); in the lab it rewrote 286 vanilla NPCs. It is global, and NPC2 cannot change it.
 - **A third-party SkyPatcher face replacer on the same NPC flips the result.** SkyPatcher wins on a
