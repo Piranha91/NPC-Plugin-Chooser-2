@@ -129,7 +129,7 @@ The fix is to relaunch N.P.C.2 from your mod manager, and to check that the **Sk
 Here you tell N.P.C.2 where to find your appearance mods.
 
 * **Mods Folder**: The root folder where your mods are installed (for MO2 this is the `mods` folder; for Vortex it’s your staging folder). This **does not** have to be the same folder used by the mod manager you launched N.P.C.2 from — you can point it at a completely separate mod directory if you want to keep your appearance mods elsewhere.
-* **Filter by active mods (MO2)**: If checked, only mods that are enabled in MO2 are considered. Leave it unchecked if you want to see appearance mods even when they’re disabled.
+* **Filter by active mods (MO2)**: If checked, only mods that are enabled in MO2 are considered — both newly found mod folders and mods already in your list. Disabled mods are hidden, not forgotten: their per-mod settings are kept, and they reappear when re-enabled or when the filter is turned off. Changing the checkbox or the modlist.txt offers to reload the mod list right away. Leave it unchecked if you want to see appearance mods even when they’re disabled. (Vortex users can write their own modlist.txt: one `+FolderName` line per enabled staging folder, matched case-insensitively against the folders in your Mods folder; other lines are ignored.)
 
 
 ### Output Settings
@@ -459,6 +459,13 @@ N.P.C. 2's diagnostic logs are written as **HTML files** — open them in any we
 * **Log Record Provenance**: The same idea for records rather than files. Writes **`RecordProvenance.csv`**, one row per non-NPC record merged into the output plugin, with the reference chain that dragged it in — so you can trace an unexpected record (or an unexpected master) back to the NPC that caused it. Pairs well with [Analyze Masters](#analyze-masters).
 
 Both provenance logs take effect on the next Run; no restart needed.
+
+### Settings Backup
+
+All of N.P.C.2’s state — paths, per-mod settings, NPC selections and groups — lives in **`Settings.json`** next to the .exe. Saves are atomic (written to a temporary file, then swapped in), so a crash or power cut mid-save leaves the previous file intact, and the version before the latest save is kept as **`Settings.json.bak`**. If `Settings.json` can’t be read at startup, N.P.C.2 sets the unreadable file aside as `Settings.corrupt-<timestamp>.json` and loads the `.bak` instead.
+
+* **Back Up Settings...**: Saves the current settings and copies them to a file you choose.
+* **Restore Settings...**: Replaces all current settings with a backup file, then closes N.P.C.2; start it again to load them. The settings being replaced are kept as `Settings.json.bak`.
 
 
 ## NPCs Menu

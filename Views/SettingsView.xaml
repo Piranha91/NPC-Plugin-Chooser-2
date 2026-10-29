@@ -342,7 +342,7 @@
                     <!-- MO2 Modlist Filter -->
                     <CheckBox Content="Filter by active mods (MO2)"
                               IsChecked="{Binding FilterByActiveModsMO2, Mode=TwoWay}"
-                              ToolTip="When enabled, only mod folders corresponding to enabled entries in the selected MO2 modlist.txt will be imported."
+                              ToolTip="When enabled, only mod folders corresponding to enabled entries in the selected MO2 modlist.txt are shown, including mods that were already in the list. Hidden mods keep their per-mod settings and come back when re-enabled. Vortex users: write a modlist.txt with one +FolderName line per enabled staging folder."
                               Margin="0,0,0,5"/>
 
                     <Grid Margin="15,0,0,5"
@@ -355,7 +355,7 @@
                                  IsReadOnly="True" Margin="0,0,5,0"/>
                         <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectMO2ModlistCommand}"/>
                     </Grid>
-                    <TextBlock Text="Select your MO2 profile's modlist.txt to filter which mod folders are imported."
+                    <TextBlock Text="Select your MO2 profile's modlist.txt to filter which mod folders are shown. Changing either setting offers to reload the mod list."
                                FontSize="10" Foreground="{DynamicResource HintForeground}" Margin="15,0,0,5"
                                Visibility="{Binding FilterByActiveModsMO2, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                 </StackPanel>
@@ -2286,6 +2286,20 @@ Remove a mod from this list to allow it to be imported again."
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
+                </StackPanel>
+            </Expander>
+
+            <Expander Header="Settings Backup" Style="{StaticResource SettingsSectionExpander}"
+                      IsExpanded="{Binding SectionSettingsBackup.IsExpanded, Mode=TwoWay}">
+                <StackPanel>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,6"
+                               Text="Settings.json holds all of N.P.C.2's state: paths, mod settings, NPC selections and groups. N.P.C.2 keeps the previous version as Settings.json.bak and falls back to it automatically if Settings.json can't be read. For a copy you control, back it up here."/>
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="Back Up Settings..." Command="{Binding BackUpSettingsCommand}" Padding="10,3" Margin="0,0,8,0"
+                                ToolTip="Saves the current settings, then copies Settings.json to a file you choose."/>
+                        <Button Content="Restore Settings..." Command="{Binding RestoreSettingsCommand}" Padding="10,3"
+                                ToolTip="Replaces all current settings with a backup file. N.P.C.2 closes afterwards; start it again to load the restored settings. The settings being replaced are kept as Settings.json.bak."/>
+                    </StackPanel>
                 </StackPanel>
             </Expander>
         </StackPanel>

@@ -6115,16 +6115,29 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
         return false;
     }
 
+    private bool IsNpcInGroup(FormKey npcKey, string groupName) =>
+        _settings.NpcGroupAssignments.TryGetValue(npcKey, out var groups) && groups.Contains(groupName);
+
     private bool AddAllVisibleNpcsToGroup()
     {
         if (FilteredNpcs.Count == 0 || string.IsNullOrWhiteSpace(SelectedGroupName)) return false;
         var groupName = SelectedGroupName.Trim();
-        int count = FilteredNpcs.Count;
-        int totalNpcCount = AllNpcs.Count;
+        // Count only the NPCs the add would change: the prompt used to offer to add NPCs that were
+        // already members, which read as if the group were about to gain duplicates.
+        int count = FilteredNpcs.Count(npc => !IsNpcInGroup(npc.NpcFormKey, groupName));
+        int alreadyInGroup = FilteredNpcs.Count - count;
+        if (count == 0)
+        {
+            ScrollableMessageBox.Show(
+                $"All {FilteredNpcs.Count} currently visible NPCs are already in the group '{groupName}'.",
+                "Nothing to Add");
+            return false;
+        }
+        string alreadyNote = alreadyInGroup > 0 ? $" ({alreadyInGroup} visible NPCs are already in it.)" : string.Empty;
         if (!AreAnyFiltersActive())
         {
             if (!ScrollableMessageBox.Confirm(
-                    $"No filters are currently applied. Are you sure you want to add ALL {totalNpcCount} NPCs in your game to the group '{groupName}'?",
+                    $"No filters are currently applied. Are you sure you want to add ALL {count} NPCs in your game that aren't in the group '{groupName}' to it?{alreadyNote}",
                     "Confirm Add All NPCs"))
             {
                 Debug.WriteLine("Add All Visible NPCs to Group cancelled by user (no filters active).");
@@ -6133,7 +6146,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
         }
         else
         {
-            if (!ScrollableMessageBox.Confirm($"Add all {count} currently visible NPCs to the group '{groupName}'?",
+            if (!ScrollableMessageBox.Confirm($"Add {count} currently visible NPCs to the group '{groupName}'?{alreadyNote}",
                     "Confirm Add Visible NPCs"))
             {
                 Debug.WriteLine("Add All Visible NPCs to Group cancelled by user.");
@@ -6173,12 +6186,18 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
     {
         if (FilteredNpcs.Count == 0 || string.IsNullOrWhiteSpace(SelectedGroupName)) return false;
         var groupName = SelectedGroupName.Trim();
-        int count = FilteredNpcs.Count;
-        int totalNpcCount = AllNpcs.Count;
+        int count = FilteredNpcs.Count(npc => IsNpcInGroup(npc.NpcFormKey, groupName));
+        if (count == 0)
+        {
+            ScrollableMessageBox.Show(
+                $"None of the {FilteredNpcs.Count} currently visible NPCs are in the group '{groupName}'.",
+                "Nothing to Remove");
+            return false;
+        }
         if (!AreAnyFiltersActive())
         {
             if (!ScrollableMessageBox.Confirm(
-                    $"No filters are currently applied. Are you sure you want to attempt removing ALL {totalNpcCount} NPCs in your game from the group '{groupName}'?",
+                    $"No filters are currently applied. Are you sure you want to remove ALL {count} members of the group '{groupName}' from it?",
                     "Confirm Remove All NPCs", MessageBoxImage.Warning))
             {
                 Debug.WriteLine("Remove All Visible NPCs from Group cancelled by user (no filters active).");
@@ -6188,7 +6207,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
         else
         {
             if (!ScrollableMessageBox.Confirm(
-                    $"Remove all {count} currently visible NPCs from the group '{groupName}'?",
+                    $"Remove {count} currently visible NPCs from the group '{groupName}'?",
                     "Confirm Remove Visible NPCs"))
             {
                 Debug.WriteLine("Remove All Visible NPCs from Group cancelled by user.");

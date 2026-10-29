@@ -792,11 +792,21 @@ public class BsaHandler : OptionalUIModule
             }
         }
 
+        // Snapshot the mods on the caller's thread. The patcher passes the live
+        // Settings.ModSettings list, and the UI thread can rewrite it (or a mod's folder / plugin
+        // lists) while the Task.Run loop below is enumerating — the "Collection was modified"
+        // crash during "Pre-Indexing BSA file paths".
+        var modSnapshot = mods
+            .Select(m => (m.DisplayName,
+                Folders: m.CorrespondingFolderPaths.ToList(),
+                ModKeys: m.CorrespondingModKeys.ToList()))
+            .ToList();
+
         // Snapshot DataFolderPath once so the diag log makes the empty-vs-set
         // value at the moment of the call obvious. Otherwise we have to
         // correlate with timestamps in the env trace.
         string dfp = _environmentStateProvider.DataFolderPath.ToString() ?? "";
-        BsaContentsDiag.Log($"PopulateBsaContentPathsAsync ENTER modsToProcess={mods.Count()} reinit={reinitializeCache} envDataFolderPath=[{dfp}] envDataFolderExists={(string.IsNullOrWhiteSpace(dfp) ? "(empty)" : Directory.Exists(dfp).ToString())}");
+        BsaContentsDiag.Log($"PopulateBsaContentPathsAsync ENTER modsToProcess={modSnapshot.Count} reinit={reinitializeCache} envDataFolderPath=[{dfp}] envDataFolderExists={(string.IsNullOrWhiteSpace(dfp) ? "(empty)" : Directory.Exists(dfp).ToString())}");
 
         // Use Task.Run to offload the blocking I/O of reading BSA headers.
         // ConfigureAwait(false) on the closing line, for the same reason as
@@ -810,9 +820,9 @@ public class BsaHandler : OptionalUIModule
         // their own await, which nothing done in here can change.
         await Task.Run(() =>
         {
-            foreach (var mod in mods)
+            foreach (var mod in modSnapshot)
             {
-                var pathsToSearch = new HashSet<string>(mod.CorrespondingFolderPaths);
+                var pathsToSearch = new HashSet<string>(mod.Folders);
                 if (mod.DisplayName == VM_Mods.BaseGameModSettingName ||
                     mod.DisplayName == VM_Mods.CreationClubModsettingName)
                 {
@@ -820,8 +830,8 @@ public class BsaHandler : OptionalUIModule
                 }
                 BsaContentsDiag.Log($"  processing mod='{mod.DisplayName}' pathsToSearch=[{string.Join("|", pathsToSearch)}]");
 
-                var bsaDict = GetBsaPathsForPluginsInDirs(mod.CorrespondingModKeys, pathsToSearch, gameRelease);
-                foreach (var modkey in mod.CorrespondingModKeys)
+                var bsaDict = GetBsaPathsForPluginsInDirs(mod.ModKeys, pathsToSearch, gameRelease);
+                foreach (var modkey in mod.ModKeys)
                 {
                     IndexArchivesForModKey(modkey, bsaDict[modkey], gameRelease, cacheReaders);
                 }

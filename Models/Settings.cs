@@ -618,6 +618,23 @@ public class Settings
     // recomputed at the end of NPC-list initialization (i.e. on load and Refresh).
     public List<string> CachedFilterRaces { get; set; } = new();
     public Dictionary<FormKey, HashSet<string>> NpcGroupAssignments { get; set; } = new();
+
+    /// <summary>
+    /// Rebuilds every <see cref="NpcGroupAssignments"/> set as trimmed, case-insensitive names.
+    /// The UI creates these sets with OrdinalIgnoreCase and trims what it adds, but JSON
+    /// deserialization builds plain (case-sensitive) HashSets, so after a restart adding "riften"
+    /// to an NPC already in "Riften" — or "Riften" to one stored as "Riften " by an older version —
+    /// gave that NPC the group twice. Empty sets and blank names are dropped.
+    /// </summary>
+    public void NormalizeNpcGroupAssignments()
+    {
+        NpcGroupAssignments = (NpcGroupAssignments ?? new())
+            .Select(kv => (kv.Key, Groups: new HashSet<string>(
+                (kv.Value ?? new()).Where(g => !string.IsNullOrWhiteSpace(g)).Select(g => g.Trim()),
+                StringComparer.OrdinalIgnoreCase)))
+            .Where(x => x.Groups.Count > 0)
+            .ToDictionary(x => x.Key, x => x.Groups);
+    }
     public Dictionary<FormKey, OutfitOverride> NpcOutfitOverrides { get; set; } = new();
 
     // Per-NPC override of the character-preview / mugshot attire toggles
