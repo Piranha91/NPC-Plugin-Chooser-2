@@ -460,6 +460,13 @@ N.P.C. 2's diagnostic logs are written as **HTML files** — open them in any we
 
 Both provenance logs take effect on the next Run; no restart needed.
 
+### Settings Backup
+
+All of N.P.C.2’s state — paths, per-mod settings, NPC selections and groups — lives in **`Settings.json`** next to the .exe. Saves are atomic (written to a temporary file, then swapped in), so a crash or power cut mid-save leaves the previous file intact, and the version before the latest save is kept as **`Settings.json.bak`**. If `Settings.json` can’t be read at startup, N.P.C.2 sets the unreadable file aside as `Settings.corrupt-<timestamp>.json` and loads the `.bak` instead.
+
+* **Back Up Settings...**: Saves the current settings and copies them to a file you choose.
+* **Restore Settings...**: Replaces all current settings with a backup file, then closes N.P.C.2; start it again to load them. The settings being replaced are kept as `Settings.json.bak`.
+
 
 ## NPCs Menu
 

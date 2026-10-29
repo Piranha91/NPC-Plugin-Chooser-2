@@ -369,6 +369,55 @@ public class JsonHandlerTests
     }
 
     [Fact]
+    public void SaveJSONFile_KeepBackup_PreservesPreviousVersionAndLeavesNoTemp()
+    {
+        using var tmp = new TempDir();
+        var path = tmp.Combine("Settings.json");
+
+        JSONhandler<ModSetting>.SaveJSONFile(new ModSetting { DisplayName = "First" }, path, out var ok1, out _, keepBackup: true);
+        JSONhandler<ModSetting>.SaveJSONFile(new ModSetting { DisplayName = "Second" }, path, out var ok2, out _, keepBackup: true);
+        ok1.Should().BeTrue();
+        ok2.Should().BeTrue();
+
+        JSONhandler<ModSetting>.LoadJSONFile(path, out _, out _)!.DisplayName.Should().Be("Second");
+        JSONhandler<ModSetting>.LoadJSONFile(path + ".bak", out var bakOk, out _)!.DisplayName.Should().Be("First");
+        bakOk.Should().BeTrue();
+        System.IO.File.Exists(path + ".tmp").Should().BeFalse("the temp file is swapped in, not left behind");
+    }
+
+    [Fact]
+    public void SaveJSONFile_WithoutKeepBackup_WritesNoBackup()
+    {
+        using var tmp = new TempDir();
+        var path = tmp.Combine("plain.json");
+
+        JSONhandler<ModSetting>.SaveJSONFile(new ModSetting { DisplayName = "A" }, path, out _, out _);
+        JSONhandler<ModSetting>.SaveJSONFile(new ModSetting { DisplayName = "B" }, path, out var ok, out _);
+
+        ok.Should().BeTrue();
+        System.IO.File.Exists(path + ".bak").Should().BeFalse();
+        JSONhandler<ModSetting>.LoadJSONFile(path, out _, out _)!.DisplayName.Should().Be("B");
+    }
+
+    [Fact]
+    public void WriteAllTextAtomic_LockedTarget_LeavesOriginalIntact()
+    {
+        // A failed save must never leave a truncated target behind (the power-cut failure:
+        // File.WriteAllText truncates first, then writes).
+        using var tmp = new TempDir();
+        var path = tmp.Combine("locked.json");
+        System.IO.File.WriteAllText(path, "original");
+
+        using (new System.IO.FileStream(path, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.None))
+        {
+            Action act = () => JSONhandler<ModSetting>.WriteAllTextAtomic(path, "replacement");
+            act.Should().Throw<Exception>();
+        }
+
+        System.IO.File.ReadAllText(path).Should().Be("original");
+    }
+
+    [Fact]
     public void SaveJSONFile_WritesIndentedContent()
     {
         using var tmp = new TempDir();

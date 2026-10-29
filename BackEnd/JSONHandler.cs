@@ -88,18 +88,61 @@ public class JSONhandler<T>
         }
     }
 
-    public static void SaveJSONFile(T input, string saveLoc, out bool success, out string exception)
+    /// <summary>
+    /// Serializes <paramref name="input"/> to <paramref name="saveLoc"/> atomically: the JSON is
+    /// written and flushed to a sibling <c>.tmp</c> file, which then replaces the target in one
+    /// step. A crash or power loss mid-save leaves the previous file intact instead of a
+    /// truncated one, and a failed serialization never touches the target at all.
+    /// With <paramref name="keepBackup"/>, the replaced version is kept as <c>saveLoc.bak</c>.
+    /// </summary>
+    public static void SaveJSONFile(T input, string saveLoc, out bool success, out string exception, bool keepBackup = false)
     {
         try
         {
+            string json = Serialize(input, out success, out exception);
+            if (!success) return;
             Auxilliary.CreateDirectoryIfNeeded(saveLoc, Auxilliary.PathType.File);
-            File.WriteAllText(saveLoc, Serialize(input, out success, out exception));
+            WriteAllTextAtomic(saveLoc, json, keepBackup ? saveLoc + ".bak" : null);
         }
         catch(Exception ex)
         {
             exception = ex.Message;
             success = false;
         }
+    }
+
+    /// <summary>
+    /// Writes <paramref name="contents"/> to a temp file beside <paramref name="path"/>, flushes it
+    /// to disk, then swaps it in. <paramref name="backupPath"/> (optional) receives the old file.
+    /// </summary>
+    public static void WriteAllTextAtomic(string path, string contents, string? backupPath = null)
+    {
+        string tempPath = path + ".tmp";
+        using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+        using (var writer = new StreamWriter(fs))
+        {
+            writer.Write(contents);
+            writer.Flush();
+            fs.Flush(flushToDisk: true);
+        }
+
+        if (File.Exists(path))
+        {
+            try
+            {
+                File.Replace(tempPath, path, backupPath, ignoreMetadataErrors: true);
+                return;
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+            catch (PlatformNotSupportedException) { }
+
+            // File.Replace is unavailable on some file systems (and under some virtual file
+            // systems). Fall back to backup copy + overwriting move, which is still never
+            // left half-written: the move either happens or it doesn't.
+            if (backupPath != null) File.Copy(path, backupPath, overwrite: true);
+        }
+        File.Move(tempPath, path, overwrite: true);
     }
 
     public static T? CloneViaJSON(T input, bool canBeNull = false)

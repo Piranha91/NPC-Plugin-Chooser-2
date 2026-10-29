@@ -552,6 +552,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public VM_SettingsSection SectionRejectedNpcs { get; }
     public VM_SettingsSection SectionSpawnBatFile { get; }
     public VM_SettingsSection SectionLogging { get; }
+    public VM_SettingsSection SectionSettingsBackup { get; }
 
     // --- Rejected NPCs viewer (nested at the end of Mod Import Settings) ---
     public VM_RejectedNpcs RejectedNpcs { get; } = new();
@@ -566,6 +567,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
 
     // --- Commands ---
     public ReactiveCommand<Unit, Unit> SelectGameFolderCommand { get; }
+    public ReactiveCommand<Unit, Unit> BackUpSettingsCommand { get; }
+    public ReactiveCommand<Unit, Unit> RestoreSettingsCommand { get; }
     public ReactiveCommand<Unit, Unit> SelectModsFolderCommand { get; }
     public ReactiveCommand<Unit, Unit> SelectMugshotsFolderCommand { get; }
     public ReactiveCommand<Unit, Unit> SelectFaceFinderMugshotsFolderCommand { get; }
@@ -635,6 +638,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         SectionRejectedNpcs = MakeSection("Rejected NPCs", defaultExpanded: false);
         SectionSpawnBatFile = MakeSection("Spawn Bat File Options", defaultExpanded: false);
         SectionLogging = MakeSection("Logging", defaultExpanded: false);
+        SectionSettingsBackup = MakeSection("Settings Backup", defaultExpanded: false);
 
         // The rejection logs are read only once the user opens the panel — the folder holds one
         // file per mod and can run to tens of thousands of lines, which is not worth paying for
@@ -929,6 +933,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
 
         // Commands (as before)
         SelectGameFolderCommand = ReactiveCommand.CreateFromTask(SelectGameFolderAsync).DisposeWith(_disposables);
+        BackUpSettingsCommand = ReactiveCommand.Create(BackUpSettings).DisposeWith(_disposables);
+        RestoreSettingsCommand = ReactiveCommand.Create(RestoreSettings).DisposeWith(_disposables);
         SelectModsFolderCommand = ReactiveCommand.CreateFromTask(SelectModsFolderAsync).DisposeWith(_disposables);
         SelectMugshotsFolderCommand =
             ReactiveCommand.CreateFromTask(SelectMugshotsFolderAsync).DisposeWith(_disposables);
@@ -1974,6 +1980,25 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             : Path.Combine(_model?.ModsFolder ?? string.Empty, outDir);
     }
 
+    /// <summary>
+    /// Copies an unreadable Settings.json to <c>Settings.corrupt-&lt;timestamp&gt;.json</c> so a later
+    /// save can't destroy it. Returns the copy's path, or null if the copy failed.
+    /// </summary>
+    internal static string? PreserveUnreadableSettingsFile(string settingsPath)
+    {
+        try
+        {
+            string dir = Path.GetDirectoryName(settingsPath) ?? string.Empty;
+            string preserved = Path.Combine(dir, $"Settings.corrupt-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            File.Copy(settingsPath, preserved, overwrite: false);
+            return preserved;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public static Settings LoadSettings()
     {
         string settingsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Settings.json");
@@ -1988,10 +2013,36 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                     exception = "Settings file was empty or invalid.";
                 }
 
-                ScrollableMessageBox.ShowWarning(
-                    $"Error loading settings from {settingsPath}:\n{exception}\n\nDefault settings will be used.",
-                    "Settings Load Error");
-                loadedSettings = new Settings(); // Use defaults on error
+                // Set the unreadable file aside BEFORE anything can save over it: the exit save
+                // (and the throttled autosave) would otherwise replace it with defaults, turning a
+                // recoverable file (e.g. truncated by a power cut mid-save) into permanent loss.
+                string? preservedPath = PreserveUnreadableSettingsFile(settingsPath);
+                string preservedNote = preservedPath != null
+                    ? $"\n\nThe unreadable file was kept as:\n{preservedPath}"
+                    : string.Empty;
+
+                string backupPath = settingsPath + ".bak";
+                var backup = File.Exists(backupPath)
+                    ? JSONhandler<Settings>.LoadJSONFile(backupPath, out bool backupOk, out _)
+                    : null;
+                if (backup != null)
+                {
+                    ScrollableMessageBox.ShowWarning(
+                        $"Error loading settings from {settingsPath}:\n{exception}\n\n" +
+                        $"Your settings were restored from the automatic backup ({backupPath}), " +
+                        $"which holds the version saved before the last one.{preservedNote}",
+                        "Settings Restored From Backup");
+                    loadedSettings = backup;
+                }
+                else
+                {
+                    ScrollableMessageBox.ShowWarning(
+                        $"Error loading settings from {settingsPath}:\n{exception}\n\n" +
+                        $"No usable automatic backup was found, so default settings will be used. " +
+                        $"If you made a backup with Settings → Back Up Settings, use Restore Settings to load it.{preservedNote}",
+                        "Settings Load Error");
+                    loadedSettings = new Settings(); // Use defaults on error
+                }
             }
             NPC_Plugin_Chooser_2.BackEnd.BsaContentsDiag.Log($"LoadSettings: file exists at {settingsPath}, deserialized ModSettings.Count={loadedSettings?.ModSettings?.Count ?? -1}, SkyrimGamePath=[{loadedSettings?.SkyrimGamePath}]");
         }
@@ -2184,8 +2235,83 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         }
     }
 
+    /// <summary>
+    /// Set once a settings restore has written Settings.json and the app is closing: any later save
+    /// (the exit save, a pending throttled autosave) would overwrite the restored file with the
+    /// in-memory settings the user just chose to replace.
+    /// </summary>
+    internal static bool SuppressSettingsSaves { get; private set; }
+
+    private static string SettingsFilePath =>
+        Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Settings.json");
+
+    private void BackUpSettings()
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "Back Up NPC2 Settings",
+            Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
+            FileName = $"NPC2 Settings Backup {DateTime.Now:yyyy-MM-dd HHmm}.json"
+        };
+        if (dialog.ShowDialog() != true) return;
+
+        // Save first so the backup holds the current state (groups, selections, mod settings),
+        // not whatever the last throttled autosave wrote.
+        SaveSettings();
+        try
+        {
+            File.Copy(SettingsFilePath, dialog.FileName, overwrite: true);
+            ScrollableMessageBox.Show($"Settings backed up to:\n{dialog.FileName}", "Settings Backed Up");
+        }
+        catch (Exception ex)
+        {
+            ScrollableMessageBox.ShowError($"Could not back up settings:\n{ex.Message}", "Backup Failed");
+        }
+    }
+
+    private void RestoreSettings()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Restore NPC2 Settings",
+            Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
+        };
+        if (dialog.ShowDialog() != true) return;
+
+        var restored = JSONhandler<Settings>.LoadJSONFile(dialog.FileName, out bool ok, out string error);
+        if (!ok || restored == null)
+        {
+            ScrollableMessageBox.ShowError(
+                $"{dialog.FileName} is not a readable NPC2 settings file:\n{error}", "Restore Failed");
+            return;
+        }
+
+        if (!ScrollableMessageBox.Confirm(
+                "Restoring replaces ALL current settings, NPC selections and groups with the ones in\n" +
+                $"{dialog.FileName}\n\nNPC2 will close afterwards; start it again to load them. " +
+                "Your current settings are kept as Settings.json.bak. Continue?",
+                "Restore Settings"))
+            return;
+
+        try
+        {
+            SaveSettings(); // current state → becomes the .bak below
+            JSONhandler<Settings>.WriteAllTextAtomic(SettingsFilePath, File.ReadAllText(dialog.FileName),
+                SettingsFilePath + ".bak");
+        }
+        catch (Exception ex)
+        {
+            ScrollableMessageBox.ShowError($"Could not restore settings:\n{ex.Message}", "Restore Failed");
+            return;
+        }
+
+        SuppressSettingsSaves = true;
+        System.Windows.Application.Current.Shutdown();
+    }
+
     public void SaveSettings()
     {
+        if (SuppressSettingsSaves) return;
         NPC_Plugin_Chooser_2.BackEnd.BsaContentsDiag.Log($"SaveSettings ENTER — env.Status={_environmentStateProvider.Status} _model.ModSettings.Count={_model.ModSettings.Count}");
         if (_environmentStateProvider.Status != EnvironmentStateProvider.EnvironmentStatus.Valid)
         {
@@ -2200,7 +2326,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
 
         string settingsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Settings.json");
         _model.ProgramVersion = App.ProgramVersion;
-        JSONhandler<Settings>.SaveJSONFile(_model, settingsPath, out bool success, out string exception);
+        JSONhandler<Settings>.SaveJSONFile(_model, settingsPath, out bool success, out string exception, keepBackup: true);
         if (!success)
         {
             // Maybe show a non-modal warning or log? Saving happens on exit.

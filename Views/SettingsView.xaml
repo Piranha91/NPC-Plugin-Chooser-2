@@ -2288,6 +2288,20 @@ Remove a mod from this list to allow it to be imported again."
                     </ListBox>
                 </StackPanel>
             </Expander>
+
+            <Expander Header="Settings Backup" Style="{StaticResource SettingsSectionExpander}"
+                      IsExpanded="{Binding SectionSettingsBackup.IsExpanded, Mode=TwoWay}">
+                <StackPanel>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,6"
+                               Text="Settings.json holds all of N.P.C.2's state: paths, mod settings, NPC selections and groups. N.P.C.2 keeps the previous version as Settings.json.bak and falls back to it automatically if Settings.json can't be read. For a copy you control, back it up here."/>
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="Back Up Settings..." Command="{Binding BackUpSettingsCommand}" Padding="10,3" Margin="0,0,8,0"
+                                ToolTip="Saves the current settings, then copies Settings.json to a file you choose."/>
+                        <Button Content="Restore Settings..." Command="{Binding RestoreSettingsCommand}" Padding="10,3"
+                                ToolTip="Replaces all current settings with a backup file. N.P.C.2 closes afterwards; start it again to load the restored settings. The settings being replaced are kept as Settings.json.bak."/>
+                    </StackPanel>
+                </StackPanel>
+            </Expander>
         </StackPanel>
     </ScrollViewer>
 </reactiveui:ReactiveUserControl>
