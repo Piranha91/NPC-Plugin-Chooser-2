@@ -192,6 +192,28 @@ namespace NPC_Plugin_Chooser_2
 
                 await Task.Delay(250);
                 await splashVM.CloseSplashScreenAsync();
+
+                WarnIfInstalledInsideGameOrModsFolder(settingsModel);
+            }
+        }
+
+        /// <summary>See <see cref="InstallLocationCheck"/>: Settings.json collides with other tools'
+        /// files when N.P.C.2 runs from the (virtual) Data folder, e.g. installed as an MO2 mod.</summary>
+        private void WarnIfInstalledInsideGameOrModsFolder(Settings? settingsModel)
+        {
+            try
+            {
+                string? dataFolder = _container?.Resolve<EnvironmentStateProvider>()?.DataFolderPath.ToString();
+                if (string.IsNullOrWhiteSpace(dataFolder)) dataFolder = settingsModel?.SkyrimGamePath;
+                string? warning = InstallLocationCheck.GetWarning(AppContext.BaseDirectory, dataFolder,
+                    settingsModel?.ModsFolder);
+                if (warning == null) return;
+                StartupLogger.Log("Install location warning: " + warning.Split('\n')[0], "WARN");
+                ScrollableMessageBox.ShowWarning(warning, "N.P.C.2 Is Installed Inside the Game or Mods Folder");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Install location check failed: {ex}");
             }
         }
 
