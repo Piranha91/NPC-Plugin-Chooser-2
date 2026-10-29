@@ -1849,7 +1849,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     /// turning the filter off (or re-enabling the mod in the manager) restores each one with its
     /// per-mod settings instead of a fresh rescan.
     /// </summary>
-    private readonly List<ModSetting> _modlistFilteredOutSettings = new();
+    private List<ModSetting> _modlistFilteredOutSettings = new();
 
     /// <summary>
     /// True when every folder of <paramref name="settingModel"/> is a direct child of the Mods folder
@@ -1881,7 +1881,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         {
             // The modlist filter used to apply only to the folder scan, so mods registered before it
             // was turned on stayed in the list. Apply it to the persisted entries too.
-            _modlistFilteredOutSettings.Clear();
+            _modlistFilteredOutSettings = new List<ModSetting>();
             var enabledMods = GetEnabledModNamesFromModlist();
 
             foreach (var settingModel in _settings.ModSettings)
@@ -4011,14 +4011,14 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             }
         }
         // Entries hidden by the modlist filter are not in _allModSettingsInternal; keep them.
-        foreach (var hidden in _modlistFilteredOutSettings)
+        foreach (var hidden in _modlistFilteredOutSettings ?? new List<ModSetting>())
         {
             if (!_settings.ModSettings.Any(m => m.DisplayName.Equals(hidden.DisplayName, StringComparison.OrdinalIgnoreCase)))
             {
                 _settings.ModSettings.Add(hidden);
             }
         }
-        if (_modlistFilteredOutSettings.Count > 0)
+        if (_modlistFilteredOutSettings?.Count > 0)
             StartupLogger.Log($"MO2 modlist filter: kept {_modlistFilteredOutSettings.Count} hidden mod entries in settings");
 
         NPC_Plugin_Chooser_2.BackEnd.BsaContentsDiag.Log($"SaveModSettingsToModel EXIT — _settings.ModSettings.Count={_settings.ModSettings.Count} (was {before}, internal source {internalCount})");
