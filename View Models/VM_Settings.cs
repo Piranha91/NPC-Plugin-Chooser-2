@@ -2070,6 +2070,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         loadedSettings.ImportFromLoadOrderExclusions ??= new();
         loadedSettings.BatFilePreCommands ??= string.Empty;
         loadedSettings.BatFilePostCommands ??= string.Empty;
+        loadedSettings.NormalizeNpcGroupAssignments();
 
         // MugshotSourcePriority was added after the initial release. Old
         // Settings.json files lack the field, deserializing as null. Empty or
