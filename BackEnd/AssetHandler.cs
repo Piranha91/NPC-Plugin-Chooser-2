@@ -224,17 +224,24 @@ public class AssetHandler : OptionalUIModule
     {
         _modContentPaths.Clear();
 
+        // Snapshot on the caller's thread: callers pass the live Settings.ModSettings list, which
+        // the UI thread can rewrite (SaveModSettingsToModel, a mod refresh) while the background
+        // loop below is still enumerating it — "Collection was modified" aborted the run.
+        var modSnapshot = mods
+            .Select(m => (m.DisplayName, Folders: m.CorrespondingFolderPaths.ToList()))
+            .ToList();
+
         // Task.Run pushes the synchronous, blocking file I/O work to a background thread,
         // allowing this method to immediately yield via 'await'. This unblocks the caller
         // and lets the UI update with any log messages that were sent before this call.
         await Task.Run(() =>
         {
-            foreach (var mod in mods)
+            foreach (var mod in modSnapshot)
             {
                 var subDict = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
                 _modContentPaths.Add(mod.DisplayName, subDict);
 
-                foreach (var dataFolder in mod.CorrespondingFolderPaths)
+                foreach (var dataFolder in mod.Folders)
                 {
                     if (Directory.Exists(dataFolder))
                     {
