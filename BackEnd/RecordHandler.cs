@@ -1,6 +1,8 @@
 ﻿using Microsoft.Build.Tasks;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Cache;
@@ -15,6 +17,42 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 
 public class RecordHandler
 {
+    /// <summary>
+    /// Stack reserved for each thread a dependency walk hops to (see <see cref="ContinueOnFreshStack{T}"/>).
+    /// Reserved, not committed, so an unused reservation costs address space only.
+    /// </summary>
+    private const int DependencyWalkStackBytes = 64 * 1024 * 1024;
+
+    /// <summary>
+    /// Runs <paramref name="body"/> to completion on a new thread with <see cref="DependencyWalkStackBytes"/>
+    /// of stack, blocking the caller, and rethrows anything it throws.
+    /// <para>The dependency walks below recurse once per link and reset their depth limit whenever a
+    /// link resolves inside the selected mod, so a mod that overrides a long connected chain of its
+    /// master's records (Falskaar under Include As New) recursed far past a 1 MB thread-pool stack.
+    /// A stack overflow is uncatchable in .NET: the run died with 0xC00000FD and no log. The walks now
+    /// check the remaining stack at each level and continue here when it runs low, so depth is bounded
+    /// only by memory. AsyncLocal state (NPC diagnostic logging, perf tracing) flows to the new thread
+    /// with the execution context; the walks hold no locks across a recursive call.</para>
+    /// </summary>
+    private static T ContinueOnFreshStack<T>(Func<T> body)
+    {
+        T result = default!;
+        ExceptionDispatchInfo? failure = null;
+        var thread = new Thread(() =>
+        {
+            try { result = body(); }
+            catch (Exception ex) { failure = ExceptionDispatchInfo.Capture(ex); }
+        }, DependencyWalkStackBytes)
+        {
+            IsBackground = true,
+            Name = "NPC2 dependency walk",
+        };
+        thread.Start();
+        thread.Join();
+        failure?.Throw();
+        return result;
+    }
+
     // Outer Key: Appearance Mod Name
     // Inner Key: FormKey from source plugin
     // Value: FormKey of merged-in record in output plugin
@@ -1233,6 +1271,17 @@ public class RecordHandler
             return;
         }
 
+        if (!RuntimeHelpers.TryEnsureSufficientExecutionStack())
+        {
+            ContinueOnFreshStack(() =>
+            {
+                CollectOverriddenDependencyRecords(formLinkGetter, relevantContextKeys, collectedRecords,
+                    maxNestedIntervalDepth, currentDepth, searchedFormKeys, provenanceChain, ct);
+                return true;
+            });
+            return;
+        }
+
         currentDepth++;
         if (currentDepth > maxNestedIntervalDepth) {return;}
 
@@ -1381,6 +1430,18 @@ public class RecordHandler
         if (formLinkGetter.IsNull)
         {
             return false;
+        }
+
+        if (!RuntimeHelpers.TryEnsureSufficientExecutionStack())
+        {
+            // A ref parameter can't be captured, so the hop works on a local and copies it back.
+            var hopExceptionStrings = exceptionStrings;
+            bool hopResult = ContinueOnFreshStack(() =>
+                TraverseAndDuplicateInOverrideRecords(formLinkGetter, relevantContextKeys, outputMod,
+                    remappedSubLinks, mergedInRecords, maxNestedIntervalDepth, currentDepth,
+                    ref hopExceptionStrings, searchedFormKeys, provenanceChain, ct));
+            exceptionStrings = hopExceptionStrings;
+            return hopResult;
         }
 
         currentDepth++;
