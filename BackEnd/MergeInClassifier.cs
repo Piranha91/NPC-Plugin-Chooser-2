@@ -118,7 +118,7 @@ public static class MergeInClassifier
     /// patch TOMLs (face entries) under the given mod folders. Purely lexical — no
     /// FormKey/EditorID resolution — so it can run at
     /// scan time before the environment-dependent SkyPatcher analysis populates
-    /// <c>SkyPatcherTargetModKeys</c>.
+    /// <c>ReplacerTargetModKeys</c>.
     /// </summary>
     public static int CountSkyPatcherVisualTargets(IEnumerable<string> modFolderPaths)
     {

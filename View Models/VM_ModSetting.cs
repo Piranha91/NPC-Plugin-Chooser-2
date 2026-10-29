@@ -252,19 +252,19 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     public Dictionary<FormKey, string> NpcFormKeysToDisplayName { get; set; } = new();
 
     /// <summary>
-    /// ModKeys of NPCs that this mod patches via SkyPatcher templates (the "target" NPC
-    /// in <c>filterByNpcs=...</c>). Populated during AnalyzeModSettingsAsync from
-    /// <see cref="GetSkyPatcherImportsAsync"/>'s guest list. Used by
-    /// <see cref="VM_Mods.FindAndAddMissingMasters"/> to treat the foundation plugin as an
-    /// effective NPC source so the cleanup pass doesn't re-attach the foundation folder
-    /// for SkyPatcher-style replacers (e.g. <c>t_Amalee_Replacer.esp</c> → <c>3DNPC.esp</c>).
+    /// ModKeys of NPCs that this mod replaces at runtime through a SkyPatcher ini (the "target"
+    /// NPC in <c>filterByNpcs=...</c>) or a Recast patch (the <c>target</c> of a face entry).
+    /// Populated during AnalyzeModSettingsAsync by <see cref="GetReplacerTargetModKeysAsync"/>.
+    /// Used by <see cref="VM_Mods.FindAndAddMissingMasters"/> to treat the foundation plugin as an
+    /// effective NPC source so the cleanup pass doesn't re-attach the foundation folder for
+    /// runtime replacers (e.g. <c>t_Amalee_Replacer.esp</c> → <c>3DNPC.esp</c>).
     ///
     /// Intentionally NOT persisted: it's only consulted by the cleanup pass that runs
     /// inside the same <c>PopulateModSettingsAsync</c> call that populates it. On
     /// subsequent launches the persisted folder list is already correct, so an empty
     /// transient set is fine.
     /// </summary>
-    public HashSet<ModKey> SkyPatcherTargetModKeys { get; set; } = new();
+    public HashSet<ModKey> ReplacerTargetModKeys { get; set; } = new();
 
     public Dictionary<FormKey, List<ModKey>> AvailablePluginsForNpcs { get; set; } =
         new(); // tracks which plugins contain which Npc entry
@@ -2275,7 +2275,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             }
         }
 
-        // Lexical INI scan: works at initial-scan time, before SkyPatcherTargetModKeys exists.
+        // Lexical INI scan: works at initial-scan time, before ReplacerTargetModKeys exists.
         int skyPatcherTargets = MergeInClassifier.CountSkyPatcherVisualTargets(this.CorrespondingFolderPaths);
 
         var verdict = isBaseGame
@@ -2957,7 +2957,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     }
 
     public async Task<List<(FormKey TargetNpc, FormKey SourceNpc, string ModDisplayName, string SourceNpcDisplayName)>>
-        GetSkyPatcherImportsAsync(
+        GetReplacerImportsAsync(
             IReadOnlyDictionary<string, HashSet<FormKey>> environmentEditorIdMap,
             IReadOnlyDictionary<string, HashSet<FormKey>> modEditorIdMap)
     {
@@ -3060,7 +3060,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     }
 
     /// <summary>
-    /// Lightweight variant of <see cref="GetSkyPatcherImportsAsync"/> that returns just the
+    /// Lightweight variant of <see cref="GetReplacerImportsAsync"/> that returns just the
     /// distinct <see cref="ModKey"/>s this mod targets via SkyPatcher INIs (the
     /// <c>filterByNpcs=...</c> side). Unlike the full importer — which only resolves targets
     /// against the load order so guest-appearance entries in <c>_settings.SelectedAppearanceMods</c>
@@ -3075,7 +3075,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     /// → <c>3DNPC.esp</c>) would slip through the cleanup whenever the user hasn't enabled
     /// the foundation in their LO.
     /// </summary>
-    public async Task<HashSet<ModKey>> GetSkyPatcherTargetModKeysAsync(
+    public async Task<HashSet<ModKey>> GetReplacerTargetModKeysAsync(
         IReadOnlyDictionary<string, HashSet<FormKey>> environmentEditorIdMap,
         IReadOnlyDictionary<string, HashSet<FormKey>> modEditorIdMap)
     {

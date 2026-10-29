@@ -2,6 +2,8 @@ using System.IO;
 using System.Text;
 using FluentAssertions;
 using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Plugins.Order;
+using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.Tests.Integration;
@@ -121,5 +123,72 @@ public class OutputValidatorRecastTests
         skipped.Count.Should().Be(1);
 
         Check(new Settings { OutputBackend = OutputBackend.ESP }, tmp.Path).Should().BeEmpty();
+    }
+
+    // ── Recast backend: this app's own patch ─────────────────────────────────
+
+    private static List<ValidationIssue> ValidateRecast(string dataFolder)
+    {
+        var v = Validator(new Settings { OutputBackend = OutputBackend.Recast });
+        var log = new StringBuilder();
+        var recastIndex = Reflect.Invoke<object>(v, "BuildRecastIndex", dataFolder, log)!;
+        string skyRoot = Path.Combine(dataFolder, "SKSE", "Plugins", "SkyPatcher", "npc");
+        var skyIndex = Reflect.Invoke<object>(v, "BuildSkyPatcherIndex",
+            skyRoot, Path.Combine(skyRoot, "NPC Plugin Chooser", "NPCTest.ini"), log)!;
+        var result = new ValidationRunResult();
+        Reflect.InvokeVoid(v, "ValidateNpcRecast", Lydia, Lydia, false, "Some Mod", "Lydia", null,
+            new ModSetting(), recastIndex, null, new List<IModListingGetter<ISkyrimModGetter>>(), skyIndex,
+            dataFolder, null, result, log);
+        return result.Issues;
+    }
+
+    [Fact]
+    public void RecastBackend_OwnPatchWithoutAnEntryForTheNpc_IsAnError()
+    {
+        using var tmp = new TempDir("recastval");
+        WritePatch(tmp.Path, "NPC Plugin Chooser\\NPCTest.toml", 1000,
+            "[[npcs]]\ntarget = \"0x00013BB9~Skyrim.esm\"\nface = \"0x801~NPCTest.esp\"\n");
+
+        ValidateRecast(tmp.Path).Should().ContainSingle()
+            .Which.Issue.Should().Contain("has no face entry for this NPC");
+    }
+
+    [Fact]
+    public void RecastBackend_SkyPatcherVisualStyleOnTheSameNpc_IsTheFlipError()
+    {
+        using var tmp = new TempDir("recastval");
+        var ini = Path.Combine(tmp.Path, "SKSE", "Plugins", "SkyPatcher", "npc", "Other", "other.ini");
+        Directory.CreateDirectory(Path.GetDirectoryName(ini)!);
+        File.WriteAllText(ini, "filterByNPCs=Skyrim.esm|A2C8E:copyVisualStyle=Other.esp|801\n");
+
+        var issues = ValidateRecast(tmp.Path); // no own patch either: one Recast row, one flip row
+        issues.Should().Contain(i => i.Check == ValidationCheckKind.SkyPatcher
+                                     && i.Severity == ValidationSeverity.Error
+                                     && i.Issue.Contains("between a new game and a loaded save"));
+        issues.Should().Contain(i => i.Check == ValidationCheckKind.Recast);
+    }
+
+    [Theory]
+    [InlineData(OutputBackend.Recast, false, true)]
+    [InlineData(OutputBackend.Recast, true, false)]
+    [InlineData(OutputBackend.ESP, false, false)]
+    public void DeployGate_RequiresTheRecastPatchOnlyUnderTheRecastBackend(OutputBackend backend, bool tomlExists, bool blocked)
+    {
+        using var tmp = new TempDir("recastval");
+        string toml = Path.Combine(RecastInterface.GetOutputDir(tmp.Path), "NPCTest.toml");
+        if (tomlExists)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(toml)!);
+            File.WriteAllText(toml, "");
+        }
+        var listings = new List<IModListingGetter<ISkyrimModGetter>>
+        {
+            new ModListing<ISkyrimModGetter>(ModKey.FromFileName("NPCTest.esp"), MutagenFixtures.NewMod("NPCTest.esp"), enabled: true)
+        };
+
+        var block = Reflect.Invoke<string?>(Validator(new Settings { OutputBackend = backend }), "EvaluateDeployGate",
+            listings, Path.Combine(tmp.Path, "none.ini"), toml, null);
+
+        (block != null).Should().Be(blocked, block);
     }
 }

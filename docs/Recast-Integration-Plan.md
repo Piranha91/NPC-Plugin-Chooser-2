@@ -1,9 +1,9 @@
 # Recast output backend — implementation plan
 
-Status (branch `recast-backend`): **Phases 1–4 done; Phase 6 item 0 done; Phase 7b done except the
-steps marked open.** Written 2026-10-28; Phases 2 and 4 landed 2026-10-29, after the `skyrender-split`
-session cleared the two-line `App.xaml.cs` registration. Phase 5 is next; its record checks share code
-with `NpcMeshResolver`, so it still waits for that extraction to merge.
+Status (branch `recast-backend`): **Phases 1–7 done; Phase 8 (in game) open.** Written 2026-10-28;
+Phases 2–7 landed 2026-10-29. Open: Phase 8, and check 6 of Phase 5 (head parts outside their
+`ValidRaces`), which waits on Phase 8's measurement. `RecastRaceCompatibility` repeats the
+effective-skin rule `NpcMeshResolver` uses; fold the two together after the viewer extraction merges.
 
 The shared TOML reader is `BackEnd/RecastPatchReader.cs` (Tomlyn 2.10.1). It follows Recast 1.6.3's
 `TomlLoader.cpp`: a TOML error, a missing `[manifest]` or `api_version != 1` skips the whole file; a bad
@@ -191,7 +191,15 @@ configs are written.
    flips" case. This matters most when the output folder is reused without a clean.
 7. `NpcToken` stamp (`Patcher.cs:2482`): the backend and mode.
 
-### Phase 5 — pre-run screening (`Validator.cs`, `VM_Run.cs`)
+### Phase 5 — pre-run screening (`Validator.cs`, `VM_Run.cs`) (done except check 6)
+**Done:** item 1 already held after Phase 1; item 2 is `CanRuntimeBackendApplyAppearance`; item 3's
+checks 1–5 are `BackEnd/RecastRaceCompatibility.cs`, called from `Validator.FindRecastOnlyRaceFailure`
+(mesh and skin texture are reported separately). It judges the donor, or under GiveEachNpcOwnCopy its
+template terminus, and resolves the skin's records from the selected mod first. Item 4: the Run popup
+lists Include Outfits and keyword mods and offers "Switch to Hybrid" / "Continue Recast-only" / Cancel.
+Measured on the golden fixtures, it rejects exactly the two deliberate cases (Camilla ← a different-race
+donor: skin texture; Gerdur ← Kharjo: beast hands) and passes the other six.
+
 1. **Cross-NPC swaps** (`Validator.cs:257`): allowed when `UsesSurrogates`.
 2. **Templated source**: rename `CanSkyPatcherApplyAppearance` to `CanRuntimeBackendApplyAppearance`, gated on
    `UsesSurrogates`. Rewrite the doc comment with the measured evidence: both frameworks render the template root.
@@ -249,7 +257,13 @@ configs are written.
 4. **Run popup at `VM_Run.cs:379`:** extend it to Hybrid. In RecastOnly, add a popup that lists what is dropped
    (race, outfits, keywords) and offers to switch to Hybrid.
 
-### Phase 6 — output validation (`OutputValidator.cs`)
+### Phase 6 — output validation (`OutputValidator.cs`) (done)
+**Done:** items 1–3. The deploy gate requires the TOML under the Recast backend (not the Hybrid ini,
+which is written only when needed). `ValidateNpcRecast` checks NPC2's own entry, then shares
+`ValidateNpcSurrogate` (checks B and C) with SkyPatcher mode. A third-party SkyPatcher appearance line on
+a Recast target is an Error. Under Recast the recipient's own Traits template is ignored, since Recast
+clears it.
+
 Recast awareness is needed in **every** backend, ESP included. A Recast patch from a third-party replacer overrides
 NPC2's chosen appearance at runtime whatever NPC2 wrote, just as `CheckSkyPatcher` (line 2965) already catches
 third-party SkyPatcher lines in record mode.
@@ -306,13 +320,15 @@ so it picks up Recast with no further change. This replaced item 1's move into a
 `RuntimeReplacerScanner`: the extension was three small edits, the move would have been churn.
 
 **Open:**
-- **Re-analysis migration at release.** Startup reads a mod's replacer files only on an analysis cache
+- **Re-analysis migration at release (covered).** The existing `< 2.2.6` step already nulls every mod's
+  `LastKnownState`, and analysis caches the donor whenever it adds a share, so upgraders to 2.2.6 import
+  installed Recast packs on first launch. A comment there records the dependency. Original note: Startup reads a mod's replacer files only on an analysis cache
   miss, so a Recast pack the user already has installed imports nothing until that mod is refreshed. The
   `UpdateHandler` step for the release version must null `LastKnownState` (forcing re-analysis) and
   re-run the donor-cache scan (`UpdateTo2_1_1_Final`'s body) so `CachedSkyPatcherTemplates` gains the
   Recast donors.
 - Item 2's renames (`CachedReplacerDonors`, the UI label) are cosmetic and not done.
-- Method names still say SkyPatcher; rename with 7c (`ReplacerTargetModKeys`) if wanted.
+- Method renames done with 7c (`GetReplacerImportsAsync`, `GetReplacerTargetModKeysAsync`).
 
 Original approach:
 1. Add `BackEnd/RuntimeReplacerScanner.cs` with one entry point that returns `(Target, Source)` pairs and target
@@ -335,7 +351,12 @@ Original approach:
 5. **This is mandatory for release.** Once a user imports a replacer's donors through NPC2, the replacer's own TOML
    must be disabled. Otherwise it fights NPC2's output: Phase 6 item 0 reports it.
 
-### Phase 7c — missing-master detection
+### Phase 7c — missing-master detection (done)
+**Done:** `ReplacerTargetModKeys` / `GetReplacerTargetModKeysAsync` / `GetReplacerImportsAsync`, with the
+comments updated. No missing-master cleanup tests existed to extend; the Recast-only behaviour is pinned
+at its input by `VM_ModSettingPureTests.TargetModKeys_IncludeRecastTargets_WithModMapFallback`, and the
+golden master-list check is in `RecastGoldenEquivalenceTests`.
+
 **Behaviour done via 7b:** `SkyPatcherTargetModKeys` now holds Recast targets too, so the exclusion below
 already covers Recast packs. Left: the rename, the comments, and the Recast-only cleanup test.
 `VM_Mods.FindAndAddMissingMasters` (around line 3361) adds `SkyPatcherTargetModKeys` to the NPC-source plugins it
@@ -351,7 +372,14 @@ mod gets the target's folder re-attached as a "missing master" resource on every
   SkyPatcher run.
 - Tests: extend the existing SkyPatcher missing-master cleanup tests with a Recast-only fixture.
 
-### Phase 7 — remaining tooling, golden tests, docs
+### Phase 7 — remaining tooling, golden tests, docs (done)
+**Done:** item 1 already held after Phase 1. Item 2 became `RecastGoldenEquivalenceTests`: rather than a
+new reference set, each SkyPatcher combo (07–12) is run again under Hybrid and RecastOnly and compared to
+its SkyPatcher run — same face targets, same surrogate appearance, same masters, Hybrid's ini carrying
+the same race/outfit/keyword directives and no appearance directive, identical assets (RecastOnly against
+a baseline re-run without the NPCs it rejected). Reference sets for Recast combos can still be added when
+the user generates them. Item 3 is `KnownLimitations.md` §6.
+
 1. `PatchVerifyRunner`: `ModeOverride` accepts `"Recast"` and `"RecastOnly"`; save and restore the enum.
 2. Golden outputs: add Recast × {Hybrid, RecastOnly} × {CreateAndPatch, Create} × {Ignore, Include, IncludeAsNew}.
    Add a `RecastTomlComparer` modelled on `SkyPatcherIniComparer`: keyed by target, with output-plugin FormIDs

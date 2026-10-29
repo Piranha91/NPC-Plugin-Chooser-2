@@ -417,6 +417,60 @@ public class VM_Run : ReactiveObject, IDisposable
                 }
             }
 
+            // Recast-only drops whatever only SkyPatcher can deliver. Say what, once, and offer
+            // Hybrid, which keeps the Recast face and adds an ini for the rest.
+            if (_settings.UsesRecast && _settings.RecastMode == RecastMode.RecastOnly && !_settings.SuppressPopupWarnings)
+            {
+                var outfitMods = modSettingsMap.Values.Where(ms => ms.IncludeOutfits)
+                    .Select(ms => ms.DisplayName).Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
+                var keywordMods = modSettingsMap.Values.Where(ms => ms.Keywords.Any(k => !string.IsNullOrWhiteSpace(k)))
+                    .Select(ms => ms.DisplayName).Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
+
+                if (outfitMods.Any() || keywordMods.Any())
+                {
+                    CurrentProgressMessage = "Waiting for user input...";
+
+                    var message = new StringBuilder(
+                        "Recast-only output applies faces but cannot deliver race changes, outfits or keywords. " +
+                        "Cross-race selections that would not render correctly are skipped during screening.");
+                    message.AppendLine().AppendLine();
+                    if (outfitMods.Any())
+                    {
+                        message.AppendLine($"Include Outfits is on for {outfitMods.Count} mod(s); their outfits will not be applied:");
+                        foreach (var name in outfitMods) message.AppendLine("    " + name);
+                        message.AppendLine();
+                    }
+                    if (keywordMods.Any())
+                    {
+                        message.AppendLine($"{keywordMods.Count} mod(s) add keywords, which will not be applied:");
+                        foreach (var name in keywordMods) message.AppendLine("    " + name);
+                        message.AppendLine();
+                    }
+                    message.Append("Hybrid keeps the Recast faces and delivers these through SkyPatcher.");
+
+                    bool? switchToHybrid = null;
+                    Application.Current?.Dispatcher.Invoke(() =>
+                    {
+                        switchToHybrid = ScrollableMessageBox.ChooseWithCancel(message.ToString(),
+                            "Recast-only output", "Switch to Hybrid", "Continue Recast-only", MessageBoxImage.Warning);
+                    });
+
+                    if (switchToHybrid == null)
+                    {
+                        AppendLog("Patching aborted at the Recast-only warning.", true);
+                        return; // Abort
+                    }
+                    if (switchToHybrid == true)
+                    {
+                        Application.Current?.Dispatcher.Invoke(() => _vmSettings.SelectedRecastMode = RecastMode.Hybrid);
+                        _settings.RecastMode = RecastMode.Hybrid;
+                        AppendLog("Recast mode switched to Hybrid for this and later runs.", false, true);
+                    }
+                }
+            }
+
             await _patcher.PreInitializationLogicAsync();
 
             // Arm per-NPC diagnostic logging for the user-selected NPCs. This

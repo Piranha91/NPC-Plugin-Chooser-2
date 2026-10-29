@@ -323,7 +323,7 @@ public static class FaceGenLadder
     ///
     /// <para>Surrogates are excluded: the destination is the surrogate's own path, a record this
     /// pass does write. That combination is inert rather than wrong, and
-    /// <c>Validator.CanSkyPatcherApplyAppearance</c> rejects it per NPC before it reaches here.</para>
+    /// <c>Validator.CanRuntimeBackendApplyAppearance</c> rejects it per NPC before it reaches here.</para>
     /// </summary>
     public static bool KeepsInheritedFace(FaceGenLadderInputs i) =>
         i.Mode != FaceGenDestinationMode.Surrogate

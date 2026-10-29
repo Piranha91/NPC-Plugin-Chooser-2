@@ -40,7 +40,7 @@ internal static class TemplateMatrixChecks
     /// a concrete NPC, in SkyPatcher mode, while the mode says inherit. SkyPatcher cannot redirect an
     /// inherited face — the game resolves the chain natively and draws the terminus's FaceGen — so the
     /// selection would produce a dark face rather than the chosen appearance. See
-    /// <c>Validator.CanSkyPatcherApplyAppearance</c>.
+    /// <c>Validator.CanRuntimeBackendApplyAppearance</c>.
     ///
     /// <para>The levelled and unfollowable specimens are NOT in this set: their chains do not resolve,
     /// so they keep their own (already asserted) behaviour.</para>

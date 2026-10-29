@@ -595,7 +595,7 @@ public class VM_ModSettingPureTests
         var modMap = new Dictionary<string, HashSet<FormKey>> { ["Pack_Mjoll"] = new() { donorB } };
         var vm = ReplacerVm(tmp.Path, new Dictionary<FormKey, string> { [donorA] = "Lydia (Pack)" });
 
-        var guests = await vm.GetSkyPatcherImportsAsync(envMap, modMap);
+        var guests = await vm.GetReplacerImportsAsync(envMap, modMap);
 
         guests.Should().BeEquivalentTo(new[]
         {
@@ -612,7 +612,7 @@ public class VM_ModSettingPureTests
             new[] { "filterByNpcs=Skyrim.esm|13BBF:copyVisualStyle=Pack.esp|800" });
         WriteRecastPatch(tmp, "[[npcs]]\ntarget = \"0x000A2C8E~Skyrim.esm\"\nface = \"0x801~Pack.esp\"\n");
 
-        var guests = await ReplacerVm(tmp.Path).GetSkyPatcherImportsAsync(EmptyMap(), EmptyMap());
+        var guests = await ReplacerVm(tmp.Path).GetReplacerImportsAsync(EmptyMap(), EmptyMap());
 
         guests.Select(g => (g.TargetNpc, g.SourceNpc)).Should().BeEquivalentTo(new[]
         {
@@ -630,7 +630,7 @@ public class VM_ModSettingPureTests
             "[[npcs]]\ntarget = \"OnDiskOnly\"\nface = \"0x802~Pack.esp\"\n");
         var modMap = new Dictionary<string, HashSet<FormKey>> { ["OnDiskOnly"] = new() { FormKey.Factory("000D63:Foundation.esm") } };
 
-        var keys = await ReplacerVm(tmp.Path).GetSkyPatcherTargetModKeysAsync(EmptyMap(), modMap);
+        var keys = await ReplacerVm(tmp.Path).GetReplacerTargetModKeysAsync(EmptyMap(), modMap);
 
         keys.Should().BeEquivalentTo(new[] { ModKey.FromFileName("3DNPC.esp"), ModKey.FromFileName("Foundation.esm") });
     }

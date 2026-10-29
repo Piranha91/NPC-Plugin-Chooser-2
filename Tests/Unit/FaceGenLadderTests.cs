@@ -455,7 +455,7 @@ public class FaceGenLadderTests
     {
         // SkyPatcher's destination is the surrogate's own path — a record this pass DOES write — so
         // the rule does not apply. That combination is inert rather than wrong, and the validator
-        // rejects it per NPC upstream (Validator.CanSkyPatcherApplyAppearance).
+        // rejects it per NPC upstream (Validator.CanRuntimeBackendApplyAppearance).
         var d = FaceGenLadder.Classify(Inputs(
             mode: FaceGenDestinationMode.Surrogate,
             chain: FaceGenChainStatus.Resolved,
