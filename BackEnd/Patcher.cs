@@ -281,6 +281,73 @@ public class Patcher : OptionalUIModule
     /// the root cause instead of a bare output FormKey. Returns an empty string if no
     /// dangling reference is found (the failure was something else).
     /// </summary>
+    /// <summary>
+    /// Reports every FormKey that occurs more than once in the output plugin — the condition behind
+    /// Mutagen's "Two records with the same FormKey were encountered" save error, which names only
+    /// the FormKey. A FormKey can repeat only across groups or nesting levels (top-level groups are
+    /// keyed), e.g. a Cell present both as a worldspace's persistent cell and inside a cell block,
+    /// so each copy's location is listed with the NPC(s) whose patching pulled the record in.
+    /// Returns an empty string when there are no duplicates.
+    /// </summary>
+    private string BuildDuplicateFormKeyDiagnostics()
+    {
+        var outputMod = _environmentStateProvider.OutputMod;
+        if (outputMod == null) return string.Empty;
+
+        var duplicates = outputMod.EnumerateMajorRecords()
+            .GroupBy(r => r.FormKey)
+            .Where(g => g.Count() > 1)
+            .ToList();
+        if (duplicates.Count == 0) return string.Empty;
+
+        // Cells are the usual suspect: a worldspace's persistent cell (TopCell) is not inside the
+        // block structure, so two routes into the worldspace can place the same cell twice.
+        var cellLocations = new Dictionary<FormKey, List<string>>();
+        void AddLocation(FormKey key, string where)
+        {
+            if (!cellLocations.TryGetValue(key, out var list)) cellLocations[key] = list = new List<string>();
+            list.Add(where);
+        }
+        foreach (var ws in outputMod.Worldspaces)
+        {
+            if (ws.TopCell != null) AddLocation(ws.TopCell.FormKey, $"persistent cell (TopCell) of worldspace {ws.EditorID ?? ws.FormKey.ToString()}");
+            foreach (var block in ws.SubCells)
+            foreach (var subBlock in block.Items)
+            foreach (var cell in subBlock.Items)
+                AddLocation(cell.FormKey, $"worldspace {ws.EditorID ?? ws.FormKey.ToString()} block ({block.BlockNumberX},{block.BlockNumberY}) sub-block ({subBlock.BlockNumberX},{subBlock.BlockNumberY})");
+        }
+        foreach (var block in outputMod.Cells)
+        foreach (var subBlock in block.SubBlocks)
+        foreach (var cell in subBlock.Cells)
+            AddLocation(cell.FormKey, $"interior cell block {block.BlockNumber} sub-block {subBlock.BlockNumber}");
+
+        var sb = new StringBuilder();
+        sb.AppendLine();
+        sb.AppendLine("======= Diagnosing duplicate-record save failure =======");
+        sb.AppendLine($"{duplicates.Count} FormKey(s) occur more than once in the output plugin:");
+        foreach (var group in duplicates)
+        {
+            sb.AppendLine($"  • {group.Key}  ({string.Join(", ", group.Select(r => $"{r.Registration.Name} '{r.EditorID}'").Distinct())})");
+            if (cellLocations.TryGetValue(group.Key, out var locations))
+            {
+                foreach (var where in locations) sb.AppendLine($"      at: {where}");
+            }
+            if (_patchedRecordOwners.TryGetValue(group.Key, out var owners) && owners.Count > 0)
+            {
+                var names = owners.Take(10).Select(o =>
+                    _environmentStateProvider.LinkCache.TryResolve<INpcGetter>(o, out var npc)
+                        ? $"{npc.EditorID ?? o.ToString()} ({o})"
+                        : o.ToString());
+                sb.AppendLine($"      pulled in while patching: {string.Join(", ", names)}{(owners.Count > 10 ? $" and {owners.Count - 10} more" : "")}");
+            }
+        }
+        sb.AppendLine("Likely cause: two different appearance mods (or a mod and its patch) supply this record in " +
+                      "incompatible places, and each NPC's dependency merge copied its own version. Try changing the " +
+                      "selection for the NPC(s) listed, or set the mod that supplies the record to Record Override " +
+                      "Handling = Ignore. Please report this with the lines above so the merge can be fixed.");
+        return sb.ToString();
+    }
+
     private string BuildDanglingMasterDiagnostics()
     {
         var outputMod = _environmentStateProvider.OutputMod;
@@ -2332,6 +2399,12 @@ public class Patcher : OptionalUIModule
                             if (!string.IsNullOrEmpty(diag))
                             {
                                 AppendLog(diag, true, true);
+                            }
+
+                            string duplicateDiag = BuildDuplicateFormKeyDiagnostics();
+                            if (!string.IsNullOrEmpty(duplicateDiag))
+                            {
+                                AppendLog(duplicateDiag, true, true);
                             }
                         }
                         catch (Exception diagEx)
