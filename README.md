@@ -129,7 +129,7 @@ The fix is to relaunch N.P.C.2 from your mod manager, and to check that the **Sk
 Here you tell N.P.C.2 where to find your appearance mods.
 
 * **Mods Folder**: The root folder where your mods are installed (for MO2 this is the `mods` folder; for Vortex it’s your staging folder). This **does not** have to be the same folder used by the mod manager you launched N.P.C.2 from — you can point it at a completely separate mod directory if you want to keep your appearance mods elsewhere.
-* **Filter by active mods (MO2)**: If checked, only mods that are enabled in MO2 are considered. Leave it unchecked if you want to see appearance mods even when they’re disabled.
+* **Filter by active mods (MO2)**: If checked, only mods that are enabled in MO2 are considered — both newly found mod folders and mods already in your list. Disabled mods are hidden, not forgotten: their per-mod settings are kept, and they reappear when re-enabled or when the filter is turned off. Changing the checkbox or the modlist.txt offers to reload the mod list right away. Leave it unchecked if you want to see appearance mods even when they’re disabled. (Vortex users can write their own modlist.txt: one `+FolderName` line per enabled staging folder, matched case-insensitively against the folders in your Mods folder; other lines are ignored.)
 
 
 ### Output Settings

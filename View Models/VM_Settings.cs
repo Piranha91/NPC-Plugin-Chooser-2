@@ -1076,6 +1076,12 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(b => _model.FilterByActiveModsMO2 = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.MO2ModlistPath).Skip(1)
             .Subscribe(s => _model.MO2ModlistPath = s).DisposeWith(_disposables);
+        // Changing the filter used to affect only future scans; offer to apply it to the current
+        // mod list right away. Throttled so picking a file and ticking the box prompts once.
+        this.WhenAnyValue(x => x.FilterByActiveModsMO2, x => x.MO2ModlistPath).Skip(1)
+            .Throttle(TimeSpan.FromMilliseconds(400), RxApp.TaskpoolScheduler)
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Subscribe(_ => OfferToReapplyActiveModsFilter()).DisposeWith(_disposables);
         // --- NEW: Subscriptions for Mugshot Settings ---
         this.WhenAnyValue(x => x.UseFaceFinderFallback).Skip(1)
             .Subscribe(b => _model.UseFaceFinderFallback = b).DisposeWith(_disposables);
@@ -2451,6 +2457,61 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         if (selectorVm.HasChanged)
         {
             DefaultOverrideTraversalRoots = selectorVm.IsAtDefaults ? null : selectorVm.GetSelection();
+        }
+    }
+
+    private bool _reapplyingActiveModsFilter;
+
+    private async void OfferToReapplyActiveModsFilter()
+    {
+        if (_reapplyingActiveModsFilter || !_lazyModListVM.IsValueCreated) return;
+        if (_environmentStateProvider.Status != EnvironmentStateProvider.EnvironmentStatus.Valid) return;
+        // Filter on but no usable file: nothing to apply yet (the user may be about to pick one).
+        if (FilterByActiveModsMO2 && (string.IsNullOrWhiteSpace(MO2ModlistPath) || !File.Exists(MO2ModlistPath))) return;
+
+        string what = FilterByActiveModsMO2
+            ? "hide mods that are disabled in your modlist.txt"
+            : "show the mods the modlist.txt filter was hiding";
+        if (!ScrollableMessageBox.Confirm(
+                $"Reload the mod list now to {what}?\n\n" +
+                "Your NPC selections and per-mod settings are kept, including those of hidden mods. " +
+                "If you choose No, the change takes effect the next time N.P.C.2 starts.",
+                "Apply Active Mods Filter"))
+            return;
+
+        _reapplyingActiveModsFilter = true;
+        VM_SplashScreen? splashScreen = null;
+        try
+        {
+            _lazyMainWindowVm.Value.IsLoadingFolders = true;
+            splashScreen = VM_SplashScreen.InitializeAndShow(App.ProgramVersion, footerMessage: "Applying active mods filter...");
+
+            // Unlike a mods-folder change, the persisted ModSettings are NOT cleared: population
+            // reloads them through the filter, which hides (and preserves) the disabled ones.
+            _lazyModListVM.Value.SaveModSettingsToModel();
+            await _lazyModListVM.Value.PopulateModSettingsAsync(splashScreen);
+            _lazyModListVM.Value.SaveModSettingsToModel();
+
+            if (_lazyNpcSelectionBar.IsValueCreated)
+            {
+                await _lazyNpcSelectionBar.Value.InitializeAsync(splashScreen);
+            }
+            _lazyModListVM.Value.ApplyFilters();
+            RequestThrottledSave();
+        }
+        catch (Exception ex)
+        {
+            ScrollableMessageBox.ShowError($"Could not apply the active mods filter:\n{ExceptionLogger.GetExceptionStack(ex)}",
+                "Apply Active Mods Filter");
+        }
+        finally
+        {
+            _lazyMainWindowVm.Value.IsLoadingFolders = false;
+            if (splashScreen != null)
+            {
+                await splashScreen.CloseSplashScreenAsync();
+            }
+            _reapplyingActiveModsFilter = false;
         }
     }
 
