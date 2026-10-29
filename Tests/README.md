@@ -220,8 +220,8 @@ differences from run-to-run nondeterminism across many runs. Timings use process
 logical work counts, not physical I/O. The OS file cache is not flushed: runs are fresh *processes*, not cold disks.
 
 ## Known gaps / future work
-- **`EasyNpcTranslator` import/export** parse cores are coupled to file-dialog/UI calls; only the
-  `TryGetDefaultPlugin` preset branch is unit-reachable. Extracting a pure `ParseProfileLine`
-  would make the round-trip testable.
+- **`EasyNpcTranslator` dialogs** require manual UI verification. `EasyNpcProfile` and
+  `EasyNpcTransfer` cover the shared EasyNPC/NEXT profile grammar, autosave replay, source
+  matching, unsupported choices, and profile updates with deterministic unit tests.
 - A handful of seams that require real `.bsa` archives or the GL renderer are exercised only
   indirectly; their empty-state/pure branches are covered.

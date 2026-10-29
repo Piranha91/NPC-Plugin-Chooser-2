@@ -401,12 +401,17 @@ An optional diagnostic that reports how *heavy* each appearance’s FaceGen mesh
 
 ![EasyNPC Transfer](docs/Screenshots/Settings/EasyNPC_Transfer_Section.png)
 
-Tools for moving appearance choices between N.P.C.2 and EasyNPC. (EasyNPC selects *plugins*, while N.P.C.2 selects *mods*, so the conversion does some matching.)
+Tools for moving appearance choices between N.P.C.2 and EasyNPC, including EasyNPC NEXT. (EasyNPC selects *plugins*, while N.P.C.2 selects *mods*, so the conversion does some matching.)
 
-* **Import NPC Appearance Choices from EasyNPC Profile**: Loads selections from an exported EasyNPC profile, matching its plugin choices to your available mods.
-* **Export NPC Appearance Choices To New EasyNPC Profile**: Converts your mod selections into a fresh EasyNPC profile. Default Plugins are chosen from your conflict-winning records. (FaceGen-only mods can’t be exported because they have no plugin.)
-* **Update Existing EasyNPC Profile**: Like the export, but keeps the Default Plugins from the file you select and only changes the appearance plugin. **Add Missing NPCs?** adds any NPCs you’ve chosen that weren’t already in that profile.
-* **NPC Default Plugin Exclusions**: Plugins checked here are never chosen as EasyNPC “Default Plugins” during export — useful if you don’t want Synthesis/zEdit outputs serving as defaults.
+* **Import NPC Appearance Choices from EasyNPC Profile**: Loads selections from an exported EasyNPC profile, preserving the exact appearance plugin within a mod that contains several candidates. FaceGen overrides match the profile's FaceMod name to a mod display name or source folder. If the FaceGen source can't be found or represented, the appearance plugin is still imported and the row says the override was not applied. When several mod entries provide the same plugin, the first one in your mod list is used (untick **Use first match for ambiguous NPCs** to skip those instead). NPCs with no matching mod are skipped.
+* **Import NPC Appearance Choices from EasyNPC Autosave**: Reads `%LOCALAPPDATA%\EasyNPC\Profile.log`, shared by original EasyNPC and NEXT, without modifying it. Uses the last saved value of each NPC field in file order. Damaged lines and incomplete selections are reported; NPCs absent from the file or skipped during validation keep their current choices. NEXT's separate `Exclusions.json` is not imported.
+* **Export NPC Appearance Choices To New EasyNPC Profile**: Converts your mod selections into a fresh EasyNPC profile. Imported Default Plugins are retained; other defaults come from your conflict-winning records. FaceGen-only choices export the NPC's original appearance record plus a separate FaceMod source, identified by its mod folder name. These exports require exactly one source folder. Shared faces (using a different NPC's appearance) cannot be represented by EasyNPC and are reported and skipped.
+* **Update Existing EasyNPC Profile**: Like the export, but keeps the Default Plugins from the file you select and updates both the appearance plugin and FaceMod source. Untouched or unsupported entries keep their original lines. Selecting a normal plugin-based appearance clears the previous FaceGen override for that NPC. **Add Missing NPCs?** adds any NPCs you’ve chosen that weren’t already in that profile.
+* **NPC Default Plugin Exclusions**: Plugins checked here are excluded when choosing a new Default Plugin from the load order — useful if you don’t want Synthesis/zEdit outputs serving as defaults. Imported defaults and defaults preserved by **Update Existing** are retained, including excluded plugins.
+
+N.P.C.2's FaceGen-only choices use the NPC's original appearance record. An EasyNPC FaceGen override paired with a different appearance plugin cannot be represented; on import the appearance plugin is used without the override, and the row is flagged.
+
+Import, export and update all open a report table before anything is applied or saved: one row per NPC with its status (Will change, Unchanged, Imported with warning, First match used, Skipped), the before/after appearance source, the face plugin, FaceGen source and Default Plugin, and a note explaining any warning or skip. Unchanged rows are hidden by default. The table filters and sorts by any column, and **Copy Sheet** copies every row for pasting into a spreadsheet. Export opens the table only when some NPCs are skipped. Exports are text profiles to load in EasyNPC; N.P.C.2 never writes to EasyNPC's automatic history.
 
 
 ### Load Order Import Settings

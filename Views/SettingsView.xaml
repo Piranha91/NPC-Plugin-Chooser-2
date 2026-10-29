@@ -1726,13 +1726,18 @@
                     <Button Content="Import NPC Appearance Choices from EasyNPC Profile"
                             Command="{Binding ImportEasyNpcCommand}"
                             HorizontalAlignment="Left" Margin="0,0,0,5"
-                            ToolTip="Import settings from a standard EasyNPC profile text file."/>
+                            ToolTip="Import appearance plugins and supported FaceGen overrides from an EasyNPC or EasyNPC NEXT text profile."/>
+
+                    <Button Content="Import NPC Appearance Choices from EasyNPC Autosave"
+                            Command="{Binding ImportEasyNpcAutosaveCommand}"
+                            HorizontalAlignment="Left" Margin="0,0,0,5"
+                            ToolTip="Read Profile.log from EasyNPC or NEXT without changing it. Normally found in %LOCALAPPDATA%\EasyNPC. NPC exclusions are not included."/>
 
                     <!-- Export Button -->
                     <Button Content="Export NPC Appearance Choices To New EasyNPC Profile"
                             Command="{Binding ExportEasyNpcCommand}"
                             HorizontalAlignment="Left" Margin="0,0,0,5"
-                            ToolTip="Export current settings to a new EasyNPC profile text file."/>
+                            ToolTip="Export selections and supported FaceGen overrides to an EasyNPC or NEXT text profile. Shared faces are reported and skipped."/>
 
                     <!-- *** NEW: Update Profile Controls *** -->
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,15">

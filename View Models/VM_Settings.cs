@@ -575,6 +575,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public ReactiveCommand<Unit, Unit> SelectOutputDirectoryCommand { get; } // New
     public ReactiveCommand<Unit, Unit> ShowPatchingModeHelpCommand { get; } // New
     public ReactiveCommand<Unit, Unit> ImportEasyNpcCommand { get; } // New
+    public ReactiveCommand<Unit, Unit> ImportEasyNpcAutosaveCommand { get; }
     public ReactiveCommand<Unit, Unit> ExportEasyNpcCommand { get; } // New
     public ReactiveCommand<bool, Unit> UpdateEasyNpcProfileCommand { get; } // Takes bool parameter
     public ReactiveCommand<string, Unit> RemoveCachedModCommand { get; }
@@ -972,6 +973,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         ShowOverrideHandlingModeHelpCommand =
             ReactiveCommand.Create(ShowOverrideHandlingModeHelp).DisposeWith(_disposables);
         ImportEasyNpcCommand = ReactiveCommand.Create(_easyNpcTranslator.ImportEasyNpc).DisposeWith(_disposables);
+        ImportEasyNpcAutosaveCommand = ReactiveCommand.Create(_easyNpcTranslator.ImportEasyNpcAutosave).DisposeWith(_disposables);
         ExportEasyNpcCommand = ReactiveCommand.Create(_easyNpcTranslator.ExportEasyNpc).DisposeWith(_disposables);
         UpdateEasyNpcProfileCommand = ReactiveCommand.CreateFromTask<bool>(_easyNpcTranslator.UpdateEasyNpcProfile)
             .DisposeWith(_disposables);
