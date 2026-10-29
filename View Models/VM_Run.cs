@@ -39,6 +39,7 @@ public class VM_Run : ReactiveObject, IDisposable
     private readonly AssetHandler _assetHandler;
     private readonly BsaHandler _bsaHandler;
     private readonly SkyPatcherInterface _skyPatcherInterface;
+    private readonly RecastInterface _recastInterface;
     private readonly RecordDeltaPatcher _recordDeltaPatcher;
     private readonly PluginProvider _pluginProvider;
     private readonly RecordHandler _recordHandler;
@@ -118,6 +119,7 @@ public class VM_Run : ReactiveObject, IDisposable
         AssetHandler assetHandler,
         BsaHandler bsaHandler,
         SkyPatcherInterface skyPatcherInterface,
+        RecastInterface recastInterface,
         RecordDeltaPatcher recordDeltaPatcher,
         Auxilliary aux,
         PluginProvider pluginProvider,
@@ -136,6 +138,7 @@ public class VM_Run : ReactiveObject, IDisposable
         _assetHandler = assetHandler;
         _bsaHandler = bsaHandler;
         _skyPatcherInterface = skyPatcherInterface;
+        _recastInterface = recastInterface;
         _recordDeltaPatcher = recordDeltaPatcher;
         _aux = aux;
         _pluginProvider = pluginProvider;
@@ -149,6 +152,7 @@ public class VM_Run : ReactiveObject, IDisposable
         _bsaHandler.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
         _recordDeltaPatcher.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
         _skyPatcherInterface.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
+        _recastInterface.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
         forwardedOutfitDistributor.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
 
         this.WhenAnyValue(x => x.IsRunning)
@@ -376,7 +380,7 @@ public class VM_Run : ReactiveObject, IDisposable
             // override — and the one that catches ForwardToSkin's silent per-NPC fallback to
             // ForwardToOutfit for appearance plugins that assign no WNAM. Raised before any
             // real work so declining costs nothing.
-            if (_settings.UseSkyPatcherMode && !_settings.SuppressPopupWarnings)
+            if (_settings.SkyPatcherDirectivesAvailable && !_settings.SuppressPopupWarnings)
             {
                 var outfitForwardingMods = modSettingsMap.Values
                     .Where(ms => _settings.GetEffectiveWigMode(ms) == WigHandlingMode.ForwardToOutfit)

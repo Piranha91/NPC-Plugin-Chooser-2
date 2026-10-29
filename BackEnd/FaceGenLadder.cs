@@ -39,9 +39,10 @@ public enum FaceGenDestinationMode
     /// anything reused has to be copied and renamed.</summary>
     FaceSwap,
 
-    /// <summary>The surrogate owns a brand-new FormKey in the output plugin, so nothing in
-    /// the load order can fall through to its path — everything must be copied.</summary>
-    SkyPatcher,
+    /// <summary>A runtime backend (SkyPatcher or Recast) applies the face from a surrogate that
+    /// owns a brand-new FormKey in the output plugin, so nothing in the load order can fall
+    /// through to its path — everything must be copied.</summary>
+    Surrogate,
 }
 
 /// <summary>Outcome of walking the appearance donor's Traits template chain.</summary>
@@ -320,12 +321,12 @@ public static class FaceGenLadder
     /// appearance selection of its own, that NPC's own pass writes both halves and this one
     /// inherits the result.</para>
     ///
-    /// <para>SkyPatcher is excluded: its destination is the surrogate's own path, a record this
+    /// <para>Surrogates are excluded: the destination is the surrogate's own path, a record this
     /// pass does write. That combination is inert rather than wrong, and
     /// <c>Validator.CanSkyPatcherApplyAppearance</c> rejects it per NPC before it reaches here.</para>
     /// </summary>
     public static bool KeepsInheritedFace(FaceGenLadderInputs i) =>
-        i.Mode != FaceGenDestinationMode.SkyPatcher
+        i.Mode != FaceGenDestinationMode.Surrogate
         && i.ChainStatus == FaceGenChainStatus.Resolved
         && !i.FlattenTemplateChain;
 

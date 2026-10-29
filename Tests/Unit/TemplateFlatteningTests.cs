@@ -245,7 +245,7 @@ public class TemplateFlatteningTests
         var plain = MutagenFixtures.NewNpc(mod, "Plain");
         var templated = InventoryTemplated(mod, "Templated", template);
 
-        var settings = new Settings { PatchingMode = mode, UseSkyPatcherMode = false };
+        var settings = new Settings { PatchingMode = mode, OutputBackend = OutputBackend.ESP };
         var (winner, donor) = mode == PatchingMode.CreateAndPatch
             ? ((INpcGetter)templated, (INpcGetter)plain)
             : (plain, templated);
@@ -279,7 +279,7 @@ public class TemplateFlatteningTests
         var settings = new Settings
         {
             PatchingMode = PatchingMode.CreateAndPatch,
-            UseSkyPatcherMode = true,
+            OutputBackend = OutputBackend.SkyPatcher,
         };
 
         OutfitInert(settings, templated, templated).Should().BeFalse();

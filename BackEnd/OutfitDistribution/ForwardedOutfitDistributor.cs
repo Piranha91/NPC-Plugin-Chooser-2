@@ -173,7 +173,7 @@ public class ForwardedOutfitDistributor : OptionalUIModule
         // stands SPID down (SPID snapshots defaultOutfit at TESNPC::InitItemImpl, before
         // SkyPatcher patches it, so IsSuspendedReplacement sees a mismatch). Nothing to
         // add — and nothing the Publish setting should suppress either.
-        if (_settings.UseSkyPatcherMode)
+        if (_settings.SkyPatcherDirectivesAvailable)
         {
             if (contest.SkyPatcherOutranksNpc2Ini) WarnOutranked(npcIdentifier, contest);
             return;

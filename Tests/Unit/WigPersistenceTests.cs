@@ -63,7 +63,7 @@ public class WigPersistenceTests
     /// <summary>Wig handling only runs in Create-and-Patch or SkyPatcher output;
     /// the default Settings ctor must not silently be one of those.</summary>
     private static Settings ActiveOutputMode() =>
-        new() { PatchingMode = PatchingMode.CreateAndPatch, UseSkyPatcherMode = false };
+        new() { PatchingMode = PatchingMode.CreateAndPatch, OutputBackend = OutputBackend.ESP };
 
     [Fact]
     public void NoModOrNoWig_IsPersisted()
@@ -196,7 +196,7 @@ public class WigPersistenceTests
         var settings = new Settings
         {
             PatchingMode = PatchingMode.Create,
-            UseSkyPatcherMode = false,
+            OutputBackend = OutputBackend.ESP,
             DefaultWigHandlingMode = WigHandlingMode.ForwardToSkin
         };
 
@@ -231,7 +231,7 @@ public class WigPersistenceTests
         var settings = new Settings
         {
             PatchingMode = PatchingMode.Create,
-            UseSkyPatcherMode = true,
+            OutputBackend = OutputBackend.SkyPatcher,
             DefaultWigHandlingMode = WigHandlingMode.ForwardToSkin
         };
 

@@ -231,7 +231,7 @@ public class RealLoadOrderTemplateCrossCheckTests : IClassFixture<GoldenEnvFixtu
             AutoSplitOutput = false,
             // The record path, where "flattened" is visible as a file at the NPC's own FormID path.
             PatchingMode = PatchingMode.CreateAndPatch,
-            UseSkyPatcherMode = false,
+            OutputBackend = OutputBackend.ESP,
             TemplateHandlingMode = templateMode,
             DefaultRecordOverrideHandlingMode = RecordOverrideHandlingMode.Ignore,
             DefaultMaxNestedIntervalDepth = 2,

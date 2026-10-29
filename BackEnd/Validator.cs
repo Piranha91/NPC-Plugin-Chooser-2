@@ -254,7 +254,7 @@ public class Validator : OptionalUIModule
                 // plain Create mode, which can merely forward a single plugin record. SkyPatcher mode
                 // performs the swap at runtime (filterByNPCs=target : copyVisualStyle=donor), so it is
                 // permitted there regardless of PatchingMode.
-                if (_settings.PatchingMode != PatchingMode.CreateAndPatch && !_settings.UseSkyPatcherMode &&
+                if (_settings.PatchingMode != PatchingMode.CreateAndPatch && !_settings.UsesSurrogates &&
                     !npcFormKey.Equals(appearanceNpcFormKey))
                 {
                     var appearanceNpcIdenentifier = appearanceNpcFormKey.ToString();
@@ -535,7 +535,7 @@ public class Validator : OptionalUIModule
     {
         terminusDetail = string.Empty;
 
-        if (!_settings.UseSkyPatcherMode) return true;
+        if (!_settings.UsesSurrogates) return true;
         if (_settings.GetEffectiveTemplateHandlingMode(appearanceModSetting) !=
             TemplateHandlingMode.InheritFromTemplate)
         {
@@ -697,7 +697,7 @@ public class Validator : OptionalUIModule
 
         bool includeOutfit = ResolveIncludeOutfit(appearanceModSetting, npcFormKey, _settings.NpcOutfitOverrides);
         var candidates = EnumerateWrittenLinks(appearanceRecord, donor, includeOutfit,
-            _settings.UseSkyPatcherMode);
+            _settings.UsesSurrogates);
 
         // The named set above is the complete write set only for Create-and-Patch, which overrides
         // the WINNING record (record mode) or strips the surrogate down to appearance data
@@ -891,7 +891,7 @@ public class Validator : OptionalUIModule
     /// <para>Pure — no state, no logging — so it can be tested directly.</para>
     /// </summary>
     private static IEnumerable<(string Field, FormKey Key, Type? Type)> EnumerateWrittenLinks(
-        INpcGetter appearanceRecord, INpcGetter donor, bool includeOutfit, bool useSkyPatcherMode)
+        INpcGetter appearanceRecord, INpcGetter donor, bool includeOutfit, bool usesSurrogate)
     {
         if (!appearanceRecord.Race.IsNull)
             yield return ("Race", appearanceRecord.Race.FormKey, typeof(IRaceGetter));
@@ -914,12 +914,12 @@ public class Validator : OptionalUIModule
             yield return ("DefaultOutfit", appearanceRecord.DefaultOutfit.FormKey, typeof(IOutfitGetter));
         }
 
-        if ((useSkyPatcherMode || Auxilliary.HasTraitsFlag(donor)) && donor.Template is { IsNull: false })
+        if ((usesSurrogate || Auxilliary.HasTraitsFlag(donor)) && donor.Template is { IsNull: false })
         {
             yield return ("Template", donor.Template.FormKey, typeof(INpcSpawnGetter));
         }
 
-        if (useSkyPatcherMode && !donor.Class.IsNull)
+        if (usesSurrogate && !donor.Class.IsNull)
         {
             yield return ("Class", donor.Class.FormKey, typeof(IClassGetter));
         }

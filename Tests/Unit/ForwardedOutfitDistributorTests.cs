@@ -65,11 +65,11 @@ public class ForwardedOutfitDistributorTests
         {
             Settings = new Settings
             {
-                UseSkyPatcherMode = skyPatcherMode,
+                OutputBackend = skyPatcherMode ? OutputBackend.SkyPatcher : OutputBackend.ESP,
                 PublishForwardedOutfitsToDistributors = publish,
             },
         };
-        h.SkyPatcher = new SkyPatcherInterface(env);
+        h.SkyPatcher = new SkyPatcherInterface(env, new SurrogateNpcRegistry(env));
         h.Distributor = new ForwardedOutfitDistributor(h.Settings, h.SkyPatcher);
         h.Distributor.ConnectToUILogger((m, e, _) => h.Log.Add((m, e)), null, null, null);
         h.SkyPatcher.ConnectToUILogger((m, e, _) => h.Log.Add((m, e)), null, null, null);

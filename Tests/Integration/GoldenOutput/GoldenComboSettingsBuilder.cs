@@ -43,7 +43,7 @@ internal static class GoldenComboSettingsBuilder
             AutoEslIfy = true,                          // reference plugins are ESL-flagged
             AutoSplitOutput = false,                    // pin the plain single-file write for golden determinism (fixtures never exceed the master limit)
             PatchingMode = combo.PatchingMode,
-            UseSkyPatcherMode = combo.UseSkyPatcher,
+            OutputBackend = combo.UseSkyPatcher ? OutputBackend.SkyPatcher : OutputBackend.ESP,
             DefaultRecordOverrideHandlingMode = combo.OverrideMode,
             DefaultMaxNestedIntervalDepth = 2,
             DefaultIncludeAllOverrides = false,

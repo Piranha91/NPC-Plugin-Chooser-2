@@ -560,8 +560,82 @@ public class VM_ModSettingPureTests
         vm.CorrespondingFolderPaths.Should().ContainSingle().Which.Should().Be(@"C:\Mods\Bijin AIO");
     }
 
-    // NOTE: SKIPPED env/DI-bound members — RefreshNpcLists, GetSkyPatcherImportsAsync,
-    // GetSkyPatcherTargetModKeysAsync, UpdateCorrespondingModKeys, RecomputeResourceOnlyPlugins,
+    // ------------------------------------------------------------------
+    // Replacer imports — SkyPatcher INIs and Recast TOMLs in the mod's own folders. Both methods
+    // read only the folder list, DisplayName and NpcFormKeysToDisplayName, plus the two EditorID
+    // maps they are handed, so they run on an uninitialized receiver.
+    // ------------------------------------------------------------------
+
+    private static VM_ModSetting ReplacerVm(string folder, Dictionary<FormKey, string>? names = null)
+    {
+        var vm = FaceGenVm(folder);
+        Reflect.SetField(vm, "<DisplayName>k__BackingField", "Replacer Pack");
+        Reflect.SetField(vm, "<NpcFormKeysToDisplayName>k__BackingField", names ?? new Dictionary<FormKey, string>());
+        return vm;
+    }
+
+    private static void WriteRecastPatch(TempDir tmp, string body) =>
+        System.IO.File.WriteAllText(tmp.Combine("SKSE", "Plugins", "Recast", "Patches", "Pack", "pack.toml"),
+            "[manifest]\nname = \"Pack\"\npriority = 100\napi_version = 1\n" + body);
+
+    [Fact]
+    public async Task Imports_RecastFacesBecomeGuestPairs_EditorIdsThroughTheirOwnMaps()
+    {
+        using var tmp = new TempDir("recastimport");
+        var lydia = FormKey.Factory("0A2C8E:Skyrim.esm");
+        var mjoll = FormKey.Factory("01327E:Skyrim.esm");
+        var donorA = FormKey.Factory("000801:Pack.esp");
+        var donorB = FormKey.Factory("000802:Pack.esp");
+        WriteRecastPatch(tmp,
+            "[[npcs]]\ntarget = \"0x000A2C8E~Skyrim.esm\"\nface = \"0x801~Pack.esp\"\n" +
+            "[replacements]\nMjoll = \"Pack_Mjoll\"\n" +
+            "[[recasts]]\ntarget = { editor_id = \"Unknown\" }\nsource = { form_id = \"0x803~Pack.esp\" }\n");
+
+        var envMap = new Dictionary<string, HashSet<FormKey>> { ["Mjoll"] = new() { mjoll } };
+        var modMap = new Dictionary<string, HashSet<FormKey>> { ["Pack_Mjoll"] = new() { donorB } };
+        var vm = ReplacerVm(tmp.Path, new Dictionary<FormKey, string> { [donorA] = "Lydia (Pack)" });
+
+        var guests = await vm.GetSkyPatcherImportsAsync(envMap, modMap);
+
+        guests.Should().BeEquivalentTo(new[]
+        {
+            (lydia, donorA, "Replacer Pack", "Lydia (Pack)"),
+            (mjoll, donorB, "Replacer Pack", "No Name"),
+        }, "an EditorID target the load order does not know yields no pair");
+    }
+
+    [Fact]
+    public async Task Imports_SkyPatcherAndRecastInOneMod_AreBothRead()
+    {
+        using var tmp = new TempDir("recastimport");
+        System.IO.File.WriteAllLines(tmp.Combine("SKSE", "Plugins", "SkyPatcher", "npc", "pack.ini"),
+            new[] { "filterByNpcs=Skyrim.esm|13BBF:copyVisualStyle=Pack.esp|800" });
+        WriteRecastPatch(tmp, "[[npcs]]\ntarget = \"0x000A2C8E~Skyrim.esm\"\nface = \"0x801~Pack.esp\"\n");
+
+        var guests = await ReplacerVm(tmp.Path).GetSkyPatcherImportsAsync(EmptyMap(), EmptyMap());
+
+        guests.Select(g => (g.TargetNpc, g.SourceNpc)).Should().BeEquivalentTo(new[]
+        {
+            (FormKey.Factory("013BBF:Skyrim.esm"), FormKey.Factory("000800:Pack.esp")),
+            (FormKey.Factory("0A2C8E:Skyrim.esm"), FormKey.Factory("000801:Pack.esp")),
+        });
+    }
+
+    [Fact]
+    public async Task TargetModKeys_IncludeRecastTargets_WithModMapFallback()
+    {
+        using var tmp = new TempDir("recastimport");
+        WriteRecastPatch(tmp,
+            "[[npcs]]\ntarget = \"0x00000D62~3DNPC.esp\"\nface = \"0x801~Pack.esp\"\n" +
+            "[[npcs]]\ntarget = \"OnDiskOnly\"\nface = \"0x802~Pack.esp\"\n");
+        var modMap = new Dictionary<string, HashSet<FormKey>> { ["OnDiskOnly"] = new() { FormKey.Factory("000D63:Foundation.esm") } };
+
+        var keys = await ReplacerVm(tmp.Path).GetSkyPatcherTargetModKeysAsync(EmptyMap(), modMap);
+
+        keys.Should().BeEquivalentTo(new[] { ModKey.FromFileName("3DNPC.esp"), ModKey.FromFileName("Foundation.esm") });
+    }
+
+    // NOTE: SKIPPED env/DI-bound members — RefreshNpcLists, UpdateCorrespondingModKeys, RecomputeResourceOnlyPlugins,
     // AutoSetResourcePlugins, CheckMergeInSuitability, SaveToModel-roundtrip-against-parent, and
     // every ReactiveCommand body all read injected services (_aux / _pluginProvider /
     // _environmentStateProvider / _parentVm / _lazySettingsVm) or a live link cache, so they

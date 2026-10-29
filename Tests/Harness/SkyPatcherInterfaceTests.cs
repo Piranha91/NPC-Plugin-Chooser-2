@@ -32,8 +32,8 @@ public class SkyPatcherInterfaceTests
 
     /// <summary>
     /// An Invalid provider (no game) with a fresh in-memory output plugin named "NPCTest.esp".
-    /// That is all the directive surface needs: CreateSkyPatcherNpc adds to OutputMod.Npcs and
-    /// WriteIni reads OutputMod.ModKey.Name for the .ini filename.
+    /// That is all the directive surface needs: WriteIni reads OutputMod.ModKey.Name for the
+    /// .ini filename. Surrogate creation itself is <see cref="SurrogateNpcRegistryTests"/>.
     /// </summary>
     private static EnvironmentStateProvider InvalidEnvWithOutput()
     {
@@ -45,18 +45,14 @@ public class SkyPatcherInterfaceTests
     private static SkyPatcherInterface NewInterface(out EnvironmentStateProvider env)
     {
         env = InvalidEnvWithOutput();
-        return new SkyPatcherInterface(env);
+        return NewInterface(out env, out _);
     }
 
-    /// <summary>
-    /// Builds a standalone appearance-donor NPC in its own in-memory plugin so DeepCopyIn has a
-    /// real INpcGetter to copy. (The donor lives in a different mod than the output, mirroring how
-    /// CreateSkyPatcherNpc decouples the surrogate's content from the target FormKey.)
-    /// </summary>
-    private static INpcGetter MakeDonor(string editorId = "DonorNpc", string plugin = "Donor.esp")
+    private static SkyPatcherInterface NewInterface(out EnvironmentStateProvider env, out SurrogateNpcRegistry surrogates)
     {
-        var mod = MutagenFixtures.NewMod(plugin);
-        return MutagenFixtures.NewNpc(mod, editorId: editorId, name: "Donor");
+        env = InvalidEnvWithOutput();
+        surrogates = new SurrogateNpcRegistry(env);
+        return new SkyPatcherInterface(env, surrogates);
     }
 
     /// <summary>
@@ -120,154 +116,6 @@ public class SkyPatcherInterfaceTests
         SkyPatcherInterface.FormatFormKeyForSkyPatcher(FormKey.Factory(fk)).Should().Be(expected);
     }
 
-    // ── CreateSkyPatcherNpc seeds the surrogate map ───────────────────────────
-
-    [Fact]
-    public void CreateSkyPatcherNpc_SeedsSurrogateMapsBothDirections_AndOutputsEntry()
-    {
-        var spi = NewInterface(out var env);
-        var target = FormKey.Factory("000801:Target.esp");
-        var donor = MakeDonor("Lydia");
-
-        var surrogate = spi.CreateSkyPatcherNpc(target, donor);
-
-        // The surrogate is a brand-new NPC in the output plugin, EditorID = donor + "_Template".
-        surrogate.FormKey.ModKey.Should().Be(env.OutputMod.ModKey);
-        surrogate.EditorID.Should().Be("Lydia_Template");
-        env.OutputMod.Npcs.Should().ContainSingle();
-
-        // target -> surrogate and surrogate -> target are both registered.
-        spi.TryGetSurrogateFormKey(target, out var surFk).Should().BeTrue();
-        surFk.Should().Be(surrogate.FormKey);
-        spi.TryGetOriginalFormKey(surrogate.FormKey, out var origFk).Should().BeTrue();
-        origFk.Should().Be(target);
-
-        // _outputs now has an entry keyed by the TARGET (drives HasSkinEntries / WriteIni).
-        spi.HasSkinEntries().Should().BeTrue();
-    }
-
-    [Fact]
-    public void CreateSkyPatcherNpc_DonorWithoutEditorId_UsesNoEditorIdPlaceholder()
-    {
-        var spi = NewInterface(out _);
-        var mod = MutagenFixtures.NewMod("Donor.esp");
-        var donor = mod.Npcs.AddNew(); // no EditorID set
-
-        var surrogate = spi.CreateSkyPatcherNpc(FormKey.Factory("000900:T.esp"), donor);
-
-        surrogate.EditorID.Should().Be("NoEditorID_Template");
-    }
-
-    [Fact]
-    public void TryGetSurrogateFormKey_Unknown_ReturnsFalse()
-    {
-        var spi = NewInterface(out _);
-        spi.TryGetSurrogateFormKey(FormKey.Factory("00BEEF:Other.esp"), out var fk).Should().BeFalse();
-        fk.Should().Be(FormKey.Null);
-    }
-
-    [Fact]
-    public void TryGetOriginalFormKey_Unknown_ReturnsFalse()
-    {
-        var spi = NewInterface(out _);
-        spi.TryGetOriginalFormKey(FormKey.Factory("00BEEF:Other.esp"), out var fk).Should().BeFalse();
-        fk.Should().Be(FormKey.Null);
-    }
-
-    [Fact]
-    public void CreateSkyPatcherNpc_DuplicateTarget_Throws()
-    {
-        // _outputs/_keyOriginalValSurrogate are Dictionary.Add — a second seed of the same
-        // target FormKey throws (the patcher must create each surrogate exactly once).
-        var spi = NewInterface(out _);
-        var target = FormKey.Factory("000801:Target.esp");
-        spi.CreateSkyPatcherNpc(target, MakeDonor("A"));
-
-        Action again = () => spi.CreateSkyPatcherNpc(target, MakeDonor("B"));
-        again.Should().Throw<ArgumentException>();
-    }
-
-    /// <summary>
-    /// The wild failure behind the "failed to replace a vanilla NPC with Lilith" report: the
-    /// donor plugin's NPC record carries a truncated fixed-length subrecord (there NAM5, a
-    /// 2-byte unknown), which xEdit and the game read leniently but Mutagen's lazy overlay
-    /// throws on the moment DeepCopyIn touches the field. CreateSkyPatcherNpc must let the
-    /// throw escape (the Patcher logs and skips that one NPC) and unwind completely: no empty
-    /// surrogate left in OutputMod — the orphan sweep only REPORTS leftover NPC records, it
-    /// never removes them — and no surrogate-map/ini state, so a later selection may re-seed
-    /// the same target.
-    /// </summary>
-    [Fact]
-    public async Task CreateSkyPatcherNpc_CorruptDonorRecord_ThrowsAndLeavesNoTrace()
-    {
-        using var tmp = new TempDir();
-
-        var donorMod = MutagenFixtures.NewMod("CorruptDonor.esp");
-        var donorNpc = MutagenFixtures.NewNpc(donorMod, editorId: "CorruptDonor", name: "Corrupt");
-        donorNpc.NAM5 = 0x00FF;
-        var path = tmp.Combine("CorruptDonor.esp");
-        await donorMod.BeginWrite.ToPath(path).WithLoadOrderFromHeaderMasters().WithNoDataFolder().WriteAsync();
-        TruncateNam5(path);
-
-        using var overlay = SkyrimMod.CreateFromBinaryOverlay(path, SkyrimRelease.SkyrimSE);
-        var corruptDonor = overlay.Npcs.Single();
-
-        // Premise guard: the truncated field read must throw. If a Mutagen upgrade ever parses
-        // it leniently, the assertions below stop testing the unwind.
-        Action readField = () => _ = corruptDonor.NAM5;
-        readField.Should().Throw<Exception>();
-
-        var spi = NewInterface(out var env);
-        var target = FormKey.Factory("000801:Target.esp");
-
-        Action act = () => spi.CreateSkyPatcherNpc(target, corruptDonor);
-        act.Should().Throw<Exception>();
-
-        env.OutputMod.Npcs.Should().BeEmpty("a failed surrogate build must unwind its AddNew");
-        spi.TryGetSurrogateFormKey(target, out _).Should().BeFalse();
-        spi.HasSkinEntries().Should().BeFalse();
-
-        // The failed seed must not poison the target: the next (healthy) donor still lands.
-        spi.CreateSkyPatcherNpc(target, MakeDonor()).EditorID.Should().Be("DonorNpc_Template");
-    }
-
-    /// <summary>
-    /// Byte surgery on a written plugin: truncates the single NAM5 subrecord's payload from 2
-    /// bytes to 1, keeping the subrecord length, the NPC_ record's data size and the top group's
-    /// length consistent — the file still opens and its subrecord walk stays aligned everywhere
-    /// except the NAM5 field read itself, the same shape as the corrupt plugins seen in the wild.
-    /// </summary>
-    private static void TruncateNam5(string pluginPath)
-    {
-        var bytes = File.ReadAllBytes(pluginPath);
-
-        int nam5 = bytes.AsSpan().IndexOf("NAM5"u8);
-        nam5.Should().BeGreaterThan(0, "the donor NPC was written with NAM5 set");
-        bytes.AsSpan().LastIndexOf("NAM5"u8).Should().Be(nam5, "the test assumes a single NAM5 subrecord");
-        BitConverter.ToUInt16(bytes, nam5 + 4).Should().Be(2, "NAM5 is written as a 2-byte field");
-
-        // File layout: TES4 record (24-byte header, uint32 data size at +4), then the NPC_ top
-        // group ("GRUP", uint32 length at +4 that includes its own 24-byte header, "NPC_" label
-        // at +8), then the single NPC_ record (24-byte header, uint32 data size at +4).
-        int grup = 24 + BitConverter.ToInt32(bytes, 4);
-        Encoding.ASCII.GetString(bytes, grup, 4).Should().Be("GRUP");
-        Encoding.ASCII.GetString(bytes, grup + 8, 4).Should().Be("NPC_");
-        int rec = grup + 24;
-        Encoding.ASCII.GetString(bytes, rec, 4).Should().Be("NPC_");
-        int recSize = BitConverter.ToInt32(bytes, rec + 4);
-        nam5.Should().BeInRange(rec + 24, rec + 24 + recSize - 6, "NAM5 must sit inside the NPC_ record's data");
-
-        BitConverter.GetBytes((ushort)1).CopyTo(bytes, nam5 + 4);
-        BitConverter.GetBytes(recSize - 1).CopyTo(bytes, rec + 4);
-        BitConverter.GetBytes(BitConverter.ToInt32(bytes, grup + 4) - 1).CopyTo(bytes, grup + 4);
-
-        var truncated = new byte[bytes.Length - 1];
-        int drop = nam5 + 6 + 1; // subrecord header is sig(4) + len(2); keep payload byte 1, drop byte 2
-        Array.Copy(bytes, 0, truncated, 0, drop);
-        Array.Copy(bytes, drop + 1, truncated, drop, bytes.Length - drop - 1);
-        File.WriteAllBytes(pluginPath, truncated);
-    }
-
     // ── Directive guards (early-return when target not seeded / null) ─────────
 
     [Fact]
@@ -277,7 +125,7 @@ public class SkyPatcherInterfaceTests
         var spi = NewInterface(out _);
         var unseeded = FormKey.Factory("00ABCD:Nope.esp");
 
-        // No CreateSkyPatcherNpc for this key -> every directive must early-return harmlessly.
+        // No AddNpc for this key -> every directive must early-return harmlessly.
         spi.ApplyFace(unseeded, FormKey.Factory("000111:F.esp"));
         spi.ApplySkin(unseeded, FormKey.Factory("000222:S.esp"));
         spi.ApplyRace(unseeded, FormKey.Factory("000333:R.esp"));
@@ -299,7 +147,7 @@ public class SkyPatcherInterfaceTests
         var spi = NewInterface(out _);
         var target = FormKey.Factory("013295:Skyrim.esm");
 
-        // Record mode: nothing ever calls CreateSkyPatcherNpc, so SetOutfit would
+        // Record mode: nothing ever calls AddNpc, so SetOutfit would
         // early-return. The standalone entry point has to mint the container itself.
         spi.SetOutfit(target, FormKey.Factory("000801:NPCTest.esp"));
         spi.HasEntries.Should().BeFalse("SetOutfit only decorates an existing surrogate line");
@@ -383,7 +231,7 @@ public class SkyPatcherInterfaceTests
         using var tmp = new TempDir();
         var spi = NewInterface(out _);
         var target = FormKey.Factory("000801:T.esp");
-        spi.CreateSkyPatcherNpc(target, MakeDonor());
+        spi.AddNpc(target);
 
         spi.ApplyFace(target, FormKey.Factory("000800:Skyrim.esm"));
         spi.SetOutfitStandalone(target, FormKey.Factory("000900:NPCTest.esp"));
@@ -411,7 +259,7 @@ public class SkyPatcherInterfaceTests
     {
         var spi = NewInterface(out _);
         var target = FormKey.Factory("000801:T.esp");
-        spi.CreateSkyPatcherNpc(target, MakeDonor());
+        spi.AddNpc(target);
 
         spi.ApplyFace(target, FormKey.Null); // null face -> guard returns before adding
 
@@ -423,7 +271,7 @@ public class SkyPatcherInterfaceTests
     {
         var spi = NewInterface(out _);
         var target = FormKey.Factory("000801:T.esp");
-        spi.CreateSkyPatcherNpc(target, MakeDonor());
+        spi.AddNpc(target);
 
         spi.ApplySkin(target, FormKey.Null);
 
@@ -435,7 +283,7 @@ public class SkyPatcherInterfaceTests
     {
         var spi = NewInterface(out _);
         var target = FormKey.Factory("000801:T.esp");
-        spi.CreateSkyPatcherNpc(target, MakeDonor());
+        spi.AddNpc(target);
 
         spi.ApplyRace(target, FormKey.Null);
 
@@ -450,7 +298,7 @@ public class SkyPatcherInterfaceTests
         using var tmp = new TempDir();
         var spi = NewInterface(out _);
         var target = FormKey.Factory("000801:T.esp");
-        spi.CreateSkyPatcherNpc(target, MakeDonor());
+        spi.AddNpc(target);
 
         spi.ApplyFace(target, FormKey.Factory("000800:Skyrim.esm"));
         spi.WriteIni(tmp.Path);
@@ -465,7 +313,7 @@ public class SkyPatcherInterfaceTests
         using var tmp = new TempDir();
         var spi = NewInterface(out _);
         var target = FormKey.Factory("000801:T.esp");
-        spi.CreateSkyPatcherNpc(target, MakeDonor());
+        spi.AddNpc(target);
 
         spi.ApplySkin(target, FormKey.Factory("00AB12:Skins.esp"));
         GetActionStrings(spi, target).Should().ContainSingle()
@@ -477,7 +325,7 @@ public class SkyPatcherInterfaceTests
     {
         var spi = NewInterface(out _);
         var target = FormKey.Factory("000801:T.esp");
-        spi.CreateSkyPatcherNpc(target, MakeDonor());
+        spi.AddNpc(target);
 
         spi.ApplyRace(target, FormKey.Factory("000FF0:Skyrim.esm"));
         GetActionStrings(spi, target).Should().ContainSingle()
@@ -489,7 +337,7 @@ public class SkyPatcherInterfaceTests
     {
         var spi = NewInterface(out _);
         var target = FormKey.Factory("000801:T.esp");
-        spi.CreateSkyPatcherNpc(target, MakeDonor());
+        spi.AddNpc(target);
 
         spi.ToggleGender(target, Gender.Female);
         GetActionStrings(spi, target).Should().ContainSingle().Which.Should().Be("setFlags=female");
@@ -500,7 +348,7 @@ public class SkyPatcherInterfaceTests
     {
         var spi = NewInterface(out _);
         var target = FormKey.Factory("000801:T.esp");
-        spi.CreateSkyPatcherNpc(target, MakeDonor());
+        spi.AddNpc(target);
 
         spi.ToggleGender(target, Gender.Male);
         GetActionStrings(spi, target).Should().ContainSingle().Which.Should().Be("removeFlags=female");
@@ -516,7 +364,7 @@ public class SkyPatcherInterfaceTests
         using var g = new StaticStateGuard().WithCulture("de-DE");
         var spi = NewInterface(out _);
         var target = FormKey.Factory("000801:T.esp");
-        spi.CreateSkyPatcherNpc(target, MakeDonor());
+        spi.AddNpc(target);
 
         spi.ApplyHeight(target, 0.975f);
 
@@ -529,7 +377,7 @@ public class SkyPatcherInterfaceTests
         using var g = new StaticStateGuard().WithCulture("de-DE");
         var spi = NewInterface(out _);
         var target = FormKey.Factory("000801:T.esp");
-        spi.CreateSkyPatcherNpc(target, MakeDonor());
+        spi.AddNpc(target);
 
         spi.ApplyWeight(target, 12.5f);
 
@@ -541,7 +389,7 @@ public class SkyPatcherInterfaceTests
     {
         var spi = NewInterface(out _);
         var target = FormKey.Factory("000801:T.esp");
-        spi.CreateSkyPatcherNpc(target, MakeDonor());
+        spi.AddNpc(target);
 
         spi.ApplyHeight(target, 1f);
         GetActionStrings(spi, target).Should().ContainSingle().Which.Should().Be("height=1");
@@ -555,7 +403,7 @@ public class SkyPatcherInterfaceTests
         using var tmp = new TempDir();
         var spi = NewInterface(out _);
         var target = FormKey.Factory("000801:T.esp");
-        spi.CreateSkyPatcherNpc(target, MakeDonor());
+        spi.AddNpc(target);
 
         // Add out of order; WriteIni applies .Order() (ordinal) -> height < skin < weight.
         spi.ApplyWeight(target, 50f);
@@ -579,7 +427,7 @@ public class SkyPatcherInterfaceTests
         using var tmp = new TempDir();
         var spi = NewInterface(out var env);
         var target = FormKey.Factory("000801:T.esp");
-        spi.CreateSkyPatcherNpc(target, MakeDonor());
+        spi.AddNpc(target);
 
         var outputFace = FormKey.Factory("000800:NPCTest.esp"); // lives in the output plugin
         spi.ApplyFace(target, outputFace);
@@ -605,7 +453,7 @@ public class SkyPatcherInterfaceTests
         using var tmp = new TempDir();
         var spi = NewInterface(out _);
         var target = FormKey.Factory("000801:T.esp");
-        spi.CreateSkyPatcherNpc(target, MakeDonor());
+        spi.AddNpc(target);
         spi.ApplyFace(target, FormKey.Factory("000800:NPCTest.esp"));
 
         spi.WriteIni(tmp.Path, null).Should().BeTrue();
@@ -622,7 +470,7 @@ public class SkyPatcherInterfaceTests
         using var tmp = new TempDir();
         var spi = NewInterface(out _);
         var target = FormKey.Factory("000801:T.esp");
-        spi.CreateSkyPatcherNpc(target, MakeDonor());
+        spi.AddNpc(target);
         spi.ApplyFace(target, FormKey.Factory("000800:NPCTest.esp"));
 
         var remap = new Dictionary<FormKey, FormKey>
@@ -656,7 +504,7 @@ public class SkyPatcherInterfaceTests
         using var tmp = new TempDir();
         var spi = NewInterface(out _);
         var target = FormKey.Factory("000801:T.esp");
-        spi.CreateSkyPatcherNpc(target, MakeDonor());
+        spi.AddNpc(target);
         spi.ApplyHeight(target, 1f);
 
         spi.WriteIni(tmp.Path).Should().BeTrue();
@@ -675,8 +523,8 @@ public class SkyPatcherInterfaceTests
 
         var t1 = FormKey.Factory("000801:T.esp");
         var t2 = FormKey.Factory("000802:T.esp");
-        spi.CreateSkyPatcherNpc(t1, MakeDonor("A", "DonorA.esp"));
-        spi.CreateSkyPatcherNpc(t2, MakeDonor("B", "DonorB.esp"));
+        spi.AddNpc(t1);
+        spi.AddNpc(t2);
         spi.ApplyHeight(t1, 1f);
         spi.ApplyHeight(t2, 2f);
 
@@ -712,7 +560,7 @@ public class SkyPatcherInterfaceTests
     {
         var spi = NewInterface(out _);
         spi.HasSkinEntries().Should().BeFalse();
-        spi.CreateSkyPatcherNpc(FormKey.Factory("000801:T.esp"), MakeDonor());
+        spi.AddNpc(FormKey.Factory("000801:T.esp"));
         spi.HasSkinEntries().Should().BeTrue();
     }
 
@@ -724,7 +572,7 @@ public class SkyPatcherInterfaceTests
         using var tmp = new TempDir();
         var spi = NewInterface(out _);
         var target = FormKey.Factory("000801:T.esp");
-        spi.CreateSkyPatcherNpc(target, MakeDonor());
+        spi.AddNpc(target);
         spi.ApplyHeight(target, 1f);
         spi.WriteIni(tmp.Path).Should().BeTrue();
 
@@ -735,7 +583,6 @@ public class SkyPatcherInterfaceTests
 
         // All bookkeeping cleared...
         spi.HasSkinEntries().Should().BeFalse();
-        spi.TryGetSurrogateFormKey(target, out _).Should().BeFalse();
         // ...and the previously-written .ini is deleted.
         File.Exists(iniPath).Should().BeFalse();
     }
@@ -757,13 +604,51 @@ public class SkyPatcherInterfaceTests
         using var tmp = new TempDir();
         var spi = NewInterface(out _);
         var target = FormKey.Factory("000801:T.esp");
-        spi.CreateSkyPatcherNpc(target, MakeDonor("A"));
+        spi.AddNpc(target);
 
         spi.Reinitialize(tmp.Path);
 
-        // Maps were cleared, so the same target key can be seeded again without the duplicate-Add throw.
-        Action reseed = () => spi.CreateSkyPatcherNpc(target, MakeDonor("B"));
+        // Lines were cleared, so the same target key can be opened again without the duplicate-Add throw.
+        Action reseed = () => spi.AddNpc(target);
         reseed.Should().NotThrow();
+    }
+
+    // ── Lines without directives (Recast Hybrid) ──────────────────────────────
+
+    [Fact]
+    public void WriteIni_SkipsLinesWithNoDirective()
+    {
+        // Under Recast Hybrid every surrogate target gets a line opened, but only NPCs that need
+        // race=, an outfit or keywords end up with a directive. An empty "filterByNPCs=X:" line
+        // must not be written, and HasEntries must not count it.
+        using var tmp = new TempDir();
+        var spi = NewInterface(out _);
+        var bare = FormKey.Factory("000801:T.esp");
+        var raced = FormKey.Factory("000802:T.esp");
+        spi.AddNpc(bare);
+        spi.HasEntries.Should().BeFalse("an opened line with no directive writes nothing");
+
+        spi.AddNpc(raced);
+        spi.ApplyRace(raced, FormKey.Factory("000FF0:Skyrim.esm"));
+        spi.HasEntries.Should().BeTrue();
+        spi.WriteIni(tmp.Path).Should().BeTrue();
+
+        File.ReadAllText(IniPath(tmp.Path)).TrimEnd('\r', '\n')
+            .Should().Be("filterByNPCs=T.esp|802:race=Skyrim.esm|FF0");
+    }
+
+    [Fact]
+    public void ApplyKeywords_MapsTheSurrogateBackToItsTargetThroughTheRegistry()
+    {
+        var spi = NewInterface(out _, out var surrogates);
+        var target = FormKey.Factory("000801:T.esp");
+        var surrogate = surrogates.CreateSurrogate(target,
+            MutagenFixtures.NewNpc(MutagenFixtures.NewMod("Donor.esp"), editorId: "Donor"));
+        spi.AddNpc(target);
+
+        spi.ApplyKeywords(surrogate.FormKey, new[] { "KwA", " ", "KwB" });
+
+        GetActionStrings(spi, target).Should().ContainSingle().Which.Should().Be("keywordsToAdd=KwA,KwB");
     }
 
     // ── Reflection helper: read a seeded NPC's ActionStrings without WriteIni ──
@@ -779,7 +664,7 @@ public class SkyPatcherInterfaceTests
     {
         var outputs = Reflect.GetField<System.Collections.IDictionary>(spi, "_outputs");
         var container = outputs[target];
-        container.Should().NotBeNull("the target must have been seeded via CreateSkyPatcherNpc");
+        container.Should().NotBeNull("the target must have been opened via AddNpc");
         var actions = (System.Collections.IEnumerable)container!.GetType().GetProperty("Actions")!.GetValue(container)!;
 
         var rendered = new List<string>();

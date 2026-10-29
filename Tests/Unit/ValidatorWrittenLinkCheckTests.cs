@@ -423,7 +423,7 @@ public class ValidatorWrittenLinkCheckTests
 
         object? Screen(PatchingMode mode, bool skyPatcher) =>
             Reflect.Invoke<object>(
-                HarnessValidator(new Settings { PatchingMode = mode, UseSkyPatcherMode = skyPatcher }),
+                HarnessValidator(new Settings { PatchingMode = mode, OutputBackend = skyPatcher ? OutputBackend.SkyPatcher : OutputBackend.ESP }),
                 "FindUnwritableLink",
                 SweepNpc, SweepNpc, SweepMod(folder), loadOrder, implicits, owners);
 
@@ -467,7 +467,7 @@ public class ValidatorWrittenLinkCheckTests
 
     private static object? ScreenScripted(string folder, PatchingMode mode = PatchingMode.Create)
         => Reflect.Invoke<object>(
-            HarnessValidator(new Settings { PatchingMode = mode, UseSkyPatcherMode = false }),
+            HarnessValidator(new Settings { PatchingMode = mode, OutputBackend = OutputBackend.ESP }),
             "FindUnwritableLink",
             SweepNpc, SweepNpc, SweepMod(folder),
             new List<ModKey> { MutagenFixtures.Mk("WLTestMaster.esm") },

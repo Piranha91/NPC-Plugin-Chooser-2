@@ -13,14 +13,31 @@ public class NpcToken
 
     /// <summary>
     /// The output mode that produced this run: the <see cref="Models.PatchingMode"/> name plus
-    /// whether SkyPatcher output was on. "Validate Output" grades the deployed files against the
-    /// CURRENT settings (effective wig/antler modes included), so validating an output produced
-    /// under a different mode floods the report with false mismatches — these let it say so up
-    /// front instead. Null in tokens written by older versions, which readers must treat as
-    /// "unknown", never as a mismatch.
+    /// the <see cref="Models.OutputBackend"/> (and <see cref="Models.RecastMode"/> under Recast).
+    /// "Validate Output" grades the deployed files against the CURRENT settings (effective
+    /// wig/antler modes included), so validating an output produced under a different mode floods
+    /// the report with false mismatches — these let it say so up front instead. Null in tokens
+    /// written by older versions, which readers must treat as "unknown", never as a mismatch.
     /// </summary>
     public string? PatchingMode { get; set; }
+    public string? OutputBackend { get; set; }
+    public string? RecastMode { get; set; }
+
+    /// <summary>
+    /// Written by versions before <see cref="OutputBackend"/> existed; still read so their tokens
+    /// keep reporting the mode they ran under. New tokens leave it null. Use
+    /// <see cref="GetEffectiveOutputBackend"/> rather than reading either field directly.
+    /// </summary>
     public bool? UseSkyPatcherMode { get; set; }
+
+    /// <summary>The backend this run used, or null when the token predates both fields. A method
+    /// rather than a property so it is not serialized into the token.</summary>
+    public string? GetEffectiveOutputBackend() => OutputBackend ?? UseSkyPatcherMode switch
+    {
+        true => nameof(Models.OutputBackend.SkyPatcher),
+        false => nameof(Models.OutputBackend.ESP),
+        null => null,
+    };
 
     public Dictionary<FormKey, NpcAppearanceData> ProcessedNpcs { get; set; } = new();
 

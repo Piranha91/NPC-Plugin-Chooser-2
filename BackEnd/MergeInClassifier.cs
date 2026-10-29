@@ -114,8 +114,9 @@ public static class MergeInClassifier
 
     /// <summary>
     /// Counts the distinct NPCs targeted by SkyPatcher visual-replacer INIs
-    /// (<c>filterByNpcs=</c> lines that carry a <c>copyVisualStyle=</c> action) under the
-    /// given mod folders. Purely lexical — no FormKey/EditorID resolution — so it can run at
+    /// (<c>filterByNpcs=</c> lines that carry a <c>copyVisualStyle=</c> action) and by Recast
+    /// patch TOMLs (face entries) under the given mod folders. Purely lexical — no
+    /// FormKey/EditorID resolution — so it can run at
     /// scan time before the environment-dependent SkyPatcher analysis populates
     /// <c>SkyPatcherTargetModKeys</c>.
     /// </summary>
@@ -125,9 +126,11 @@ public static class MergeInClassifier
         foreach (var folder in modFolderPaths)
         {
             string iniDir = Path.Combine(folder, "SKSE", "Plugins", "SkyPatcher", "npc");
-            if (!Directory.Exists(iniDir)) continue;
+            var iniFiles = Directory.Exists(iniDir)
+                ? Directory.EnumerateFiles(iniDir, "*.ini", SearchOption.AllDirectories)
+                : Enumerable.Empty<string>();
 
-            foreach (var iniFile in Directory.EnumerateFiles(iniDir, "*.ini", SearchOption.AllDirectories))
+            foreach (var iniFile in iniFiles)
             {
                 string[] lines;
                 try
@@ -151,6 +154,15 @@ public static class MergeInClassifier
                         var target = token.Trim();
                         if (target.Length > 0) targets.Add(target);
                     }
+                }
+            }
+
+            // Recast replacer packs are donor payloads for their targets in exactly the same way.
+            foreach (var tomlFile in RecastPatchReader.EnumeratePatchFiles(folder))
+            {
+                foreach (var face in RecastPatchReader.ReadFile(tomlFile).Faces)
+                {
+                    targets.Add(face.Target.Identity);
                 }
             }
         }

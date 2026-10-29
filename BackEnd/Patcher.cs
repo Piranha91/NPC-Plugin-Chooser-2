@@ -30,6 +30,8 @@ public class Patcher : OptionalUIModule
     private readonly PluginProvider _pluginProvider;
     private readonly BsaHandler _bsaHandler;
     private readonly SkyPatcherInterface _skyPatcherInterface;
+    private readonly SurrogateNpcRegistry _surrogates;
+    private readonly RecastInterface _recastInterface;
     private readonly WigForwarder _wigForwarder;
     private readonly HeadPartWigConverter _headPartWigConverter;
     private readonly ForwardedOutfitDistributor _forwardedOutfitDistributor;
@@ -142,6 +144,10 @@ public class Patcher : OptionalUIModule
     // the copy-time check in CopyAppearanceData and by BuildDanglingMasterDiagnostics.
     private HashSet<ModKey> _allowedMasterKeys = new();
 
+    // RecastOnly cannot deliver keywords (Recast has no keyword support and there is no ini).
+    // Collected per iteration so the run log names each affected mod once.
+    private readonly HashSet<string> _recastOnlyDroppedKeywordMods = new(StringComparer.OrdinalIgnoreCase);
+
     // Per-NPC appearance provenance, recorded as each NPC is patched so a save failure at
     // the very end of the run can still name the mod and plugin a bad reference came from.
     // Written from the (sequentially awaited) patch loop; read only after it completes.
@@ -153,6 +159,7 @@ public class Patcher : OptionalUIModule
     public Patcher(EnvironmentStateProvider environmentStateProvider, Settings settings, Validator validator,
         AssetHandler assetHandler, RecordHandler recordHandler, Auxilliary aux, RecordDeltaPatcher recordDeltaPatcher,
         PluginProvider pluginProvider, BsaHandler bsaHandler, SkyPatcherInterface skyPatcherInterface,
+        SurrogateNpcRegistry surrogates, RecastInterface recastInterface,
         WigForwarder wigForwarder, HeadPartWigConverter headPartWigConverter,
         ForwardedOutfitDistributor forwardedOutfitDistributor,
         OutfitDisplayResolver outfitDisplayResolver,
@@ -169,6 +176,8 @@ public class Patcher : OptionalUIModule
         _pluginProvider = pluginProvider;
         _bsaHandler = bsaHandler;
         _skyPatcherInterface = skyPatcherInterface;
+        _surrogates = surrogates;
+        _recastInterface = recastInterface;
         _wigForwarder = wigForwarder;
         _headPartWigConverter = headPartWigConverter;
         _forwardedOutfitDistributor = forwardedOutfitDistributor;
@@ -657,7 +666,13 @@ public class Patcher : OptionalUIModule
             // this plugin's: the directory clear below spares non-asset folders (so SKSE\ is
             // never touched), and a run that splits into fewer plugins than the last one
             // would otherwise leave orphaned configs still applying in game.
+            // The Recast TOML is swept the same way in every backend, so switching backend away
+            // from Recast never leaves a stale face swap behind — and switching TO Recast never
+            // leaves copyVisualStyle on the same NPCs, which the ini sweep above already covers.
             _skyPatcherInterface.Reinitialize(_currentRunOutputAssetPath, isFirstIteration);
+            _recastInterface.Reinitialize(_currentRunOutputAssetPath, isFirstIteration);
+            _surrogates.Reinitialize();
+            _recastOnlyDroppedKeywordMods.Clear();
             _forwardedOutfitDistributor.Reinitialize(_currentRunOutputAssetPath,
                 _environmentStateProvider.OutputMod.ModKey, isFirstIteration);
 
@@ -1196,15 +1211,15 @@ public class Patcher : OptionalUIModule
                                         AppendLog(
                                             $"      Mode: Create and Patch. Patching winning override ({winningNpcOverride.FormKey.ModKey.FileName}) with appearance from {appearanceModKey?.FileName ?? "N/A"}.");
 
-                                        if (_settings.UseSkyPatcherMode)
+                                        if (_settings.UsesSurrogates)
                                         {
-                                            // SkyPatcher applies the appearance at runtime; nothing overrides the
+                                            // The backend applies the appearance at runtime; nothing overrides the
                                             // recipient NPC record in-game, so the surrogate template must be the
                                             // DONOR appearance record (not the recipient). Building it from
                                             // winningNpcOverride would drag the recipient's packages/items/factions
                                             // into the output and master it to every non-appearance data plugin.
                                             // Terminus supplied so an inherited appearance is flattened
-                                            // into the surrogate — see CreateSkyPatcherNpc. CopyAppearanceData
+                                            // into the surrogate — see SurrogateNpcRegistry.CreateSurrogate. CopyAppearanceData
                                             // below re-copies donor fields, so it re-applies the same overlay.
                                             //
                                             // appearanceOnly: the DeepCopyIn also hands the surrogate the
@@ -1216,7 +1231,7 @@ public class Patcher : OptionalUIModule
                                             // the recipient's own.
                                             try
                                             {
-                                                patchNpc = _skyPatcherInterface.CreateSkyPatcherNpc(npcFormKey,
+                                                patchNpc = CreateSurrogate(npcFormKey,
                                                     appearanceNpcRecord, flattenTerminus,
                                                     appearanceOnly: true, includeOutfit: includeOutfit);
                                             }
@@ -1438,7 +1453,7 @@ public class Patcher : OptionalUIModule
                                                                 $"      ERROR: Failed to apply dependency override {ctx.Record.FormKey} for {npcIdentifier}. Removing this NPC from the output mod and skipping. Details: {ex.Message}",
                                                                 isError: true,
                                                                 forceLog: true);
-                                                            if (!_settings.UseSkyPatcherMode)
+                                                            if (!_settings.UsesSurrogates)
                                                             {
                                                                 _environmentStateProvider.OutputMod.Npcs.Remove(patchNpc.FormKey);
                                                             }
@@ -1504,7 +1519,7 @@ public class Patcher : OptionalUIModule
                                                 // unreferenced duplicates there.
                                                 List<IFormLinkGetter>? additionalRootLinks = null;
                                                 HashSet<FormKey>? excludedDonorRootKeys = null;
-                                                if (_settings.UseSkyPatcherMode ||
+                                                if (_settings.UsesSurrogates ||
                                                     _settings.PatchingMode == PatchingMode.CreateAndPatch)
                                                 {
                                                     additionalRootLinks = new();
@@ -1548,7 +1563,7 @@ public class Patcher : OptionalUIModule
                                                             additionalRootLinks.Add(winningNpcOverride.DefaultOutfit);
                                                         }
 
-                                                        if (_settings.UseSkyPatcherMode &&
+                                                        if (_settings.UsesSurrogates &&
                                                             ResolveRecipientEffectiveOutfit(npcFormKey,
                                                                 appearanceNpcRecord.FormKey,
                                                                 appearanceModSetting) is { } effectiveOutfit &&
@@ -1645,15 +1660,15 @@ public class Patcher : OptionalUIModule
                                         AppendLog(
                                             $"      Mode: Create. Forwarding record from source plugin ({appearanceModKey?.FileName ?? "N/A"}).");
 
-                                        if (_settings.UseSkyPatcherMode)
+                                        if (_settings.UsesSurrogates)
                                         {
                                             // Terminus supplied so an inherited appearance is flattened
-                                            // into the surrogate — see CreateSkyPatcherNpc. No
+                                            // into the surrogate — see SurrogateNpcRegistry.CreateSurrogate. No
                                             // CopyAppearanceData runs in this branch, so the surrogate's
                                             // overlay is not disturbed afterwards.
                                             try
                                             {
-                                                patchNpc = _skyPatcherInterface.CreateSkyPatcherNpc(npcFormKey,
+                                                patchNpc = CreateSurrogate(npcFormKey,
                                                     appearanceNpcRecord, flattenTerminus);
                                             }
                                             catch (Exception ex)
@@ -1805,7 +1820,7 @@ public class Patcher : OptionalUIModule
                                                             $"      ERROR: Failed to apply dependency override {ctx.Record.FormKey} for {npcIdentifier}. Removing this NPC from the output mod and skipping. Details: {ex.Message}",
                                                             isError: true,
                                                             forceLog: true);
-                                                        if (!_settings.UseSkyPatcherMode)
+                                                        if (!_settings.UsesSurrogates)
                                                         {
                                                             _environmentStateProvider.OutputMod.Npcs.Remove(patchNpc.FormKey);
                                                         }
@@ -1872,7 +1887,7 @@ public class Patcher : OptionalUIModule
                                                 // unreferenced duplicates there.
                                                 List<IFormLinkGetter>? additionalRootLinks = null;
                                                 HashSet<FormKey>? excludedDonorRootKeys = null;
-                                                if (_settings.UseSkyPatcherMode ||
+                                                if (_settings.UsesSurrogates ||
                                                     _settings.PatchingMode == PatchingMode.CreateAndPatch)
                                                 {
                                                     additionalRootLinks = new();
@@ -1916,7 +1931,7 @@ public class Patcher : OptionalUIModule
                                                             additionalRootLinks.Add(winningNpcOverride.DefaultOutfit);
                                                         }
 
-                                                        if (_settings.UseSkyPatcherMode &&
+                                                        if (_settings.UsesSurrogates &&
                                                             ResolveRecipientEffectiveOutfit(npcFormKey,
                                                                 appearanceNpcRecord.FormKey,
                                                                 appearanceModSetting) is { } effectiveOutfit &&
@@ -2010,7 +2025,7 @@ public class Patcher : OptionalUIModule
                                         break;
                                 }
 
-                                ApplyKeywords(patchNpc, appearanceModSetting.Keywords);
+                                ApplyKeywords(patchNpc, appearanceModSetting.Keywords, appearanceModSetting.DisplayName);
 
                             }
                             else
@@ -2080,7 +2095,7 @@ public class Patcher : OptionalUIModule
                                     appearanceNpcRecord, npcFormKey, npcIdentifier);
 
 
-                                if (_settings.UseSkyPatcherMode)
+                                if (_settings.SkyPatcherDirectivesAvailable)
                                 {
                                     // Directives are emitted HERE — after the override switch — so
                                     // link-valued directives (race=, outfitDefault=) carry post-remap
@@ -2100,8 +2115,18 @@ public class Patcher : OptionalUIModule
                                             appearanceNpcRecord.FormKey, appearanceModSetting,
                                             includeOutfit || (wigForward?.OutfitForwarded ?? false));
                                     }
+                                }
 
+                                // The face itself travels by exactly ONE backend: a Recast face and a
+                                // SkyPatcher copyVisualStyle on the same NPC flip winner between a new
+                                // game and a loaded save (measured), so Hybrid never emits both.
+                                if (_settings.UsesSkyPatcherAppearance)
+                                {
                                     _skyPatcherInterface.ApplyCoreAppearance(npcFormKey, patchNpc);
+                                }
+                                else if (_settings.UsesRecast)
+                                {
+                                    _recastInterface.AddFace(npcFormKey, patchNpc.FormKey, npcIdentifier);
                                 }
                             }
                             else
@@ -2323,8 +2348,18 @@ public class Patcher : OptionalUIModule
                     // wig/antler pass had to republish a forwarded outfit past a contesting
                     // SkyPatcher config (see ForwardedOutfitDistributor), and the generated
                     // SPID ini likewise only when a SPID entry contested one.
-                    bool writeSkyPatcherIni = _settings.UseSkyPatcherMode || _skyPatcherInterface.HasEntries;
-                    if (writeSkyPatcherIni || _forwardedOutfitDistributor.HasSpidEntries)
+                    if (_recastOnlyDroppedKeywordMods.Count > 0)
+                    {
+                        AppendLog("WARNING: Recast-only output cannot deliver mod keywords, so they were not applied for: " +
+                                  string.Join(", ", _recastOnlyDroppedKeywordMods.Order(StringComparer.OrdinalIgnoreCase)) +
+                                  ". Switch the Recast mode to Hybrid to deliver them through SkyPatcher.", false, true);
+                    }
+
+                    // Under Recast Hybrid the ini carries only race/outfit/keyword lines, so it is
+                    // written only when some NPC needed one.
+                    bool writeSkyPatcherIni = _settings.UsesSkyPatcherAppearance || _skyPatcherInterface.HasEntries;
+                    bool writeRecastToml = _settings.UsesRecast;
+                    if (writeSkyPatcherIni || writeRecastToml || _forwardedOutfitDistributor.HasSpidEntries)
                     {
                         // If auto-split relocated output records into "<name>_2.esp"/etc., the
                         // configs' in-memory FormKeys (all "<name>.esp|ID") are stale — surrogate
@@ -2336,6 +2371,11 @@ public class Patcher : OptionalUIModule
                         if (writeSkyPatcherIni)
                         {
                             _skyPatcherInterface.WriteIni(_currentRunOutputAssetPath, outputFormKeyRemap);
+                        }
+
+                        if (writeRecastToml)
+                        {
+                            _recastInterface.WriteToml(_currentRunOutputAssetPath, outputFormKeyRemap);
                         }
 
                         _forwardedOutfitDistributor.WriteSpidConfig(_currentRunOutputAssetPath,
@@ -2479,7 +2519,8 @@ public class Patcher : OptionalUIModule
             CreationDate = DateTime.Now.ToString("o"),
             CreatedPlugins = _generatedOutputPlugins,
             PatchingMode = _settings.PatchingMode.ToString(),
-            UseSkyPatcherMode = _settings.UseSkyPatcherMode,
+            OutputBackend = _settings.OutputBackend.ToString(),
+            RecastMode = _settings.UsesRecast ? _settings.RecastMode.ToString() : null,
             ProcessedNpcs = _accumulatedTokenData,
             SkippedNpcs = _skippedTokenData,
             EditedFaceGen = new HashSet<string>(_editedFaceGenPaths.Keys, StringComparer.OrdinalIgnoreCase),
@@ -2928,7 +2969,7 @@ public class Patcher : OptionalUIModule
     /// give each NPC its own copy, chain resolved): the terminus's appearance is overlaid onto
     /// the output at the end of this method and the Traits flag is cleared, instead of the
     /// donor's inheritance being mirrored. In SkyPatcher mode the surrogate arrives here already
-    /// flattened by <see cref="SkyPatcherInterface.CreateSkyPatcherNpc"/>, and the overlay must
+    /// flattened by <see cref="SurrogateNpcRegistry.CreateSurrogate"/>, and the overlay must
     /// STILL run — the donor-field copying above it re-copies the donor's inert head data, and
     /// without the re-overlay <see cref="SyncTemplateInheritance"/> would also re-mirror the
     /// donor's Traits flag onto the surrogate, silently undoing the flatten.
@@ -3254,10 +3295,17 @@ public class Patcher : OptionalUIModule
     // (winningNpcOverride) and the donor surrogate (patchNpc). Must be called AFTER dependency
     // merge-in so the referenced FormKeys are the merged-in ones, not the stale originals.
     // Shared by both the Create and Create-and-Patch branches.
+    //
+    // Under Recast Hybrid only race= and the outfits are emitted: Recast's face= already copies the
+    // female flag and resolves a Traits-templated target itself, and an appearance directive beside
+    // a Recast face is the measured winner-flip case.
     private void ApplySkyPatcherDirectives(FormKey npcFormKey, INpcGetter winningNpcOverride, Npc patchNpc,
         bool includeOutfit)
     {
-        if (ShouldChangeGender(winningNpcOverride, patchNpc, out var genderToSet) && genderToSet != null)
+        bool skyPatcherAppearance = _settings.UsesSkyPatcherAppearance;
+
+        if (skyPatcherAppearance &&
+            ShouldChangeGender(winningNpcOverride, patchNpc, out var genderToSet) && genderToSet != null)
         {
             _skyPatcherInterface.ToggleGender(npcFormKey, genderToSet.Value);
         }
@@ -3274,7 +3322,7 @@ public class Patcher : OptionalUIModule
         // copyVisualStyle assigns `curobj->faceNPC = bo` — the recipient's face NPC becomes the
         // surrogate — plus height/weight/tintLayers/bodyTintColor/headRelatedData and the head
         // parts. It never walks a template chain and never writes a TPLT. The surrogate is a
-        // DeepCopyIn of the donor (SkyPatcherInterface.CreateSkyPatcherNpc), so it carries the
+        // DeepCopyIn of the donor (SurrogateNpcRegistry.CreateSurrogate), so it carries the
         // donor's Traits flag AND its TPLT, and an inherited face resolves from there — the
         // SkyPatcher-mode equivalent of what SyncTemplateInheritance writes in record mode.
         //
@@ -3286,7 +3334,8 @@ public class Patcher : OptionalUIModule
         // donor's. That is inert when the recipient has no TPLT, and wrong when it has one set for
         // inventory/AI inheritance with the Traits bit deliberately off. Actions are written
         // alphabetically ordered, so it would also apply after copyVisualStyle rather than before.
-        if (ShouldChangeTraitsStatus(winningNpcOverride, patchNpc, out bool hasTraitsStatus) && !hasTraitsStatus)
+        if (skyPatcherAppearance &&
+            ShouldChangeTraitsStatus(winningNpcOverride, patchNpc, out bool hasTraitsStatus) && !hasTraitsStatus)
         {
             _skyPatcherInterface.ToggleTemplateTraitsStatus(npcFormKey, false);
         }
@@ -3381,9 +3430,10 @@ public class Patcher : OptionalUIModule
         var outputMod = _environmentStateProvider.OutputMod;
         var outputKey = outputMod.ModKey;
 
-        // Referenced from OUTSIDE the plugin: the emitted SkyPatcher ini and the generated SPID
-        // ini name output records by FormID, so no FormLink in the plugin points at them.
+        // Referenced from OUTSIDE the plugin: the emitted SkyPatcher ini, the Recast TOML and the
+        // generated SPID ini name output records by FormID, so no FormLink in the plugin points at them.
         var externallyReferenced = new HashSet<FormKey>(_skyPatcherInterface.EnumerateDirectiveFormKeys());
+        externallyReferenced.UnionWith(_recastInterface.EnumerateDirectiveFormKeys());
         externallyReferenced.UnionWith(_forwardedOutfitDistributor.EnumerateSpidReferencedFormKeys());
 
         HashSet<FormKey> CollectReferenced()
@@ -3611,8 +3661,8 @@ public class Patcher : OptionalUIModule
         var sourceNif = _assetHandler.GetAssetPresence(subjectNifRel, appearanceModSetting);
         var sourceDds = _assetHandler.GetAssetPresence(subjectDdsRel, appearanceModSetting);
 
-        var mode = _settings.UseSkyPatcherMode
-            ? FaceGenDestinationMode.SkyPatcher
+        var mode = _settings.UsesSurrogates
+            ? FaceGenDestinationMode.Surrogate
             : targetNpcFormKey.Equals(appearanceNpcRecord.FormKey)
                 ? FaceGenDestinationMode.Record
                 : FaceGenDestinationMode.FaceSwap;
@@ -4767,6 +4817,23 @@ public class Patcher : OptionalUIModule
         return newKeyword;
     }
     
+    /// <summary>
+    /// Builds the runtime backend's surrogate for <paramref name="npcFormKey"/> and, when the run
+    /// can emit SkyPatcher directives, opens its ini line. Throws as
+    /// <see cref="SurrogateNpcRegistry.CreateSurrogate"/> does, leaving no state behind.
+    /// </summary>
+    private Npc CreateSurrogate(FormKey npcFormKey, INpcGetter appearanceNpcRecord, INpcGetter? flattenTerminus,
+        bool appearanceOnly = false, bool includeOutfit = false)
+    {
+        var surrogate = _surrogates.CreateSurrogate(npcFormKey, appearanceNpcRecord, flattenTerminus,
+            appearanceOnly, includeOutfit);
+        if (_settings.SkyPatcherDirectivesAvailable)
+        {
+            _skyPatcherInterface.AddNpc(npcFormKey);
+        }
+        return surrogate;
+    }
+
     // Generates all used keywords in the first pass to ensure that in a split mod, the first generated plugin gets
     // all of the keywords.
     private void GenerateKeywords()
@@ -4783,11 +4850,20 @@ public class Patcher : OptionalUIModule
         }
     }
     
-    private void ApplyKeywords(Npc patchNpc, IEnumerable<string> keywords)
+    private void ApplyKeywords(Npc patchNpc, IEnumerable<string> keywords, string modDisplayName)
     {
-        if (_settings.UseSkyPatcherMode)
+        if (_settings.SkyPatcherDirectivesAvailable)
         {
             _skyPatcherInterface.ApplyKeywords(patchNpc.FormKey, keywords);
+        }
+        else if (_settings.UsesSurrogates)
+        {
+            // RecastOnly: a keyword on the surrogate would never reach the target, so it is dropped
+            // and reported once per mod at the end of the iteration.
+            if (keywords.Any(k => !string.IsNullOrWhiteSpace(k)))
+            {
+                _recastOnlyDroppedKeywordMods.Add(modDisplayName);
+            }
         }
         else
         {

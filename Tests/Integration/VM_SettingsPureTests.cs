@@ -430,7 +430,7 @@ public class VM_SettingsPureTests
             report.Should().Contain("Output Directory:");
             report.Should().Contain("Output Name:");
             report.Should().Contain("Default Override Handling:");
-            report.Should().Contain("SkyPatcher Mode:");
+            report.Should().Contain("Output Backend:");
             report.Should().Contain("AutoEslIfy:");
         });
     }
@@ -448,7 +448,7 @@ public class VM_SettingsPureTests
             vm.MugshotsFolder = @"C:\Mugshots";
             vm.OutputDirectory = @"C:\Out";
             vm.TargetPluginName = "MyOutput.esp";
-            vm.UseSkyPatcherMode = true;
+            vm.SelectedOutputBackend = OutputBackend.SkyPatcher;
             vm.AutoEslIfy = false;
 
             var report = vm.GetStatusReport();
@@ -457,7 +457,7 @@ public class VM_SettingsPureTests
             report.Should().Contain(@"Mugshots Folder: C:\Mugshots");
             report.Should().Contain(@"Output Directory: C:\Out");
             report.Should().Contain("Output Name: MyOutput.esp");
-            report.Should().Contain("SkyPatcher Mode: True");
+            report.Should().Contain("Output Backend: SkyPatcher");
             report.Should().Contain("AutoEslIfy: False");
         });
     }

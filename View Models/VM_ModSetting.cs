@@ -884,22 +884,22 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
 
         // Wig / Antler dropdown visibility: each dropdown shows only when the
         // analysis scan detected that class AND the output mode activates the
-        // handling — Create-and-Patch record mode, or SkyPatcher mode in either
-        // PatchingMode (mirrors Settings.GetEffectiveWigMode/GetEffectiveAntlerMode).
+        // handling — Create-and-Patch record mode, or surrogate output (SkyPatcher or
+        // Recast) in either PatchingMode (mirrors Settings.WigHandlingActiveForOutputMode).
         // Wigs and antlers are gated on their own detection sets (not the union),
         // so a mod with antlers-only shows only the Antler dropdown and vice versa.
         this.WhenAnyValue(x => x.HasWigs)
             .CombineLatest(
-                _lazySettingsVm.Value.WhenAnyValue(x => x.SelectedPatchingMode, x => x.UseSkyPatcherMode),
+                _lazySettingsVm.Value.WhenAnyValue(x => x.SelectedPatchingMode, x => x.SelectedOutputBackend),
                 (hasWigs, output) => hasWigs &&
-                                     (output.Item2 || output.Item1 == PatchingMode.CreateAndPatch))
+                                     (output.Item2 != OutputBackend.ESP || output.Item1 == PatchingMode.CreateAndPatch))
             .Subscribe(visible => IsWigHandlingVisible = visible)
             .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.HasAntlers)
             .CombineLatest(
-                _lazySettingsVm.Value.WhenAnyValue(x => x.SelectedPatchingMode, x => x.UseSkyPatcherMode),
+                _lazySettingsVm.Value.WhenAnyValue(x => x.SelectedPatchingMode, x => x.SelectedOutputBackend),
                 (hasAntlers, output) => hasAntlers &&
-                                        (output.Item2 || output.Item1 == PatchingMode.CreateAndPatch))
+                                        (output.Item2 != OutputBackend.ESP || output.Item1 == PatchingMode.CreateAndPatch))
             .Subscribe(visible => IsAntlerHandlingVisible = visible)
             .DisposeWith(_disposables);
 
@@ -2974,9 +2974,10 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             }
         }
 
-        if (!iniFiles.Any()) return guestAppearances;
-
-        StartupLogger.Log($"  [{DisplayName}] Parsing {iniFiles.Count} SkyPatcher INI files");
+        if (iniFiles.Any())
+        {
+            StartupLogger.Log($"  [{DisplayName}] Parsing {iniFiles.Count} SkyPatcher INI files");
+        }
 
         foreach (var iniFile in iniFiles)
         {
@@ -3015,7 +3016,47 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             }
         }
 
+        // Recast replacer packs: the same (target, source) pairs, from the pack's patch TOMLs.
+        foreach (var (target, source) in ReadRecastFaces())
+        {
+            foreach (var targetNpcKey in RecastPatchReader.Resolve(target, environmentEditorIdMap))
+            {
+                foreach (var sourceNpcKey in RecastPatchReader.Resolve(source, modEditorIdMap))
+                {
+                    if (!NpcFormKeysToDisplayName.TryGetValue(sourceNpcKey, out var npcDisplayName))
+                    {
+                        npcDisplayName = "No Name";
+                    }
+
+                    guestAppearances.Add((targetNpcKey, sourceNpcKey, DisplayName, npcDisplayName));
+                }
+            }
+        }
+
         return guestAppearances;
+    }
+
+    /// <summary>
+    /// Every face entry in this mod's own Recast patch TOMLs
+    /// (<c>SKSE\Plugins\Recast\Patches\**.toml</c> in each of its folders), all three Recast
+    /// syntaxes included. Files and entries Recast itself would skip are skipped and logged.
+    /// </summary>
+    private List<(RecastSelector Target, RecastSelector Source)> ReadRecastFaces()
+    {
+        var faces = new List<(RecastSelector, RecastSelector)>();
+        foreach (var modPath in CorrespondingFolderPaths)
+        {
+            foreach (var file in RecastPatchReader.EnumeratePatchFiles(modPath))
+            {
+                var patch = RecastPatchReader.ReadFile(file);
+                foreach (var error in patch.Errors)
+                {
+                    StartupLogger.Log($"  [{DisplayName}] Recast: {error}");
+                }
+                faces.AddRange(patch.Faces.Select(f => (f.Target, f.Source)));
+            }
+        }
+        return faces;
     }
 
     /// <summary>
@@ -3050,8 +3091,6 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             }
         }
 
-        if (!iniFiles.Any()) return targetModKeys;
-
         foreach (var iniFile in iniFiles)
         {
             var lines = await File.ReadAllLinesAsync(iniFile);
@@ -3075,6 +3114,17 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                 {
                     targetModKeys.Add(fk.ModKey);
                 }
+            }
+        }
+
+        // Recast replacer packs, with the same env-then-mod fallback for EditorID targets.
+        foreach (var (target, _) in ReadRecastFaces())
+        {
+            var resolved = RecastPatchReader.Resolve(target, environmentEditorIdMap).ToList();
+            if (resolved.Count == 0) resolved = RecastPatchReader.Resolve(target, modEditorIdMap).ToList();
+            foreach (var fk in resolved)
+            {
+                targetModKeys.Add(fk.ModKey);
             }
         }
 

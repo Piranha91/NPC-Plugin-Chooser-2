@@ -213,7 +213,7 @@ internal sealed class WigRouteFixture : IDisposable
         AutoEslIfy = false,
         AutoSplitOutput = false,
         PatchingMode = patchingMode,
-        UseSkyPatcherMode = skyPatcherMode,
+        OutputBackend = skyPatcherMode ? OutputBackend.SkyPatcher : OutputBackend.ESP,
         DefaultWigHandlingMode = WigHandlingMode.None,
         DefaultAntlerHandlingMode = AntlerHandlingMode.None,
         TemplateHandlingMode = templateMode,
@@ -242,7 +242,7 @@ internal sealed class WigRouteFixture : IDisposable
 
         var outPluginPath = Path.Combine(settings.OutputDirectory, "NPC.esp");
         return new RouteRun(run, outPluginPath, provider.LoadOrderModKeys.ToList(), label,
-            settings.UseSkyPatcherMode);
+            settings.UsesSkyPatcherAppearance);
     }
 
     /// <summary>

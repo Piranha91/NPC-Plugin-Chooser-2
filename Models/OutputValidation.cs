@@ -42,7 +42,10 @@ public enum ValidationCheckKind
 
     /// The NPC inherits its appearance from another NPC via the Traits template flag, so the
     /// appearance checks were redirected to (or deferred to) that template.
-    Template
+    Template,
+
+    /// A Recast patch that replaces the NPC's face at runtime.
+    Recast
 }
 
 /// <summary>
