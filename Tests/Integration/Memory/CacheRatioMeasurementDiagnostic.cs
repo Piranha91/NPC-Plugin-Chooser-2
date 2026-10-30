@@ -1,5 +1,6 @@
 using System.IO;
-using CharacterViewer.Rendering;
+using SkyRender;
+using SkyRender.Character;
 using Autofac;
 using FluentAssertions;
 using Mutagen.Bethesda.Plugins;

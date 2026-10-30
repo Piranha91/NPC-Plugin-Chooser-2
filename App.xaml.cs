@@ -1,7 +1,9 @@
 // App.xaml.cs
 using Autofac;
-using CharacterViewer.Rendering;
-using CharacterViewer.Rendering.Offscreen;
+using SkyRender;
+using SkyRender.Character;
+using SkyRender.Offscreen;
+using SkyRender.Character.Offscreen;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
 using NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost.Adapters;
@@ -298,7 +300,7 @@ namespace NPC_Plugin_Chooser_2
             // CharacterViewer.Rendering host adapters — bind NPC2's concrete services
             // behind the renderer's interfaces so the renderer never sees Mutagen
             // or NPC2-specific types directly.
-            builder.RegisterType<NpcChooserViewerLoggerAdapter>().As<ICharacterViewerLogger>().SingleInstance();
+            builder.RegisterType<NpcChooserViewerLoggerAdapter>().As<IRenderLogger>().SingleInstance();
             builder.RegisterType<NpcChooserSettingsAdapter>().As<ICharacterViewerSettings>().SingleInstance();
             builder.RegisterType<NpcChooserDataFolderAdapter>().As<IDataFolderProvider>().SingleInstance();
             // AsSelf too: BatchMugshotGenerator needs the concrete adapter for
@@ -313,11 +315,8 @@ namespace NPC_Plugin_Chooser_2
 
             // CharacterViewer.Rendering leaf services.
             builder.RegisterType<NpcMeshResolver>().AsSelf().SingleInstance();
-            builder.RegisterType<CharacterViewerLogGate>().AsSelf().SingleInstance();
+            builder.RegisterType<RenderLogGate>().AsSelf().SingleInstance();
             builder.RegisterType<GameAssetResolver>().AsSelf().SingleInstance();
-            builder.RegisterType<BsdFileParser>().AsSelf().SingleInstance();
-            builder.RegisterType<BodyTriFileParser>().AsSelf().SingleInstance();
-            builder.RegisterType<BodySlideDeformer>().AsSelf().SingleInstance();
             builder.RegisterType<CharacterPreviewCache>().AsSelf().SingleInstance();
             builder.RegisterType<VM_CharacterViewer>().AsSelf();  // transient — one per preview window
 
@@ -343,15 +342,12 @@ namespace NPC_Plugin_Chooser_2
             // are amortized across many mugshot renders. The factory must be
             // called from the WPF UI thread (GLFW init constraint); see the
             // eager resolution below in InitializeCoreApplicationAsync.
-            builder.Register(c => OffscreenRendererFactory.Create(
+            builder.Register(c => NpcOffscreenRendererFactory.Create(
                     c.Resolve<CharacterPreviewCache>(),
-                    c.Resolve<BodySlideDeformer>(),
-                    c.Resolve<BsdFileParser>(),
-                    c.Resolve<BodyTriFileParser>(),
                     c.Resolve<GameAssetResolver>(),
                     c.Resolve<ICharacterViewerSettings>(),
-                    c.Resolve<CharacterViewerLogGate>(),
-                    c.Resolve<ICharacterViewerLogger>()))
+                    c.Resolve<RenderLogGate>(),
+                    c.Resolve<IRenderLogger>()))
                 .As<IOffscreenRenderer>()
                 .SingleInstance();
 
@@ -470,10 +466,10 @@ namespace NPC_Plugin_Chooser_2
             await portraitCreator.InitializeAsync();
             StartupLogger.Log("PortraitCreator initialized");
 
-            // CharacterViewer.Rendering bundled-DLL version check. Bump the
+            // SkyRender bundled-DLL version check. Bump the
             // required version when this build starts depending on an API
-            // introduced in a newer release of CharacterViewer.Rendering.
-            // Policy is documented at the top of CharacterViewerRendering.cs:
+            // introduced in a newer release of SkyRender.
+            // Policy is documented at the top of SkyRenderInfo.cs:
             // Major = breaking, Minor = additive, Patch = bugfix.
             //
             // 1.1.0 added OffscreenRenderRequest.AdditionalDataFolders +
@@ -502,11 +498,13 @@ namespace NPC_Plugin_Chooser_2
             // generator, 3D previews, and Mod Issues scan all rely on for
             // out-of-scope BSA assets (e.g. hair textures referencing the
             // original hair mod's archive).
-            var requiredViewerVersion = new Version(2, 9, 0);
-            if (CharacterViewerRendering.Version < requiredViewerVersion)
+            // 3.0.0 split the renderer into SkyRender + SkyRender.Character (renamed
+            // namespaces and types, NpcRenderRequest): an older DLL won't load at all.
+            var requiredViewerVersion = new Version(3, 0, 0);
+            if (SkyRenderInfo.Version < requiredViewerVersion)
             {
                 StartupLogger.Log(
-                    $"Bundled CharacterViewer.Rendering is v{CharacterViewerRendering.Version}; " +
+                    $"Bundled SkyRender is v{SkyRenderInfo.Version}; " +
                     $"this build of NPC2 expects v{requiredViewerVersion} or newer. " +
                     "Some Internal-renderer features may be unavailable.",
                     "WARN");

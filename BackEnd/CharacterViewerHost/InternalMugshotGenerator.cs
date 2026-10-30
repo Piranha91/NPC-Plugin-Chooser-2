@@ -4,8 +4,10 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using CharacterViewer.Rendering;
-using CharacterViewer.Rendering.Offscreen;
+using SkyRender;
+using SkyRender.Character;
+using SkyRender.Offscreen;
+using SkyRender.Character.Offscreen;
 using Mutagen.Bethesda.Plugins;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.View_Models;
@@ -28,7 +30,7 @@ public sealed class InternalMugshotGenerator
     private readonly IBsaArchiveProvider _bsa;
     private readonly BsaHandler _bsaHandler;
     private readonly GeneratedMugshotTracker _tracker;
-    private readonly CharacterViewerLogGate _logGate;
+    private readonly RenderLogGate _logGate;
     private readonly Lazy<VM_NpcSelectionBar> _npcSelectionBar;
     private readonly FaceGenConsistencyAnalyzer _faceGenConsistency;
 
@@ -54,7 +56,7 @@ public sealed class InternalMugshotGenerator
         IBsaArchiveProvider bsa,
         BsaHandler bsaHandler,
         GeneratedMugshotTracker tracker,
-        CharacterViewerLogGate logGate,
+        RenderLogGate logGate,
         Lazy<VM_NpcSelectionBar> npcSelectionBar,
         FaceGenConsistencyAnalyzer faceGenConsistency,
         CharacterPreviewCache previewCache)
@@ -145,7 +147,7 @@ public sealed class InternalMugshotGenerator
         // tile generations each get their own file (mugshots are rendered with
         // up to MaxParallelPortraitRenders concurrency and a single global
         // session would interleave them into one unreadable log). Forces
-        // CharacterViewerLogGate.Verbose on for the duration so the renderer
+        // RenderLogGate.Verbose on for the duration so the renderer
         // emits its own [CharacterViewer] verbose lines.
         using var captureScope = MaybeStartRenderLogCapture(npcFormKey, modSetting);
         // Flows into the prewarm worker (Task.Run carries the ExecutionContext) so
@@ -263,7 +265,7 @@ public sealed class InternalMugshotGenerator
             var resolutionScopes = _resolver.BuildResolutionScopes(modSetting, npcFormKey);
             host.ScopesMs = sw.ElapsedMilliseconds - preScopes;
 
-            var request = new OffscreenRenderRequest
+            var request = new NpcRenderRequest
             {
                 MeshPaths = paths,
                 MeshOverrides = meshOverrides.Count > 0 ? meshOverrides : null,
@@ -271,8 +273,8 @@ public sealed class InternalMugshotGenerator
                 Width = cfg.OutputWidth,
                 Height = cfg.OutputHeight,
                 BackgroundRgb = (cfg.BackgroundR, cfg.BackgroundG, cfg.BackgroundB),
-                Lighting = ResolveLayout(cfg.LightingLayoutName) ?? CharacterViewerLightingPresets.DefaultLayout,
-                Colors = ResolveColors(cfg.LightingColorSchemeName) ?? CharacterViewerLightingPresets.DefaultColorScheme,
+                Lighting = ResolveLayout(cfg.LightingLayoutName) ?? LightingPresets.DefaultLayout,
+                Colors = ResolveColors(cfg.LightingColorSchemeName) ?? LightingPresets.DefaultColorScheme,
                 Camera = cfg.CameraMode == InternalMugshotCameraMode.Manual
                     ? BuildOrbitStateFromManual(cfg)
                     : BuildAutoFraming(cfg),
@@ -305,7 +307,7 @@ public sealed class InternalMugshotGenerator
                 // with concurrent interactive 3D-preview loads (both share the
                 // resolver's extraction directory), causing the preview to lose
                 // mid-load extracted files and render wireframes. The cache
-                // now lives at <exe-dir>\CharacterViewerCache\ and accumulates
+                // now lives at <exe-dir>\SkyRenderCache\ and accumulates
                 // across the session — bounded by |unique BSAs| × |unique
                 // touched paths|, and intentionally reusable across runs via
                 // the resolver's per-BSA SHA token. Surface a manual clear
@@ -624,7 +626,7 @@ public sealed class InternalMugshotGenerator
                 targetNpcFormKey, out _, alwaysRenderOutfitWigsAndAntlers: true);
             var cfg = _settings.InternalMugshot;
             var fallbackHits = new List<string>();
-            var request = new OffscreenRenderRequest
+            var request = new NpcRenderRequest
             {
                 MeshPaths = paths,
                 MeshOverrides = meshOverrides.Count > 0 ? meshOverrides : null,
@@ -825,7 +827,7 @@ public sealed class InternalMugshotGenerator
     /// <summary>If <see cref="InternalMugshotSettings.LogRenderLogic"/> is on,
     /// opens a per-render flow-scoped capture writing to
     /// <c>&lt;ExeDir&gt;\RenderLogs\&lt;ModName&gt;_&lt;NpcLabel&gt;_Mugshot.txt</c> and
-    /// forces <see cref="CharacterViewerLogGate.Verbose"/> on for the
+    /// forces <see cref="RenderLogGate.Verbose"/> on for the
     /// session's duration so the renderer's verbose lines are emitted.
     /// Disposing the scope flushes the file and restores the prior verbose
     /// state. AsyncLocal scoping isolates parallel tile renders into
@@ -884,16 +886,16 @@ public sealed class InternalMugshotGenerator
         public void Dispose() { }
     }
 
-    private CharacterViewerLightingLayout? ResolveLayout(string? name)
+    private LightingLayout? ResolveLayout(string? name)
     {
         if (string.IsNullOrWhiteSpace(name)) return null;
-        return CharacterViewerLightingPresets.FindLayoutOrDefault(name, _viewerSettings.UserLightingLayouts);
+        return LightingPresets.FindLayoutOrDefault(name, _viewerSettings.UserLightingLayouts);
     }
 
-    private CharacterViewerLightingColorScheme? ResolveColors(string? name)
+    private LightingColorScheme? ResolveColors(string? name)
     {
         if (string.IsNullOrWhiteSpace(name)) return null;
-        return CharacterViewerLightingPresets.FindColorSchemeOrDefault(name, _viewerSettings.UserLightingColorSchemes);
+        return LightingPresets.FindColorSchemeOrDefault(name, _viewerSettings.UserLightingColorSchemes);
     }
 
     /// <summary>

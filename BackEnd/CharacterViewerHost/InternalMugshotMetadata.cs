@@ -3,7 +3,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
-using CharacterViewer.Rendering;
+using SkyRender;
+using SkyRender.Character;
 using Mutagen.Bethesda.Plugins;
 using Newtonsoft.Json.Linq;
 using NPC_Plugin_Chooser_2.Models;
@@ -20,7 +21,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
 /// <item><c>renderer</c>: <c>"Internal"</c> — distinguishes from legacy PNGs
 /// (which lack this field) so the checker can detect cross-renderer
 /// switches and force regen.</item>
-/// <item><c>renderer_version</c>: <see cref="CharacterViewerRendering.Version"/>
+/// <item><c>renderer_version</c>: <see cref="SkyRenderInfo.Version"/>
 /// at write time — checked against the bundled DLL's version on each load
 /// (gated on <c>AutoUpdateOldMugshots</c>).</item>
 /// <item><c>settings_hash</c>: SHA256 over every InternalMugshotSettings
@@ -207,7 +208,7 @@ public static class InternalMugshotMetadata
         var obj = new JObject
         {
             ["renderer"] = RendererName,
-            ["renderer_version"] = CharacterViewerRendering.Version.ToString(),
+            ["renderer_version"] = SkyRenderInfo.Version.ToString(),
             [PipelineSchemaKey] = PipelineSchemaVersion,
             ["npc_form_key"] = npcFormKey.ToString(),
             ["settings_hash"] = ComputeSettingsHashAtSchema(cfg, PipelineSchemaVersion,
@@ -710,7 +711,7 @@ public static class InternalMugshotMetadata
         // saved preset must not re-stale the whole library.
         if (schemaVersion >= 18)
         {
-            var layout = CharacterViewerLightingPresets.FindLayoutOrDefault(
+            var layout = LightingPresets.FindLayoutOrDefault(
                 cfg.LightingLayoutName ?? "", cfg.UserLightingLayouts);
             sb.Append('|').Append(layout.Ambient.ToString("R", inv));
             sb.Append(',').Append(layout.KeyAzimuth.ToString("R", inv));
@@ -723,7 +724,7 @@ public static class InternalMugshotMetadata
             sb.Append(',').Append(layout.RimElevation.ToString("R", inv));
             sb.Append(',').Append(layout.RimIntensity.ToString("R", inv));
 
-            var scheme = CharacterViewerLightingPresets.FindColorSchemeOrDefault(
+            var scheme = LightingPresets.FindColorSchemeOrDefault(
                 cfg.LightingColorSchemeName ?? "", cfg.UserLightingColorSchemes);
             sb.Append('|').Append(scheme.KeyR.ToString("R", inv));
             sb.Append(',').Append(scheme.KeyG.ToString("R", inv));

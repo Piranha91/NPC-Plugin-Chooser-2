@@ -26,8 +26,8 @@ public class VM_FullScreen3DPreview : ReactiveObject
     // --- Lighting selection (dropdowns + user-saved presets) ---
     private readonly string _initialLayoutName;
     private readonly string _initialColorSchemeName;
-    private readonly List<CharacterViewer.Rendering.CharacterViewerLightingLayout> _initialUserLayouts;
-    private readonly List<CharacterViewer.Rendering.CharacterViewerLightingColorScheme> _initialUserColorSchemes;
+    private readonly List<SkyRender.LightingLayout> _initialUserLayouts;
+    private readonly List<SkyRender.LightingColorScheme> _initialUserColorSchemes;
 
     // --- Background ---
     private readonly byte _initialBackgroundR;

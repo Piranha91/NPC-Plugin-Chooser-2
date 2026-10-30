@@ -3,7 +3,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
-using CharacterViewer.Rendering;
+using SkyRender;
+using SkyRender.Character;
 using Mutagen.Bethesda.Plugins;
 using Newtonsoft.Json.Linq;
 using NPC_Plugin_Chooser_2.Models;
@@ -20,7 +21,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
 /// of any other comparison — switching renderers should drop the previous
 /// renderer's outputs.</item>
 /// <item>For the active renderer, version-and-settings drift gates: Internal
-/// compares <see cref="CharacterViewerRendering.Version"/> + a hash of the
+/// compares <see cref="SkyRenderInfo.Version"/> + a hash of the
 /// relevant <see cref="InternalMugshotSettings"/>; Legacy delegates to
 /// <see cref="PortraitCreator.NeedsRegeneration"/> (program version,
 /// NIF SHA, background, lighting, etc.).</item>
@@ -272,9 +273,9 @@ public sealed class MugshotStalenessChecker
             var pngVersionStr = root["renderer_version"]?.Value<string>();
             if (string.IsNullOrWhiteSpace(pngVersionStr) ||
                 !Version.TryParse(pngVersionStr, out var pngVersion) ||
-                pngVersion < CharacterViewerRendering.Version)
+                pngVersion < SkyRenderInfo.Version)
             {
-                Trace($"  Internal: version drift png='{pngVersionStr}' current={CharacterViewerRendering.Version}");
+                Trace($"  Internal: version drift png='{pngVersionStr}' current={SkyRenderInfo.Version}");
                 return true;
             }
         }

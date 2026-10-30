@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
-using CharacterViewer.Rendering;
+using SkyRender;
+using SkyRender.Character;
 using FluentAssertions;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;

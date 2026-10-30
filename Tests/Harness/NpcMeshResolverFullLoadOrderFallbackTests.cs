@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using CharacterViewer.Rendering;
+using SkyRender;
+using SkyRender.Character;
 using FluentAssertions;
 using Mutagen.Bethesda.Plugins;
 using NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;

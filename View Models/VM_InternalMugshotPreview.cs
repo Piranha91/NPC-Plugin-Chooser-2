@@ -8,7 +8,8 @@ using System.Reactive.Disposables.Fluent;
 using System.Reactive.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using CharacterViewer.Rendering;
+using SkyRender;
+using SkyRender.Character;
 using Mutagen.Bethesda.Plugins;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
@@ -33,7 +34,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     private readonly Lazy<VM_NpcSelectionBar> _npcSelectionBar;
     private readonly EnvironmentStateProvider _env;
     private readonly NpcMeshResolver _resolver;
-    private readonly CharacterViewerLogGate _logGate;
+    private readonly RenderLogGate _logGate;
     private readonly CompositeDisposable _disposables = new();
 
     public VM_CharacterViewer Viewer { get; }
@@ -254,7 +255,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         Lazy<VM_NpcSelectionBar> npcSelectionBar,
         EnvironmentStateProvider env,
         NpcMeshResolver resolver,
-        CharacterViewerLogGate logGate)
+        RenderLogGate logGate)
     {
         Viewer = viewer;
         _settings = settings;
@@ -1029,7 +1030,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     /// <summary>If <see cref="InternalMugshotSettings.LogRenderLogic"/> is on,
     /// opens a per-render capture session writing to
     /// <c>&lt;ExeDir&gt;\RenderLogs\&lt;modName&gt;_&lt;NpcLabel&gt;_Preview.txt</c> and forces the
-    /// shared <see cref="CharacterViewerLogGate.Verbose"/> flag on for the
+    /// shared <see cref="RenderLogGate.Verbose"/> flag on for the
     /// session's duration. Disposing the returned scope flushes the file and
     /// restores the prior verbose state. When the toggle is off, returns a
     /// no-op disposable. Lifecycle is owned by

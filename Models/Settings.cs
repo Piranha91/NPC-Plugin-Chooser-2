@@ -1,4 +1,5 @@
-﻿using CharacterViewer.Rendering;
+﻿using SkyRender;
+using SkyRender.Character;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
 using System.Collections.Generic;
@@ -1398,6 +1399,6 @@ public sealed class InternalMugshotSettings
 
     // User-defined lighting presets persisted across sessions. The settings
     // adapter wraps these in ObservableCollections at runtime.
-    public List<CharacterViewerLightingLayout> UserLightingLayouts { get; set; } = new();
-    public List<CharacterViewerLightingColorScheme> UserLightingColorSchemes { get; set; } = new();
+    public List<LightingLayout> UserLightingLayouts { get; set; } = new();
+    public List<LightingColorScheme> UserLightingColorSchemes { get; set; } = new();
 }

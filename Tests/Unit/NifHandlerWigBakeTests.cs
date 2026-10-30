@@ -248,8 +248,8 @@ public class NifHandlerWigBakeTests
 
             // The mugshot pipeline reads FaceGen NIFs through the renderer's
             // survey/parse path — the baked NIF must not break it.
-            var meshBuilder = new CharacterViewer.Rendering.NifMeshBuilder(
-                new SilentViewerLogger(), new CharacterViewer.Rendering.CharacterViewerLogGate());
+            var meshBuilder = new SkyRender.NifMeshBuilder(
+                new SilentViewerLogger(), new SkyRender.RenderLogGate());
             var survey = meshBuilder.SurveyNif(tempFaceGen);
             survey.LoadOk.Should().BeTrue(survey.Error);
             var surveyedNames = survey.Shapes.Select(s => s.ShapeName).ToList();
@@ -295,7 +295,7 @@ public class NifHandlerWigBakeTests
         }
     }
 
-    private sealed class SilentViewerLogger : CharacterViewer.Rendering.ICharacterViewerLogger
+    private sealed class SilentViewerLogger : SkyRender.IRenderLogger
     {
         public void LogMessage(string message) { }
         public void LogError(string message) { }

@@ -1,7 +1,8 @@
 using System.Collections.Generic;
 using System.Reactive;
 using System.Reactive.Linq;
-using CharacterViewer.Rendering;
+using SkyRender;
+using SkyRender.Character;
 using OpenTK.Mathematics;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
