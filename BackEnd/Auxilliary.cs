@@ -692,6 +692,36 @@ public class Auxilliary : IDisposable
         return armorRace.Equals(raceGetter.FormKey) ? null : armorRace;
     }
 
+    /// <summary>
+    /// Every race reached by following ArmorRace (RNAM) from <paramref name="raceGetter"/>,
+    /// nearest first, excluding the race itself — the engine's armor-race inheritance chain.
+    /// <para>CommonLibSSE-NG's <c>TESObjectARMA::IsValidRace</c> accepts an ArmorAddon when its
+    /// Race or any AdditionalRaces entry is the actor's race or any race up the
+    /// <c>armorParentRace</c> chain (RNAM), followed recursively; there is no DefaultRace
+    /// fallback. <see cref="GetArmorRaceKey"/> stops after one hop, which covers every vanilla
+    /// race (none chains further) but not a custom race whose ArmorRace is itself a custom race
+    /// pointing at a vanilla one.</para>
+    /// <para>Stops at an unset RNAM, a self-reference, a race <paramref name="resolveRace"/>
+    /// can't resolve (that race's key is still included, as the engine would still match it),
+    /// or a cycle.</para>
+    /// </summary>
+    public static IReadOnlyList<FormKey> GetArmorRaceChain(IRaceGetter? raceGetter,
+        Func<IFormLinkGetter<IRaceGetter>, IRaceGetter?> resolveRace)
+    {
+        var chain = new List<FormKey>();
+        if (raceGetter == null) return chain;
+        var visited = new HashSet<FormKey> { raceGetter.FormKey };
+        var current = raceGetter;
+        while (current != null && !current.ArmorRace.IsNull)
+        {
+            var next = current.ArmorRace.FormKey;
+            if (!visited.Add(next)) break; // self-reference or cycle
+            chain.Add(next);
+            current = resolveRace(current.ArmorRace);
+        }
+        return chain;
+    }
+
     /// <summary>EditorID of the output-owned FormList that every head part this app MINTS uses as
     /// its ValidRaces — the wig→head-part converter's parts and the wig forwarder's modeless bald
     /// hair.</summary>
@@ -752,22 +782,29 @@ public class Auxilliary : IDisposable
     /// deliberately between the render path and the converter path.</para>
     /// </summary>
     public static bool ArmaNamesRace(IArmorAddonGetter arma, FormKey? npcRaceKey, FormKey? armorRaceKey)
+        => ArmaNamesRaceInChain(arma, npcRaceKey,
+            armorRaceKey.HasValue ? new[] { armorRaceKey.Value } : Array.Empty<FormKey>());
+
+    /// <summary>
+    /// <see cref="ArmaNamesRace(IArmorAddonGetter, FormKey?, FormKey?)"/> against the whole
+    /// armor-race chain from <see cref="GetArmorRaceChain"/> — the engine's
+    /// <c>TESObjectARMA::IsValidRace</c> rule: Race or AdditionalRaces names the actor's race
+    /// or any race up its ArmorRace chain.
+    /// </summary>
+    public static bool ArmaNamesRaceInChain(IArmorAddonGetter arma, FormKey? npcRaceKey,
+        IReadOnlyCollection<FormKey> armorRaceChain)
     {
-        if (arma.Race != null && !arma.Race.IsNull)
-        {
-            var armaRace = arma.Race.FormKey;
-            if (npcRaceKey.HasValue && armaRace.Equals(npcRaceKey.Value)) return true;
-            if (armorRaceKey.HasValue && armaRace.Equals(armorRaceKey.Value)) return true;
-        }
+        bool Matches(FormKey key) =>
+            (npcRaceKey.HasValue && key.Equals(npcRaceKey.Value)) || armorRaceChain.Contains(key);
+
+        if (arma.Race != null && !arma.Race.IsNull && Matches(arma.Race.FormKey)) return true;
 
         if (arma.AdditionalRaces != null)
         {
             foreach (var addRace in arma.AdditionalRaces)
             {
                 if (addRace == null || addRace.IsNull) continue;
-                var addKey = addRace.FormKey;
-                if (npcRaceKey.HasValue && addKey.Equals(npcRaceKey.Value)) return true;
-                if (armorRaceKey.HasValue && addKey.Equals(armorRaceKey.Value)) return true;
+                if (Matches(addRace.FormKey)) return true;
             }
         }
 

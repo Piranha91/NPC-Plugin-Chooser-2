@@ -384,6 +384,16 @@ With **Include Outfit** on, N.P.C.2's own SkyPatcher ini sets the outfit, so it 
 
 When a warning applies, the mugshot tile shows an orange **⚠** badge (hover it for which config wins and why) and the 3D preview shows a banner; when a distributor changes the outfit *without* defeating an Include Outfit request, the preview's status line simply notes where the outfit came from. Rare filter types that only exist at runtime (skill-based filters, sub-100% chances) are treated conservatively and called out as approximations in the tooltip.
 
+#### Randomly rolled outfit pieces
+
+Many outfits, guards' and soldiers' in particular, are built from *leveled lists*, which the game rolls at random each time the NPC spawns, so the same NPC can wear a different helmet or cuirass from one spawn to the next. The preview can't roll the dice, so it always draws the same, predictable result:
+
+* A list that gives **all** its entries (*Use All*) gives them all, as in game.
+* A list that picks **one** entry draws the entry the game picks most often: the one listed the most times, when every entry has the same level (e.g. the Imperial soldier list names the studded set twice and the light set once, so the studded set is drawn). On a tie, or when the entries have different levels, it draws the first one.
+* When an outfit gives two pieces for the **same body slot** (a Stormcloak soldier carries a full helmet *and* a rolled hide or scaled helmet), only one is drawn: a piece the NPC always carries wins over a rolled one, as it is the one the game shows most often. Otherwise the earlier piece in the outfit wins.
+
+So a mugshot shows one typical look, not the only one: in game, those NPCs can still turn up wearing the other pieces.
+
 ### FaceGen Analysis
 
 ![FaceGen Analysis settings](docs/Screenshots/Settings/FaceGen_Analysis_Section.png)
