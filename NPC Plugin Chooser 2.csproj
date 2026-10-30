@@ -38,9 +38,14 @@
 
     <!-- SkyRender.Character (the 3D renderer's character tier; core SkyRender comes with it),
          restored from nuget.org. The startup check compares SkyRenderInfo.Version against the
-         minimum this build needs; keep that floor in step when raising this version. -->
+         minimum this build needs; keep that floor in step when raising this version.
+         A build can override the version (for example -p:SkyRenderVersion=3.0.2-beta.1 to test a
+         prerelease from a local feed). -->
+    <PropertyGroup>
+      <SkyRenderVersion Condition="'$(SkyRenderVersion)' == ''">3.0.1</SkyRenderVersion>
+    </PropertyGroup>
     <ItemGroup>
-      <PackageReference Include="SkyRender.Character" Version="3.0.1" />
+      <PackageReference Include="SkyRender.Character" Version="$(SkyRenderVersion)" />
     </ItemGroup>
 
     <ItemGroup>
