@@ -25,6 +25,8 @@ using Newtonsoft.Json;
 using Noggog; // For IsNullOrWhitespace
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
+using NPC_Plugin_Chooser_2.BackEnd.SetupValidation;
+using NPC_Plugin_Chooser_2.View_Models.SetupWizard;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.Views;
 using NPC_Plugin_Chooser_2.Themes;
@@ -571,6 +573,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public ReactiveCommand<Unit, Unit> BackUpSettingsCommand { get; }
     public ReactiveCommand<Unit, Unit> RestoreSettingsCommand { get; }
     public ReactiveCommand<Unit, Unit> SelectModsFolderCommand { get; }
+    public ReactiveCommand<Unit, Unit> LaunchSetupWizardCommand { get; }
     public ReactiveCommand<Unit, Unit> SelectMugshotsFolderCommand { get; }
     public ReactiveCommand<Unit, Unit> SelectFaceFinderMugshotsFolderCommand { get; }
     public ReactiveCommand<Unit, Unit> SelectAutogenMugshotsFolderCommand { get; }
@@ -688,6 +691,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         // Now that the environment parameters have been set, initialize the environment
         StartupLogger.Log($"Setting environment target: {SkyrimRelease}, path: {SkyrimGamePath}");
         _environmentStateProvider.SetEnvironmentTarget(SkyrimRelease, SkyrimGamePath, TargetPluginName, ResolveOutputModFolderForEnv());
+        _appliedEnvironmentTarget = (SkyrimRelease, SkyrimGamePath, TargetPluginName);
         StartupLogger.Log("Updating environment (load order, link cache)");
         _environmentStateProvider.UpdateEnvironment();
         StartupLogger.Log($"Environment initialized, status: {_environmentStateProvider.Status}");
@@ -937,6 +941,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         BackUpSettingsCommand = ReactiveCommand.Create(BackUpSettings).DisposeWith(_disposables);
         RestoreSettingsCommand = ReactiveCommand.Create(RestoreSettings).DisposeWith(_disposables);
         SelectModsFolderCommand = ReactiveCommand.CreateFromTask(SelectModsFolderAsync).DisposeWith(_disposables);
+        LaunchSetupWizardCommand = ReactiveCommand.CreateFromTask(ShowSetupWizardAsync).DisposeWith(_disposables);
         SelectMugshotsFolderCommand =
             ReactiveCommand.CreateFromTask(SelectMugshotsFolderAsync).DisposeWith(_disposables);
         SelectFaceFinderMugshotsFolderCommand =
@@ -1719,17 +1724,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Skip(3) // Skip the 3 initial values set in the constructor
             .Throttle(TimeSpan.FromMilliseconds(250),
                 RxApp.MainThreadScheduler) // Throttle to prevent rapid-fire updates
-            .Subscribe(_ =>
-            {
-                // 1. Update the model to persist the new settings
-                _model.SkyrimRelease = SkyrimRelease;
-                _model.SkyrimGamePath = SkyrimGamePath;
-                _model.OutputPluginName = TargetPluginName;
-
-                // 2. Set the target and update the environment
-                _environmentStateProvider.SetEnvironmentTarget(SkyrimRelease, SkyrimGamePath, TargetPluginName, ResolveOutputModFolderForEnv());
-                _environmentStateProvider.UpdateEnvironment();
-            })
+            .Subscribe(_ => ApplyEnvironmentTargetNow())
             .DisposeWith(_disposables);
 
         // OAPHs for environment state
@@ -1975,6 +1970,28 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         }
     }
 
+    // The (release, game path, plugin name) the environment was last resolved for. The throttled
+    // subscription and the setup wizard both resolve through ApplyEnvironmentTargetNow; when the
+    // wizard has already resolved a target, the throttled echo of the same property changes
+    // 250 ms later finds it unchanged and does not rebuild a second time mid-scan.
+    private (SkyrimRelease, string, string)? _appliedEnvironmentTarget;
+
+    private void ApplyEnvironmentTargetNow()
+    {
+        var target = (SkyrimRelease, SkyrimGamePath, TargetPluginName);
+        if (_appliedEnvironmentTarget == target) return;
+        _appliedEnvironmentTarget = target;
+
+        // 1. Update the model to persist the new settings
+        _model.SkyrimRelease = SkyrimRelease;
+        _model.SkyrimGamePath = SkyrimGamePath;
+        _model.OutputPluginName = TargetPluginName;
+
+        // 2. Set the target and update the environment
+        _environmentStateProvider.SetEnvironmentTarget(SkyrimRelease, SkyrimGamePath, TargetPluginName, ResolveOutputModFolderForEnv());
+        _environmentStateProvider.UpdateEnvironment();
+    }
+
     // Resolves the absolute folder the patcher writes output plugins into, from the persisted model.
     // Passed to the environment provider so it can exclude this app's own output plugins from the
     // resolved load order before Mutagen maps them (preventing a self-inflicted file lock on re-runs).
@@ -2005,6 +2022,13 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             return null;
         }
     }
+
+    /// <summary>
+    /// True when this launch found no Settings.json. Gates the welcome dialog that offers the setup
+    /// wizard: keyed to the file's absence rather than a persisted flag, so settings files from
+    /// before the wizard existed never trigger it and need no migration. Not persisted.
+    /// </summary>
+    public static bool IsFreshInstall { get; private set; }
 
     public static Settings LoadSettings()
     {
@@ -2055,6 +2079,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         }
         else
         {
+            IsFreshInstall = true;
             loadedSettings = new Settings(); // Use defaults if file doesn't exist
             // Fresh install: stamp the current schema version so we don't run
             // upgrade migrations on first launch.
@@ -2370,10 +2395,149 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
 
         if (dialog.ShowDialog() != CommonFileDialogResult.Ok) return;
 
-        StartupLogger.LogPhase("Deferred Mods Folder Selection");
-        StartupLogger.Log($"User selected mods folder: {dialog.FileName}");
+        await ApplyModsFolderAsync(dialog.FileName);
+    }
 
-        ModsFolder = dialog.FileName;
+    /// <summary>
+    /// Opens the setup wizard on the current settings and, on Finish, applies what it collected.
+    /// Used by the Settings page button and the fresh-install welcome dialog.
+    /// </summary>
+    public async Task ShowSetupWizardAsync()
+    {
+        string modsFolder = ModsFolder ?? string.Empty;
+        var initial = new SetupWizardDraft
+        {
+            ModManager = Directory.Exists(modsFolder) && SetupValidators.IsVortexStagingFolder(modsFolder)
+                ? SetupModManager.Vortex
+                : SetupModManager.MO2,
+            SkyrimRelease = SkyrimRelease,
+            SkyrimGamePath = SkyrimGamePath ?? string.Empty,
+            ModsFolder = modsFolder,
+            FilterByActiveModsMO2 = FilterByActiveModsMO2,
+            MO2ModlistPath = MO2ModlistPath ?? string.Empty,
+            UseCuratedMugshots = IsFreshInstall || !string.IsNullOrWhiteSpace(MugshotsFolder),
+            UseFaceFinder = UseFaceFinderFallback,
+            UseAutoGeneration = UsePortraitCreatorFallback,
+            UseLiveTiles = EnableLiveTilesOnSelection,
+            MugshotsFolder = MugshotsFolder ?? string.Empty,
+            // The model keeps these blank while they are the defaults; the wizard shows blank = default too.
+            FaceFinderMugshotsFolder = _model.FaceFinderMugshotsFolder,
+            AutogenMugshotsFolder = _model.AutogenMugshotsFolder,
+            Renderer = SelectedRenderer,
+            OutputDirectory = OutputDirectory ?? string.Empty,
+            OutputPluginName = TargetPluginName ?? EnvironmentStateProvider.DefaultPluginName,
+            PatchingMode = SelectedPatchingMode,
+            OutputBackend = SelectedOutputBackend,
+            RecastMode = SelectedRecastMode,
+        };
+
+        using var wizard = new VM_SetupWizard(initial,
+            string.IsNullOrWhiteSpace(ModsFolder) ? null : ModsFolder,
+            _model.ModSettings.Count,
+            async () => (await _faceFinderClient.GetAllModNamesAsync()).Count);
+        var window = new SetupWizardWindow(wizard) { Owner = System.Windows.Application.Current.MainWindow };
+        if (window.ShowDialog() != true) return;
+
+        await ApplySetupWizardAsync(wizard.ToDraft());
+    }
+
+    /// <summary>
+    /// Applies a finished wizard in dependency order: plain settings, then the game environment
+    /// (resolved once, here), then whichever single reload the changes need — a mods-folder scan
+    /// covers a filter or mugshot change too, so at most one scan runs.
+    /// </summary>
+    private async Task ApplySetupWizardAsync(SetupWizardDraft d)
+    {
+        bool modsFolderChanged = string.IsNullOrWhiteSpace(ModsFolder) ||
+                                 !SetupValidators.PathsEqual(ModsFolder, d.ModsFolder);
+        bool filterChanged = FilterByActiveModsMO2 != d.FilterByActiveModsMO2 ||
+                             !string.Equals(MO2ModlistPath ?? string.Empty, d.MO2ModlistPath, StringComparison.OrdinalIgnoreCase);
+        bool mugshotsChanged = d.UseCuratedMugshots &&
+                               !string.Equals(MugshotsFolder ?? string.Empty, d.MugshotsFolder, StringComparison.OrdinalIgnoreCase);
+        StartupLogger.Log($"Applying setup wizard: modsFolderChanged={modsFolderChanged}, filterChanged={filterChanged}, mugshotsChanged={mugshotsChanged}");
+
+        // The wizard already explained (and had the user acknowledge) what these popups would say.
+        bool suppressPopups = SuppressPopupWarnings;
+        SuppressPopupWarnings = true;
+        try
+        {
+            OutputDirectory = d.OutputDirectory;
+            SelectedPatchingMode = d.PatchingMode;
+            SelectedOutputBackend = d.OutputBackend;
+            SelectedRecastMode = d.RecastMode;
+
+            UseFaceFinderFallback = d.UseFaceFinder;
+            UsePortraitCreatorFallback = d.UseAutoGeneration;
+            EnableLiveTilesOnSelection = d.UseLiveTiles;
+            SelectedRenderer = d.Renderer;
+            FaceFinderMugshotsFolder = string.IsNullOrWhiteSpace(d.FaceFinderMugshotsFolder)
+                ? Settings.GetDefaultFaceFinderMugshotsFolder()
+                : d.FaceFinderMugshotsFolder;
+            AutogenMugshotsFolder = string.IsNullOrWhiteSpace(d.AutogenMugshotsFolder)
+                ? Settings.GetDefaultAutogenMugshotsFolder()
+                : d.AutogenMugshotsFolder;
+            if (d.UseCuratedMugshots) MugshotsFolder = d.MugshotsFolder;
+            MoveUnchosenMugshotSourcesLast(d);
+
+            if (filterChanged) _suppressNextActiveModsFilterOffer = true;
+            FilterByActiveModsMO2 = d.FilterByActiveModsMO2;
+            MO2ModlistPath = d.MO2ModlistPath;
+
+            ModsFolder = d.ModsFolder;
+            SkyrimRelease = d.SkyrimRelease;
+            SkyrimGamePath = d.SkyrimGamePath;
+            TargetPluginName = string.IsNullOrWhiteSpace(d.OutputPluginName)
+                ? EnvironmentStateProvider.DefaultPluginName
+                : d.OutputPluginName;
+            ApplyEnvironmentTargetNow();
+        }
+        finally
+        {
+            SuppressPopupWarnings = suppressPopups;
+        }
+
+        if (modsFolderChanged) await ApplyModsFolderAsync(d.ModsFolder);
+        else if (filterChanged) await ReapplyActiveModsFilterAsync();
+        else if (mugshotsChanged) await RelinkMugshotsAsync();
+
+        RequestThrottledSave();
+    }
+
+    /// <summary>
+    /// Keeps the user's relative order of the sources they chose and moves the ones they did not
+    /// choose to the end. Downloaded mugshots stay linked even when unchosen; last place just
+    /// stops them winning over the sources the user picked.
+    /// </summary>
+    private void MoveUnchosenMugshotSourcesLast(SetupWizardDraft d)
+    {
+        bool IsChosen(MugshotSourceType s) => s switch
+        {
+            MugshotSourceType.DownloadedMugshots => d.UseCuratedMugshots,
+            MugshotSourceType.FaceFinder => d.UseFaceFinder,
+            MugshotSourceType.AutoGeneration => d.UseAutoGeneration,
+            MugshotSourceType.LiveTile => d.UseLiveTiles,
+            _ => false,
+        };
+
+        var current = MugshotSourcePriority.Select(i => i.Source).ToList();
+        var desired = current.Where(IsChosen).Concat(current.Where(s => !IsChosen(s))).ToList();
+        for (int target = 0; target < desired.Count; target++)
+        {
+            int index = MugshotSourcePriority.ToList().FindIndex(i => i.Source == desired[target]);
+            if (index != target) MugshotSourcePriority.Move(index, target);
+        }
+    }
+
+    /// <summary>
+    /// Switches to <paramref name="folder"/>: clears the per-mod settings of the old folder and runs
+    /// the full scan. Shared by the folder picker and the setup wizard.
+    /// </summary>
+    private async Task ApplyModsFolderAsync(string folder)
+    {
+        StartupLogger.LogPhase("Deferred Mods Folder Selection");
+        StartupLogger.Log($"User selected mods folder: {folder}");
+
+        ModsFolder = folder;
 
         VM_SplashScreen? splashScreen = null;
         try
@@ -2464,8 +2628,17 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
 
     private bool _reapplyingActiveModsFilter;
 
+    // Set by the setup wizard around its own filter change: it reloads (or scans) without asking,
+    // so the throttled offer that its property changes trigger must not ask either.
+    private bool _suppressNextActiveModsFilterOffer;
+
     private async void OfferToReapplyActiveModsFilter()
     {
+        if (_suppressNextActiveModsFilterOffer)
+        {
+            _suppressNextActiveModsFilterOffer = false;
+            return;
+        }
         if (_reapplyingActiveModsFilter || !_lazyModListVM.IsValueCreated) return;
         if (_environmentStateProvider.Status != EnvironmentStateProvider.EnvironmentStatus.Valid) return;
         // Filter on but no usable file: nothing to apply yet (the user may be about to pick one).
@@ -2481,6 +2654,12 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                 "Apply Active Mods Filter"))
             return;
 
+        await ReapplyActiveModsFilterAsync();
+    }
+
+    private async Task ReapplyActiveModsFilterAsync()
+    {
+        if (_reapplyingActiveModsFilter || !_lazyModListVM.IsValueCreated) return;
         _reapplyingActiveModsFilter = true;
         VM_SplashScreen? splashScreen = null;
         try
@@ -2549,7 +2728,12 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         if (dialog.ShowDialog() != CommonFileDialogResult.Ok) return;
 
         MugshotsFolder = dialog.FileName;
+        await RelinkMugshotsAsync();
+    }
 
+    /// <summary>Re-links mugshots after a Mugshots Folder change (folder picker and setup wizard).</summary>
+    private async Task RelinkMugshotsAsync()
+    {
         VM_SplashScreen? splashScreen = null;
         try
         {

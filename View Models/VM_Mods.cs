@@ -2042,6 +2042,23 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     #endregion
 
     /// <summary>
+    /// The enabled mod folder names in modlist.txt lines: those starting with '+'. Shared with the
+    /// setup wizard's filter preview so the preview counts exactly what the scan will keep.
+    /// </summary>
+    internal static HashSet<string> ParseEnabledModNames(IEnumerable<string> modlistLines)
+    {
+        var enabledMods = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in modlistLines)
+        {
+            if (line.StartsWith('+'))
+            {
+                enabledMods.Add(line.Substring(1).Trim());
+            }
+        }
+        return enabledMods;
+    }
+
+    /// <summary>
     /// Parses an MO2 modlist.txt and returns the set of enabled mod folder names (lines starting with '+').
     /// Returns null if the file cannot be read or filtering is not enabled.
     /// </summary>
@@ -2056,14 +2073,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         try
         {
-            var enabledMods = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var line in File.ReadLines(_settings.MO2ModlistPath))
-            {
-                if (line.StartsWith('+'))
-                {
-                    enabledMods.Add(line.Substring(1).Trim());
-                }
-            }
+            var enabledMods = ParseEnabledModNames(File.ReadLines(_settings.MO2ModlistPath));
             StartupLogger.Log($"MO2 modlist filter: {enabledMods.Count} enabled mods loaded from {_settings.MO2ModlistPath}");
             return enabledMods;
         }

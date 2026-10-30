@@ -1,0 +1,307 @@
+<Window x:Class="NPC_Plugin_Chooser_2.Views.SetupWizardWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:NPC_Plugin_Chooser_2.Views"
+        xmlns:wiz="clr-namespace:NPC_Plugin_Chooser_2.View_Models.SetupWizard"
+        xmlns:sv="clr-namespace:NPC_Plugin_Chooser_2.BackEnd.SetupValidation"
+        xmlns:themes="clr-namespace:NPC_Plugin_Chooser_2.Themes"
+        xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
+        Style="{DynamicResource ThemedWindowStyle}"
+        Title="N.P.C.2 Setup Wizard"
+        Width="760" Height="620" MinWidth="560" MinHeight="460"
+        WindowStartupLocation="CenterOwner">
+
+    <i:Interaction.Behaviors>
+        <themes:TitleBarThemingBehavior />
+    </i:Interaction.Behaviors>
+
+    <Window.Resources>
+        <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+
+        <Style x:Key="PathRow" TargetType="DockPanel">
+            <Setter Property="Margin" Value="0,4,0,4"/>
+        </Style>
+
+        <!-- ============ One template per page ============ -->
+
+        <DataTemplate DataType="{x:Type wiz:ModManagerStep}">
+            <StackPanel>
+                <TextBlock Text="Mod manager:" Margin="0,10,0,2" FontWeight="SemiBold"/>
+                <ComboBox Width="220" HorizontalAlignment="Left"
+                          ItemsSource="{Binding Wizard.ModManagers}" SelectedItem="{Binding Wizard.ModManager}"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type wiz:InstallLocationStep}">
+            <StackPanel/>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type wiz:GameVersionStep}">
+            <StackPanel>
+                <TextBlock Text="Skyrim version:" Margin="0,10,0,2" FontWeight="SemiBold"/>
+                <ComboBox Width="220" HorizontalAlignment="Left"
+                          ItemsSource="{Binding Wizard.SkyrimReleases}" SelectedItem="{Binding Wizard.SkyrimRelease}"/>
+                <TextBlock Text="{Binding DetectedInstallsText}" TextWrapping="Wrap" Margin="0,10,0,0"
+                           Foreground="{DynamicResource SecondaryForeground}"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type wiz:GameDataStep}">
+            <StackPanel>
+                <TextBlock Text="Game Data folder (blank = standard install):" Margin="0,10,0,2" FontWeight="SemiBold"/>
+                <DockPanel Style="{StaticResource PathRow}">
+                    <Button DockPanel.Dock="Right" Content="Browse..." Padding="10,2" Margin="6,0,0,0"
+                            Command="{Binding Wizard.BrowseFolderCommand}" CommandParameter="SkyrimGamePath"/>
+                    <TextBox Text="{Binding Wizard.SkyrimGamePath, UpdateSourceTrigger=PropertyChanged}"/>
+                </DockPanel>
+                <TextBlock Text="Portable game copies found near N.P.C.2:" Margin="0,10,0,2" FontWeight="SemiBold"
+                           Visibility="{Binding HasPortableGameDataFolders, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                <ItemsControl ItemsSource="{Binding PortableGameDataFolders}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <DockPanel Margin="0,2">
+                                <Button DockPanel.Dock="Right" Content="Use this" Padding="10,1" Margin="6,0,0,0"
+                                        Command="{Binding DataContext.UseFolderCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding}"/>
+                                <TextBlock Text="{Binding}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                            </DockPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type wiz:ModsFolderStep}">
+            <StackPanel>
+                <TextBlock Text="Mods folder:" Margin="0,10,0,2" FontWeight="SemiBold"/>
+                <DockPanel Style="{StaticResource PathRow}">
+                    <Button DockPanel.Dock="Right" Content="Browse..." Padding="10,2" Margin="6,0,0,0"
+                            Command="{Binding Wizard.BrowseFolderCommand}" CommandParameter="ModsFolder"/>
+                    <TextBox Text="{Binding Wizard.ModsFolder, UpdateSourceTrigger=PropertyChanged}"/>
+                </DockPanel>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type wiz:ModlistFilterStep}">
+            <StackPanel>
+                <CheckBox Content="Only scan mods that are enabled in this modlist.txt" Margin="0,10,0,0"
+                          IsChecked="{Binding Wizard.FilterByActiveModsMO2}"/>
+                <StackPanel IsEnabled="{Binding Wizard.FilterByActiveModsMO2}">
+                    <DockPanel Style="{StaticResource PathRow}">
+                        <Button DockPanel.Dock="Right" Content="Browse..." Padding="10,2" Margin="6,0,0,0" Command="{Binding Wizard.BrowseModlistCommand}"/>
+                        <TextBox Text="{Binding Wizard.MO2ModlistPath, UpdateSourceTrigger=PropertyChanged}"/>
+                    </DockPanel>
+                </StackPanel>
+                <TextBlock Text="Profiles found in this MO2 instance:" Margin="0,10,0,2" FontWeight="SemiBold"
+                           Visibility="{Binding HasProfileModlists, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                <ItemsControl ItemsSource="{Binding ProfileModlists}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <DockPanel Margin="0,2">
+                                <Button DockPanel.Dock="Right" Content="Use this" Padding="10,1" Margin="6,0,0,0"
+                                        Command="{Binding DataContext.UseModlistCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding}"/>
+                                <TextBlock Text="{Binding}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                            </DockPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type wiz:MugshotSourcesStep}">
+            <StackPanel>
+                <CheckBox Content="Downloaded (curated) mugshot packs" Margin="0,10,0,0" FontWeight="SemiBold"
+                          IsChecked="{Binding Wizard.UseCuratedMugshots}"/>
+                <StackPanel Margin="22,4,0,0"
+                            Visibility="{Binding Wizard.UseCuratedMugshots, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <TextBlock Text="Get mugshot packs from:" Margin="0,0,0,2"/>
+                    <ItemsControl ItemsSource="{Binding CuratedSources}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Margin="0,1">
+                                    <Hyperlink Command="{Binding DataContext.Wizard.OpenLinkCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                               CommandParameter="{Binding Url}"
+                                               ToolTip="{Binding Url}">
+                                        <Run Text="{Binding Name, Mode=OneWay}"/>
+                                    </Hyperlink>
+                                    <Run Text="{Binding Note, Mode=OneWay}" Foreground="{DynamicResource SecondaryForeground}"/>
+                                </TextBlock>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Foreground="{DynamicResource SecondaryForeground}"
+                               Text="The EasyNPC Discord also shares mugshots. Extract every pack into one folder."/>
+                </StackPanel>
+                <CheckBox Content="FaceFinder (download previews from npcfacefinder.com)" Margin="0,10,0,0"
+                          IsChecked="{Binding Wizard.UseFaceFinder}"/>
+                <CheckBox Content="Auto-generate missing mugshots (rendered on your PC)" Margin="0,6,0,0"
+                          IsChecked="{Binding Wizard.UseAutoGeneration}"/>
+                <CheckBox Content="Live 3D tiles when you select an NPC" Margin="0,6,0,0"
+                          IsChecked="{Binding Wizard.UseLiveTiles}"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type wiz:MugshotsFolderStep}">
+            <StackPanel>
+                <TextBlock Text="Mugshots folder:" Margin="0,10,0,2" FontWeight="SemiBold"/>
+                <DockPanel Style="{StaticResource PathRow}">
+                    <Button DockPanel.Dock="Right" Content="Browse..." Padding="10,2" Margin="6,0,0,0"
+                            Command="{Binding Wizard.BrowseFolderCommand}" CommandParameter="MugshotsFolder"/>
+                    <TextBox Text="{Binding Wizard.MugshotsFolder, UpdateSourceTrigger=PropertyChanged}"/>
+                </DockPanel>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type wiz:FaceFinderStep}">
+            <StackPanel>
+                <TextBlock Text="FaceFinder cache folder (blank = default):" Margin="0,10,0,2" FontWeight="SemiBold"/>
+                <DockPanel Style="{StaticResource PathRow}">
+                    <Button DockPanel.Dock="Right" Content="Browse..." Padding="10,2" Margin="6,0,0,0"
+                            Command="{Binding Wizard.BrowseFolderCommand}" CommandParameter="FaceFinderMugshotsFolder"/>
+                    <TextBox Text="{Binding Wizard.FaceFinderMugshotsFolder, UpdateSourceTrigger=PropertyChanged}"/>
+                </DockPanel>
+                <Button Content="Test Connection" HorizontalAlignment="Left" Padding="10,2" Margin="0,8,0,0"
+                        Command="{Binding Wizard.TestFaceFinderCommand}"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type wiz:AutoGenerationStep}">
+            <StackPanel>
+                <TextBlock Text="Auto-generated mugshots folder (blank = default):" Margin="0,10,0,2" FontWeight="SemiBold"/>
+                <DockPanel Style="{StaticResource PathRow}">
+                    <Button DockPanel.Dock="Right" Content="Browse..." Padding="10,2" Margin="6,0,0,0"
+                            Command="{Binding Wizard.BrowseFolderCommand}" CommandParameter="AutogenMugshotsFolder"/>
+                    <TextBox Text="{Binding Wizard.AutogenMugshotsFolder, UpdateSourceTrigger=PropertyChanged}"/>
+                </DockPanel>
+                <TextBlock Text="Renderer:" Margin="0,10,0,2" FontWeight="SemiBold"/>
+                <ComboBox Width="220" HorizontalAlignment="Left"
+                          ItemsSource="{Binding Wizard.Renderers}" SelectedItem="{Binding Wizard.Renderer}"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type wiz:OutputDirectoryStep}">
+            <StackPanel>
+                <TextBlock Text="Output folder:" Margin="0,10,0,2" FontWeight="SemiBold"/>
+                <DockPanel Style="{StaticResource PathRow}">
+                    <Button DockPanel.Dock="Right" Content="Browse..." Padding="10,2" Margin="6,0,0,0"
+                            Command="{Binding Wizard.BrowseFolderCommand}" CommandParameter="OutputDirectory"/>
+                    <TextBox Text="{Binding Wizard.OutputDirectory, UpdateSourceTrigger=PropertyChanged}"/>
+                </DockPanel>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type wiz:OutputPluginNameStep}">
+            <StackPanel>
+                <TextBlock Text="Output plugin name:" Margin="0,10,0,2" FontWeight="SemiBold"/>
+                <TextBox Width="260" HorizontalAlignment="Left"
+                         Text="{Binding Wizard.OutputPluginName, UpdateSourceTrigger=PropertyChanged}"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type wiz:PatchingModeStep}">
+            <StackPanel>
+                <TextBlock Text="Patching mode:" Margin="0,10,0,2" FontWeight="SemiBold"/>
+                <ComboBox Width="220" HorizontalAlignment="Left"
+                          ItemsSource="{Binding Wizard.PatchingModes}" SelectedItem="{Binding Wizard.PatchingMode}"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type wiz:OutputBackendStep}">
+            <StackPanel>
+                <TextBlock Text="Output type:" Margin="0,10,0,2" FontWeight="SemiBold"/>
+                <ComboBox Width="220" HorizontalAlignment="Left"
+                          ItemsSource="{Binding Wizard.OutputBackends}" SelectedItem="{Binding Wizard.OutputBackend}"/>
+                <StackPanel x:Name="RecastPanel" Visibility="Collapsed">
+                    <TextBlock Text="Recast mode:" Margin="0,10,0,2" FontWeight="SemiBold"/>
+                    <ComboBox Width="220" HorizontalAlignment="Left"
+                              ItemsSource="{Binding Wizard.RecastModes}" SelectedItem="{Binding Wizard.RecastMode}"/>
+                </StackPanel>
+            </StackPanel>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Wizard.OutputBackend}" Value="Recast">
+                    <Setter TargetName="RecastPanel" Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type wiz:SummaryStep}">
+            <ItemsControl ItemsSource="{Binding Rows}" Margin="0,8,0,0">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Margin="0,2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="160"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding Key}" FontWeight="SemiBold"/>
+                            <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap"/>
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </DataTemplate>
+
+        <!-- ============ Findings ============ -->
+
+        <DataTemplate DataType="{x:Type sv:SetupFinding}">
+            <DockPanel Margin="0,3">
+                <TextBlock x:Name="Glyph" DockPanel.Dock="Left" Width="20" FontWeight="Bold" Text="i"
+                           Foreground="{DynamicResource StatusPendingForeground}"/>
+                <TextBlock Text="{Binding Message}" TextWrapping="Wrap"/>
+            </DockPanel>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                    <Setter TargetName="Glyph" Property="Text" Value="!"/>
+                    <Setter TargetName="Glyph" Property="Foreground" Value="{DynamicResource StatusWarningForeground}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Severity}" Value="Error">
+                    <Setter TargetName="Glyph" Property="Text" Value="X"/>
+                    <Setter TargetName="Glyph" Property="Foreground" Value="{DynamicResource StatusErrorForeground}"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0">
+            <TextBlock Text="{Binding StepCounterText}" Foreground="{DynamicResource SecondaryForeground}"/>
+            <TextBlock Text="{Binding CurrentStep.Title}" FontSize="20" FontWeight="SemiBold" Margin="0,2,0,6"/>
+            <TextBlock Text="{Binding CurrentStep.Explanation}" TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <!-- Page body + findings -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,8,0,8">
+            <StackPanel>
+                <ContentControl Content="{Binding CurrentStep}" Focusable="False"/>
+
+                <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Margin="0,14,0,0" Padding="0,8,0,0">
+                    <StackPanel>
+                        <TextBlock Text="Checking..." FontStyle="Italic"
+                                   Visibility="{Binding CurrentStep.IsValidating, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                        <ItemsControl ItemsSource="{Binding CurrentStep.Findings}"/>
+                        <CheckBox Content="I have read the warnings above and want to continue anyway" Margin="0,8,0,0"
+                                  IsChecked="{Binding CurrentStep.WarningsAcknowledged}"
+                                  Visibility="{Binding CurrentStep.HasWarnings, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Navigation -->
+        <DockPanel Grid.Row="2">
+            <Button DockPanel.Dock="Left" Content="Cancel" Width="90" Command="{Binding CancelCommand}"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="&lt; Back" Width="90" Margin="0,0,8,0" Command="{Binding BackCommand}"/>
+                <Button Content="{Binding NextButtonText}" Width="90" IsDefault="True" Command="{Binding NextCommand}"/>
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</Window>

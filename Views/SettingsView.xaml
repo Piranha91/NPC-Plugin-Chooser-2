@@ -124,6 +124,14 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
         <StackPanel>
 
+            <DockPanel Margin="0,0,0,8">
+                <Button DockPanel.Dock="Left" Content="Setup Wizard..." Padding="12,4"
+                        Command="{Binding LaunchSetupWizardCommand}"
+                        ToolTip="Walk through the essential settings one page at a time, with checks for common setup problems."/>
+                <TextBlock Text="Walks through the essential settings step by step." VerticalAlignment="Center"
+                           Margin="10,0,0,0" Foreground="{DynamicResource SecondaryForeground}"/>
+            </DockPanel>
+
             <!-- Section 1: Game Environment -->
             <Expander Header="Game Environment" Style="{StaticResource SettingsSectionExpander}"
                       IsExpanded="{Binding SectionGameEnvironment.IsExpanded, Mode=TwoWay}">

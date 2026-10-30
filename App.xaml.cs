@@ -195,7 +195,46 @@ namespace NPC_Plugin_Chooser_2
                 await Task.Delay(250);
                 await splashVM.CloseSplashScreenAsync();
 
-                WarnIfInstalledInsideGameOrModsFolder(settingsModel);
+                // The wizard's Install Location page covers the install-location warning.
+                if (!await OfferSetupWizardIfFreshInstallAsync(mainWindow))
+                {
+                    WarnIfInstalledInsideGameOrModsFolder(settingsModel);
+                }
+            }
+        }
+
+        /// <summary>
+        /// On a launch with no Settings.json, offers the setup wizard, manual setup, or importing an
+        /// existing settings file. Returns true when the wizard ran.
+        /// </summary>
+        private async Task<bool> OfferSetupWizardIfFreshInstallAsync(Window mainWindow)
+        {
+            if (!VM_Settings.IsFreshInstall || _container == null) return false;
+            try
+            {
+                var welcome = new WelcomeWindow { Owner = mainWindow };
+                welcome.ShowDialog();
+                StartupLogger.Log($"Welcome dialog choice: {welcome.Choice}");
+
+                var settingsViewModel = _container.Resolve<VM_Settings>();
+                switch (welcome.Choice)
+                {
+                    case WelcomeChoice.Wizard:
+                        await settingsViewModel.ShowSetupWizardAsync();
+                        return true;
+                    case WelcomeChoice.ImportSettings:
+                        settingsViewModel.RestoreSettingsCommand.Execute().Subscribe();
+                        return false;
+                    default:
+                        return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                StartupLogger.Log("Setup wizard offer failed: " + ex.Message, "WARN");
+                ScrollableMessageBox.ShowError("The setup wizard could not be opened:\n" + ExceptionLogger.GetExceptionStack(ex),
+                    "Setup Wizard");
+                return false;
             }
         }
 

@@ -1,0 +1,30 @@
+<Window x:Class="NPC_Plugin_Chooser_2.Views.WelcomeWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:themes="clr-namespace:NPC_Plugin_Chooser_2.Themes"
+        xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
+        Style="{DynamicResource ThemedWindowStyle}"
+        Title="Welcome to N.P.C.2"
+        Width="520" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner">
+
+    <i:Interaction.Behaviors>
+        <themes:TitleBarThemingBehavior />
+    </i:Interaction.Behaviors>
+
+    <StackPanel Margin="18">
+        <TextBlock Text="Welcome to NPC Plugin Chooser 2" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,8"/>
+        <TextBlock TextWrapping="Wrap" Margin="0,0,0,14"
+                   Text="Before you can pick appearances, N.P.C.2 needs to know where your game, your mods and your mugshots are. The Setup Wizard walks you through each setting one page at a time and checks it for the problems users run into most often."/>
+
+        <Button Content="Launch Setup Wizard (recommended)" Padding="10,6" Margin="0,0,0,6" IsDefault="True"
+                Click="Wizard_Click"/>
+        <Button Content="Enter settings manually" Padding="10,6" Margin="0,0,0,6"
+                Click="Manual_Click"/>
+        <Button Content="Import an existing Settings.json..." Padding="10,6"
+                Click="Import_Click"/>
+
+        <TextBlock TextWrapping="Wrap" Margin="0,12,0,0" Foreground="{DynamicResource SecondaryForeground}"
+                   Text="You can run the wizard again at any time from the Setup Wizard button at the top of the Settings tab."/>
+    </StackPanel>
+</Window>

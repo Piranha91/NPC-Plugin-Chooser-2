@@ -63,6 +63,27 @@ N.P.C.2 is theoretically compatible with both MO2 and Vortex, but I’ve only ev
 Install like you would any other similar utility such as EasyNPC. Extract the contents of the zip file to the location of your choice. Add the .exe as an executable in your mod manager, and run it from your mod manager.
 
 
+## Setup Wizard
+
+The first time you launch N.P.C.2 (when there is no `Settings.json` next to the exe yet), a welcome window offers three choices: **Launch Setup Wizard**, **Enter settings manually**, or **Import an existing Settings.json** (for example from a previous N.P.C.2 folder). You can run the wizard again at any time with the **Setup Wizard...** button at the top of the Settings tab.
+
+The wizard asks for one setting per page and checks each answer for the problems users most often run into before going on:
+
+1. **Mod manager**: MO2, Vortex or other (only used to tailor the advice on later pages).
+2. **Install location**: warns if N.P.C.2 sits inside the game or Mods folder, under Program Files or OneDrive, can't write to its own folder, or wasn't launched through MO2.
+3. **Skyrim version**: lists the installs found and checks the game exe matches the version you picked (e.g. a VR folder with SE selected).
+4. **Game Data folder**: suggests Stock Game / Root Builder copies found near N.P.C.2, then test-loads your load order and shows the result before anything is saved: plugin count, where `plugins.txt` and `Skyrim.ccc` were found, the "only base-game plugins" sign of not launching through your mod manager, inactive Creation Club plugins, and the name of the plugin that broke the load if one did.
+5. **Mods folder**: recognizes MO2 mods folders and Vortex staging folders, and stops you picking the Data folder, a game folder or a single mod.
+6. **Active mods filter**: offers your MO2 profiles' `modlist.txt` files and shows how many mods each one enables, so the filter is in place before the first scan.
+7. **Mugshot sources**: downloaded packs (with links to the packs listed in the [FAQ](#faq)), FaceFinder, auto-generation and live tiles.
+8. **Mugshots folder**: flags unextracted archives, an extra folder level, a single mod's folder picked by mistake, and how many mugshot folders match your mods by name.
+9. **FaceFinder** and 10. **Auto-generation**: cache/output folders, a FaceFinder connection test, and the renderer.
+11. **Output folder** and 12. **Output plugin name**: shows where the output will actually be written and rejects the Data folder, the Mods folder itself and characters that have broken output before.
+13. **Patching mode** and 14. **Output type** (ESP, SkyPatcher or Recast).
+15. **Summary**.
+
+A red **X** finding blocks **Next**; a yellow **!** warning needs you to tick "I have read the warnings above" first. Nothing is applied until you click **Finish**, and **Cancel** leaves your settings untouched. Finish runs at most one mods-folder scan. If you change the mods folder of an existing setup, the Summary page warns you first, because that clears the per-mod settings of your current mod list.
+
 ## Basic Usage
 
 > **First launch:** A splash screen appears while N.P.C.2 starts up. The **first** time you select a mods folder, N.P.C.2 analyzes every mod and builds a cache — this can take a while, so be patient. Every launch after that reuses the cache and is much faster.
