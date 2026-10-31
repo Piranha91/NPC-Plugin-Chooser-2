@@ -143,6 +143,15 @@
                     </DockPanel>
                 </Border>
 
+                <!-- "Show This Mod's Outfit": offered when the appearance's own outfit
+                     isn't the one worn in game (runtime distributor, unforwarded outfit,
+                     inventory template). Checked renders the mod's outfit and raises a
+                     badge saying what overwrites it. Preview-only, not persisted. -->
+                <ToggleButton Content="Show This Mod's Outfit" Margin="0,6,0,0" HorizontalAlignment="Left" Padding="6,2"
+                              IsChecked="{Binding ShowModOutfit}"
+                              Visibility="{Binding IsModOutfitToggleAvailable, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}"
+                              ToolTip="This appearance ships the NPC with a different outfit than the one worn in game. Check to show the mod's own outfit instead."/>
+
                 <!-- "Set Antler Head Parts" selector (per-tile 3D popup only; hidden
                      when the NPC has no head parts or on the Settings-tab preview). -->
                 <Button Content="Set Antler Head Parts" Margin="0,6,0,0" HorizontalAlignment="Left" Padding="6,2"
@@ -247,6 +256,16 @@
                         <TextBlock Text="Some outfit assets couldn't be found" Foreground="White"
                                    FontWeight="SemiBold" VerticalAlignment="Center"/>
                     </StackPanel>
+                </Border>
+                <!-- Mod outfit shown: "Show This Mod's Outfit" is on, so the preview
+                     wears the appearance's own outfit rather than the in-game one.
+                     Says it is overwritten in game and by what. -->
+                <Border HorizontalAlignment="Right" Margin="0,4,0,0" MaxWidth="320"
+                        Background="#C0305870" CornerRadius="4" Padding="6,3"
+                        ToolTip="{Binding ModOutfitNoticeText}"
+                        Visibility="{Binding HasModOutfitNotice, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}">
+                    <TextBlock Text="{Binding ModOutfitNoticeText}" Foreground="White"
+                               FontWeight="SemiBold" TextWrapping="Wrap"/>
                 </Border>
                 <!-- Antler removal: the mod's Antler Handling Mode is Remove and
                      this NPC carries an antler the patch strips (outfit / worn

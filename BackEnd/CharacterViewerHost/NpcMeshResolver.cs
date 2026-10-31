@@ -975,6 +975,12 @@ public class NpcMeshResolver
             targetNpcFormKey, out outfitDisplay);
     }
 
+    /// <summary>Passthrough to <see cref="OutfitDisplayResolver.CompareModOutfit"/> for the
+    /// 3D preview's "Show This Mod's Outfit" toggle.</summary>
+    public ModOutfitComparison? CompareModOutfit(FormKey npcFormKey, ModSetting? modSetting,
+        FormKey? targetNpcFormKey = null)
+        => _outfitDisplayResolver.CompareModOutfit(targetNpcFormKey ?? npcFormKey, npcFormKey, modSetting);
+
     /// <summary>Active-selection companion to
     /// <see cref="AntlerRemovalApplies"/> for the live preview's info banner.</summary>
     public bool AntlerRemovalAppliesForActiveSelection(FormKey targetNpcFormKey)
@@ -1310,11 +1316,15 @@ public class NpcMeshResolver
     /// toggles off they disappeared entirely. They are depicted regardless of both
     /// toggles; the tile marks the output discrepancy on its has-wig badge. The
     /// live 3D preview leaves this false and stays output-faithful.</para>
+    /// <para><paramref name="showModOutfit"/> (3D preview's "Show This Mod's Outfit") renders
+    /// the appearance mod's own outfit instead of the in-game one when the two differ
+    /// (<see cref="OutfitDisplayResolver.CompareModOutfit"/>); <paramref name="outfitDisplay"/>
+    /// then describes the mod's outfit, and the caller's badge explains the override.</para>
     /// </summary>
     public IReadOnlyList<MeshOverride> ResolveAttireMeshOverrides(
         FormKey npcFormKey, ModSetting? modSetting, bool includeDefaultOutfit, bool includeHeadgear,
         FormKey? targetNpcFormKey, out OutfitDisplayResult outfitDisplay,
-        bool alwaysRenderOutfitWigsAndAntlers = false)
+        bool alwaysRenderOutfitWigsAndAntlers = false, bool showModOutfit = false)
     {
         outfitDisplay = OutfitDisplayResult.NoOutfit;
         // Wig/antler handling: the mugshot depicts the POST-PATCH NPC, so a
@@ -1345,6 +1355,12 @@ public class NpcMeshResolver
         // record's DefaultOutfit.
         outfitDisplay = _outfitDisplayResolver.ResolveForDisplay(
             targetNpcFormKey ?? npcFormKey, npcFormKey, modSetting, includeDefaultOutfit);
+        if (showModOutfit && includeDefaultOutfit)
+        {
+            var comparison = _outfitDisplayResolver.CompareModOutfit(
+                targetNpcFormKey ?? npcFormKey, npcFormKey, modSetting);
+            if (comparison != null) outfitDisplay = OutfitDisplayResolver.ModOutfitDisplay(comparison.ModOutfit);
+        }
 
         // Mode-None outfit pieces the game never shows. The mugshot depicts mode-None
         // wigs and antlers to show the mod's face, but not ones the game output loses —

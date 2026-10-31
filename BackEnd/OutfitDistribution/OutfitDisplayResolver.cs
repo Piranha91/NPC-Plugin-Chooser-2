@@ -108,6 +108,10 @@ public enum WigDropReason
     RuntimeOutfitReplaced
 }
 
+/// <summary>Result of <see cref="OutfitDisplayResolver.CompareModOutfit"/>: the appearance
+/// mod's own outfit, the outfit actually worn in game, and a sentence explaining why.</summary>
+public sealed record ModOutfitComparison(FormKey ModOutfit, OutfitDisplayResult InGame, string InGameDescription);
+
 /// <summary>Result of <see cref="OutfitDisplayResolver.FindRuntimeDroppedOutfitPieces"/>:
 /// the outfit pieces an external SPID/SkyPatcher outfit replacement leaves behind.</summary>
 public sealed record RuntimeOutfitLoss(IReadOnlyList<FormKey> Dropped, string SourceDetail)
@@ -568,6 +572,53 @@ public class OutfitDisplayResolver
             },
         };
     }
+
+    /// <summary>
+    /// The outfit the appearance mod ships this NPC with, when it is NOT the one the
+    /// NPC wears in game (<see cref="ResolveForDisplay"/> with the outfit on) — null when
+    /// they match, the donor has no outfit, or there is no load order. Drives the 3D
+    /// preview's "Show This Mod's Outfit" toggle. <see cref="ModOutfitComparison.InGameDescription"/>
+    /// says what replaces it, for the badge shown while the mod's outfit is displayed.
+    /// </summary>
+    public ModOutfitComparison? CompareModOutfit(FormKey targetNpcFormKey, FormKey sourceNpcFormKey,
+        ModSetting? modSetting)
+    {
+        if (modSetting == null) return null;
+        var linkCache = _env?.LinkCache;
+        if (linkCache == null) return null;
+        EnsureCachesCurrent(linkCache);
+
+        var modOutfit = ResolveDonorOutfit(sourceNpcFormKey, modSetting, linkCache);
+        if (modOutfit == null) return null;
+        var inGame = ResolveForDisplay(targetNpcFormKey, sourceNpcFormKey, modSetting, true);
+        if (inGame.OutfitFormKey != null && inGame.OutfitFormKey.Value.Equals(modOutfit.Value)) return null;
+
+        string mod = DescribeOutfit(modOutfit.Value, linkCache);
+        string actual = inGame.OutfitFormKey != null ? DescribeOutfit(inGame.OutfitFormKey.Value, linkCache) : "no outfit";
+        string why = inGame.Source switch
+        {
+            OutfitDisplaySource.Spid or OutfitDisplaySource.SkyPatcher =>
+                $"{inGame.SourceDetail} gives this NPC {actual} at runtime instead.",
+            _ when inGame.RecordOutfitInert && inGame.InventoryTemplateSource != null =>
+                $"this NPC takes its inventory from template {DescribeNpc(inGame.InventoryTemplateSource.Value, linkCache)}, " +
+                $"so it wears {actual}.",
+            OutfitDisplaySource.None =>
+                "the NPC wears no outfit in game.",
+            _ => $"NPC2 doesn't carry it into your output (Include Outfits is off for this mod/NPC), so the NPC " +
+                 $"keeps its conflict-winning record's outfit, {actual}.",
+        };
+        return new ModOutfitComparison(modOutfit.Value, inGame,
+            $"Showing this mod's outfit ({mod}), which is overwritten in game: {why}");
+    }
+
+    /// <summary>A display result that renders the appearance mod's own outfit, resolved
+    /// through its plugins — what the preview shows while "Show This Mod's Outfit" is on.</summary>
+    public static OutfitDisplayResult ModOutfitDisplay(FormKey modOutfit) => new()
+    {
+        OutfitFormKey = modOutfit,
+        Source = OutfitDisplaySource.AppearanceMod,
+        UseModScopedResolution = true,
+    };
 
     // ─────────────────────────────────────────────────────────────────────
     //  Patcher-intent helpers

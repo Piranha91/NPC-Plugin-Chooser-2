@@ -85,16 +85,40 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     /// left to the ordinary outfit walk, where it behaves like the hood it is
     /// indistinguishable from at the record level and obeys Include Headgear — so the
     /// banner is what tells the user the mod supplies a wig they aren't getting, and
-    /// how to keep it. (The mugshot takes the other route: it draws the wig and
-    /// crosses out its has-wig badge.) Informational only — never marks a cached
-    /// mugshot stale.</summary>
+    /// how to keep it. (The mugshot leaves such a wig off and shows its No Wig
+    /// badge.) Informational only — never marks a cached mugshot stale.</summary>
+    [Reactive] public bool HasWigNotPersistedNotice { get; private set; }
+    [Reactive] public string WigNotPersistedNoticeText { get; private set; } = string.Empty;
+    [Reactive] public string WigNotPersistedNoticeTooltip { get; private set; } = string.Empty;
+
     /// <summary>Antlers left in an outfit (Leave As Is) that a SPID/SkyPatcher config
     /// replaces at runtime; the text names the config and the fix.</summary>
     [Reactive] public bool HasAntlerLostNotice { get; private set; }
     [Reactive] public string AntlerLostNoticeText { get; private set; } = string.Empty;
-    [Reactive] public bool HasWigNotPersistedNotice { get; private set; }
-    [Reactive] public string WigNotPersistedNoticeText { get; private set; } = string.Empty;
-    [Reactive] public string WigNotPersistedNoticeTooltip { get; private set; } = string.Empty;
+
+    // --- "Show This Mod's Outfit" ---
+    /// <summary>True when the loaded appearance's own outfit is not the one worn in
+    /// game (runtime distributor, unforwarded outfit, inventory template…), so there
+    /// is something different to show. Offered only with Include Default Outfit on.</summary>
+    [Reactive] public bool IsModOutfitToggleAvailable { get; private set; }
+    /// <summary>Renders the appearance mod's own outfit instead of the in-game one.
+    /// Preview-only and not persisted; flipping it reloads the attire.</summary>
+    public bool ShowModOutfit
+    {
+        get => _showModOutfit;
+        set
+        {
+            if (_showModOutfit == value) return;
+            _showModOutfit = value;
+            this.RaisePropertyChanged();
+            ReapplyAttireAfterToggle();
+        }
+    }
+    private bool _showModOutfit;
+    /// <summary>Badge shown while the mod's outfit is displayed: says it is
+    /// overwritten in game, and by what.</summary>
+    [Reactive] public bool HasModOutfitNotice { get; private set; }
+    [Reactive] public string ModOutfitNoticeText { get; private set; } = string.Empty;
 
     // --- "Set Antler Head Parts" selector (per-tile 3D popup only) ---
     /// <summary>Whether the antler head-part selector can be offered: the preview
@@ -650,9 +674,12 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
 
             // Attire / headgear (Include Default Outfit / Include headgear). Scoped
             // to the user's active appearance selection, matching the mesh load.
+            // "Show This Mod's Outfit" is a 3D-popup feature (explicit-mod path below);
+            // this Settings-tab preview hides its attire overlay, so it isn't offered here.
             var attire = _resolver.ResolveAttireMeshOverridesForActiveSelection(
                 formKey, IncludeDefaultOutfit, IncludeHeadgear, out var outfitDisplay);
             ApplyAttireOverrides(attire);
+            SetModOutfitState(null);
             ApplyOutfitNotice(outfitDisplay);
             SetAntlerRemovalNotice(_resolver.AntlerRemovalAppliesForActiveSelection(formKey));
             SetAntlerLostNotice(_resolver.AntlerRuntimeLossNoticeForActiveSelection(formKey));
@@ -723,8 +750,9 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             // keys the runtime-distribution simulation.
             var attire = _resolver.ResolveAttireMeshOverrides(
                 formKey, modSetting, IncludeDefaultOutfit, IncludeHeadgear,
-                targetNpcFormKey, out var outfitDisplay);
+                targetNpcFormKey, out var outfitDisplay, showModOutfit: ShowModOutfit);
             ApplyAttireOverrides(attire);
+            SetModOutfitState(_resolver.CompareModOutfit(formKey, modSetting, targetNpcFormKey));
             ApplyOutfitNotice(outfitDisplay);
             SetAntlerRemovalNotice(_resolver.AntlerRemovalApplies(formKey, modSetting));
             SetAntlerLostNotice(_resolver.AntlerRuntimeLossNotice(formKey, modSetting, targetNpcFormKey));
@@ -788,6 +816,15 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     {
         HasAntlerLostNotice = notice.Length > 0;
         AntlerLostNoticeText = notice;
+    }
+
+    /// <summary>Offers the "Show This Mod's Outfit" toggle when the mod's outfit differs
+    /// from the in-game one, and shows the explanatory badge while it is displayed.</summary>
+    private void SetModOutfitState(BackEnd.OutfitDistribution.ModOutfitComparison? comparison)
+    {
+        IsModOutfitToggleAvailable = comparison != null && IncludeDefaultOutfit;
+        HasModOutfitNotice = IsModOutfitToggleAvailable && ShowModOutfit;
+        ModOutfitNoticeText = HasModOutfitNotice ? comparison!.InGameDescription : string.Empty;
     }
 
     /// <summary>Applies the "wig won't be in your output" banner. The headline is
