@@ -10,6 +10,7 @@ using System.Windows;
 using Mutagen.Bethesda.Plugins;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
+using NPC_Plugin_Chooser_2.BackEnd.OutfitDistribution;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.Views;
 using ReactiveUI;
@@ -170,9 +171,10 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     [Reactive] public string WigNoticeText { get; set; } = string.Empty;
     /// <summary>True when this NPC's Default-Outfit wig will NOT reach the patch
     /// output — Wig Handling Mode is inert AND the outfit carrying it isn't being
-    /// forwarded. Crosses the has-wig badge out with a red X, because the mugshot
-    /// DOES draw that wig (it is the NPC's hair) and would otherwise promise an
-    /// appearance the patch won't deliver. Skin-carried wigs always persist and
+    /// forwarded, or a SPID/SkyPatcher outfit replaces it at runtime. Swaps the has-wig
+    /// badge for the "No Wig" icon. The mugshot leaves such a wig off to match the game
+    /// (NpcMeshResolver), so the badge is what tells the user this mod supplies one
+    /// they aren't getting. Skin-carried wigs always persist and
     /// never trip this. Unlike <see cref="HasWigNotice"/> — a fixed record fact —
     /// this depends on live settings, so it is recomputed on the post-generation
     /// notice refresh as well as at construction.</summary>
@@ -1024,7 +1026,11 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             // scan data — see InitializeWigNotice.)
             string antlerNotice = ComputeAntlerRemovalNoticeSafe();
 
-            return (bitmap, meshes, textures, physicsNotices, missingOutfitAssets, dataFolderAssets, facegen, faceGenMismatch, outfitNotice, antlerNotice);
+            // Wig persistence, now including the runtime outfit-replacement check the
+            // constructor skipped (it simulates SPID/SkyPatcher, so it runs here).
+            var wigPersistence = ComputeWigPersistenceSafe(includeRuntimeReplacement: true);
+
+            return (bitmap, meshes, textures, physicsNotices, missingOutfitAssets, dataFolderAssets, facegen, faceGenMismatch, outfitNotice, antlerNotice, wigPersistence);
         });
 
         // Always apply (even with empty lists) so a re-load of a tile whose
@@ -1042,6 +1048,8 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
 
         AntlerRemovalNoticeText = loadResult.antlerNotice;
         HasAntlerRemovalNotice = loadResult.antlerNotice.Length > 0;
+
+        ApplyWigPersistence(loadResult.wigPersistence);
 
         // FaceGen stats (if any) — set after the await so it lands on the
         // UI thread, triggering the reactive overlay-state refresh.
@@ -2667,9 +2675,12 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         {
             var sourceMod = _settings.ModSettings.FirstOrDefault(m => m.DisplayName == ModName);
             if (sourceMod == null) return string.Empty;
-            if (!_npcMeshResolver.AntlerRemovalApplies(SourceNpcFormKey, sourceMod)) return string.Empty;
-            return "Antlers are removed from this NPC in the patched output " +
-                   "(this mod's Antler Handling Mode is set to Remove).";
+            if (_npcMeshResolver.AntlerRemovalApplies(SourceNpcFormKey, sourceMod))
+                return "Antlers are removed from this NPC in the patched output " +
+                       "(this mod's Antler Handling Mode is set to Remove).";
+            // Not removed on purpose, but lost anyway: Leave As Is keeps them in an
+            // outfit that a SPID/SkyPatcher config replaces at runtime.
+            return _npcMeshResolver.AntlerRuntimeLossNotice(SourceNpcFormKey, sourceMod, _targetNpcFormKey);
         }
         catch (Exception ex)
         {
@@ -2711,7 +2722,9 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                     "WIG_NOTICE");
                 WigNoticeText = BuildWigNoticeText(effective);
                 HasWigNotice = true;
-                RefreshWigPersistenceNotice();
+                // Record-level reasons only here (constructor, UI thread); the runtime
+                // outfit-replacement check joins on the tile's worker-thread refreshes.
+                ApplyWigPersistence(ComputeWigPersistenceSafe(includeRuntimeReplacement: false));
             }
         }
         catch (Exception ex)
@@ -2723,33 +2736,42 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         }
     }
 
-    /// <summary>Recomputes the crossed-out state of the has-wig badge and appends
-    /// (or removes) the "won't be in your output" paragraph on its tooltip. Pure
-    /// settings + persisted scan data — no record walk, no environment — so it is
-    /// safe to call synchronously from the constructor. Rebuilds the tooltip from
-    /// the effective sources each time rather than mutating the existing string,
-    /// so repeated calls can't stack duplicate paragraphs.</summary>
-    private void RefreshWigPersistenceNotice()
+    /// <summary>Computes whether this NPC's wig reaches the output. Without
+    /// <paramref name="includeRuntimeReplacement"/> it is pure settings + persisted
+    /// scan data, cheap enough for the constructor; with it, it also simulates the
+    /// SPID/SkyPatcher outfit stack, so call it from the tile's worker thread. Null
+    /// when the NPC has no wig or on failure.</summary>
+    private (WigPersistenceResult Persistence, List<NpcWigSource> Effective)? ComputeWigPersistenceSafe(
+        bool includeRuntimeReplacement)
     {
         try
         {
             var sourceMod = _settings.ModSettings.FirstOrDefault(m => m.DisplayName == ModName);
             var effective = _settings.GetEffectiveNpcWigSources(sourceMod, SourceNpcFormKey);
-            if (effective.Count == 0) return;
-
-            var persistence = _outfitDisplayResolver.ComputeWigPersistence(
-                SourceNpcFormKey, _targetNpcFormKey, sourceMod);
-
-            WigNotPersisted = persistence.AnyDropped;
-            WigNoticeText = persistence.AnyDropped
-                ? BuildWigNoticeText(effective) + "\n\n⚠ " + persistence.Headline
-                  + "\n\n" + persistence.FixAdvice
-                : BuildWigNoticeText(effective);
+            if (effective.Count == 0) return null;
+            return (_outfitDisplayResolver.ComputeWigPersistence(
+                SourceNpcFormKey, _targetNpcFormKey, sourceMod, includeRuntimeReplacement), effective);
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"RefreshWigPersistenceNotice failed for {SourceNpcFormKey}: {ex.Message}");
+            Debug.WriteLine($"ComputeWigPersistenceSafe failed for {SourceNpcFormKey}: {ex.Message}");
+            return null;
         }
+    }
+
+    /// <summary>Sets the has-wig badge's No Wig state and appends (or removes) the
+    /// "won't be in your output" paragraph on its tooltip. Rebuilds the tooltip from
+    /// the effective sources each time rather than mutating the existing string, so
+    /// repeated calls can't stack duplicate paragraphs.</summary>
+    private void ApplyWigPersistence((WigPersistenceResult Persistence, List<NpcWigSource> Effective)? computed)
+    {
+        if (computed == null) return;
+        var (persistence, effective) = computed.Value;
+        WigNotPersisted = persistence.AnyDropped;
+        WigNoticeText = persistence.AnyDropped
+            ? BuildWigNoticeText(effective) + "\n\n⚠ " + persistence.Headline
+              + "\n\n" + persistence.FixAdvice
+            : BuildWigNoticeText(effective);
     }
 
     private static string BuildWigNoticeText(List<NpcWigSource> effective)
@@ -2785,10 +2807,9 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     {
         await RefreshOutfitNoticeAsync();
         await RefreshAntlerRemovalNoticeAsync();
-        // Cheap and synchronous (settings + persisted scan data), but it belongs
-        // here too: whether the wig persists tracks live settings, unlike the
-        // has-wig fact the badge itself is built from.
-        RefreshWigPersistenceNotice();
+        // Whether the wig persists tracks live settings and runtime configs, unlike
+        // the has-wig fact the badge itself is built from.
+        ApplyWigPersistence(await Task.Run(() => ComputeWigPersistenceSafe(includeRuntimeReplacement: true)));
     }
 
     private void SetImageSource(string path)

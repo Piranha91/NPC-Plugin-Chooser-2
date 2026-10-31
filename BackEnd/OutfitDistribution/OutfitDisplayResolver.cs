@@ -98,7 +98,23 @@ public enum WigDropReason
     /// outfit field is INERT (Inventory template flag), so the forwarded outfit is
     /// never worn — and wig handling, which would convert or re-route the wig, cannot
     /// run in this mode. The output mode is the lever, not the mode dropdown.</summary>
-    InertInCreateMode
+    InertInCreateMode,
+
+    /// <summary>An external SPID or SkyPatcher config gives the NPC a different outfit
+    /// at runtime, and that outfit does not contain the wig — so the wig is lost in game
+    /// whatever NPC2 writes to the record (Include Outfits included). Fix: a handling mode
+    /// that doesn't leave the wig in the replaced outfit (Forward To Outfit republishes the
+    /// runtime outfit with the wig added).</summary>
+    RuntimeOutfitReplaced
+}
+
+/// <summary>Result of <see cref="OutfitDisplayResolver.FindRuntimeDroppedOutfitPieces"/>:
+/// the outfit pieces an external SPID/SkyPatcher outfit replacement leaves behind.</summary>
+public sealed record RuntimeOutfitLoss(IReadOnlyList<FormKey> Dropped, string SourceDetail)
+{
+    public bool AnyDropped => Dropped.Count > 0;
+
+    public static readonly RuntimeOutfitLoss None = new(Array.Empty<FormKey>(), string.Empty);
 }
 
 /// <summary>Result of <see cref="OutfitDisplayResolver.ComputeWigPersistence"/>:
@@ -110,12 +126,24 @@ public sealed record WigPersistenceResult(WigDropReason Reason, IReadOnlyList<Np
     public static readonly WigPersistenceResult Persisted =
         new(WigDropReason.None, Array.Empty<NpcWigSource>());
 
+    /// <summary>For <see cref="WigDropReason.RuntimeOutfitReplaced"/>: the config that
+    /// replaces the outfit ("SPID: X_DISTR.ini (line 21)").</summary>
+    public string? RuntimeSourceDetail { get; init; }
+
+    /// <summary>For <see cref="WigDropReason.RuntimeOutfitReplaced"/>: whether the
+    /// current output mode runs wig handling at all, which decides the advice.</summary>
+    public bool HandlingModeAvailable { get; init; } = true;
+
     /// <summary>One-line statement of the problem, for a banner or the first line
     /// of a tooltip. Callers add their own record detail — the mugshot tile already
     /// names each wig record in its badge tooltip.</summary>
-    public string Headline => DroppedSources.Count > 1
-        ? "The wigs this mod gives this NPC will NOT be in your output."
-        : "The wig this mod gives this NPC will NOT be in your output.";
+    public string Headline => Reason == WigDropReason.RuntimeOutfitReplaced
+        ? (DroppedSources.Count > 1 ? "The wigs this mod gives this NPC are lost in game: "
+                                    : "The wig this mod gives this NPC is lost in game: ")
+          + $"{RuntimeSourceDetail} replaces the outfit carrying it."
+        : DroppedSources.Count > 1
+            ? "The wigs this mod gives this NPC will NOT be in your output."
+            : "The wig this mod gives this NPC will NOT be in your output.";
 
     /// <summary>What the user has to change to keep the wig, phrased with the
     /// UI's own labels. Differs by <see cref="WigDropReason"/>: in plain Create
@@ -132,6 +160,14 @@ public sealed record WigPersistenceResult(WigDropReason Reason, IReadOnlyList<Np
             + "handling (which would convert the wig to head parts or move it to the skin) cannot "
             + "run. To keep it, switch to Create and Patch or SkyPatcher output and pick a Wig "
             + "Handling Mode.",
+        WigDropReason.RuntimeOutfitReplaced => HandlingModeAvailable
+            ? "Include Outfits can't help: the runtime outfit wins over the record. To keep it, set "
+              + "this mod's Wig Handling Mode to \"Forward To Outfit\" (adds the wig to the outfit the "
+              + "NPC actually wears) or \"Forward To Skin\"."
+            : "Include Outfits can't help: the runtime outfit wins over the record, and plain Create "
+              + "output mode can't run wig handling. To keep it, switch to Create and Patch or "
+              + "SkyPatcher output and set this mod's Wig Handling Mode to \"Forward To Outfit\" or "
+              + "\"Forward To Skin\".",
         _ => string.Empty
     };
 }
@@ -560,13 +596,37 @@ public class OutfitDisplayResolver
     /// about the output.</para>
     /// </summary>
     public WigPersistenceResult ComputeWigPersistence(
-        FormKey sourceNpcFormKey, FormKey targetNpcFormKey, ModSetting? modSetting)
+        FormKey sourceNpcFormKey, FormKey targetNpcFormKey, ModSetting? modSetting,
+        bool includeRuntimeReplacement = true)
     {
         if (modSetting == null) return WigPersistenceResult.Persisted;
 
         var outfitWigs = _settings.GetEffectiveNpcWigSources(modSetting, sourceNpcFormKey)
             .Where(s => s.Kind == NpcWigSourceKind.Outfit).ToList();
         if (outfitWigs.Count == 0) return WigPersistenceResult.Persisted;
+
+        // Runtime replacement first: with the wig left in its outfit (no active handling
+        // mode — plain Create included, where handling can't run), an external SPID or
+        // SkyPatcher outfit that lacks it loses it in game whatever the record says, so
+        // the record-level reasons below (and their Include Outfits advice) don't apply.
+        // Every active mode keeps it: Forward To Outfit republishes the runtime outfit
+        // with the wig added (ForwardedOutfitDistributor); the others move it off the outfit.
+        // includeRuntimeReplacement=false skips it for callers that must stay cheap (a
+        // tile constructor on the UI thread): the check simulates the SPID/SkyPatcher stack.
+        if (includeRuntimeReplacement && _settings.GetEffectiveWigMode(modSetting) == WigHandlingMode.None)
+        {
+            var loss = FindRuntimeDroppedOutfitPieces(sourceNpcFormKey, targetNpcFormKey, modSetting,
+                outfitWigs.Select(s => s.RecordFormKey).ToList());
+            if (loss.AnyDropped)
+            {
+                return new WigPersistenceResult(WigDropReason.RuntimeOutfitReplaced,
+                    outfitWigs.Where(s => loss.Dropped.Contains(s.RecordFormKey)).ToList())
+                {
+                    RuntimeSourceDetail = loss.SourceDetail,
+                    HandlingModeAvailable = _settings.WigHandlingActiveForOutputMode,
+                };
+            }
+        }
 
         // Plain Create: the wholesale forward delivers the outfit — wig included — so
         // the only drop is the inert-outfit-field case. Resolved off the DONOR record
@@ -589,7 +649,82 @@ public class OutfitDisplayResolver
         if (ComputeIncludeOutfitIntent(targetNpcFormKey, modSetting))
             return WigPersistenceResult.Persisted;
 
+        // The donor outfit isn't forwarded, but the outfit the NPC keeps (the load-order
+        // winner's) may carry the wig anyway — typically when this mod IS the winning
+        // override. The mugshot leaves a dropped wig off, so a false drop here would
+        // hide a wig the game shows. Needs the load order; without one (unit tests) or
+        // on the cheap path the record-level answer stands.
+        var lc = _env?.LinkCache;
+        if (includeRuntimeReplacement && lc != null)
+        {
+            var display = ResolveForDisplay(targetNpcFormKey, sourceNpcFormKey, modSetting, true);
+            var worn = WornOutfitItems(display, modSetting, lc);
+            var stillDropped = outfitWigs.Where(s => !worn.Contains(s.RecordFormKey)).ToList();
+            if (stillDropped.Count == 0) return WigPersistenceResult.Persisted;
+            return new WigPersistenceResult(WigDropReason.ModeLeaveAsIs, stillDropped);
+        }
+
         return new WigPersistenceResult(WigDropReason.ModeLeaveAsIs, outfitWigs);
+    }
+
+    /// <summary>The direct items of the outfit <paramref name="display"/> resolved to:
+    /// through the appearance mod's plugins when it is donor content (NPC2 forwards the
+    /// donor's version of the record), else the load-order winner. Empty when there is
+    /// no outfit or it doesn't resolve.</summary>
+    private HashSet<FormKey> WornOutfitItems(OutfitDisplayResult display, ModSetting? modSetting, ILinkCache linkCache)
+    {
+        var items = new HashSet<FormKey>();
+        if (display.OutfitFormKey == null) return items;
+
+        IOutfitGetter? outfit = null;
+        if (display.UseModScopedResolution && modSetting != null &&
+            _recordHandler.TryGetRecordFromMods(display.OutfitFormKey.Value.ToLink<IOutfitGetter>(),
+                modSetting.CorrespondingModKeys, modSetting.CorrespondingFolderPaths.ToHashSet(),
+                RecordHandler.RecordLookupFallBack.Winner, out var rec) && rec is IOutfitGetter scoped)
+        {
+            outfit = scoped;
+        }
+        else
+        {
+            linkCache.TryResolve<IOutfitGetter>(display.OutfitFormKey.Value, out outfit);
+        }
+
+        if (outfit?.Items != null)
+            foreach (var item in outfit.Items)
+                if (item != null && !item.IsNull) items.Add(item.FormKey);
+        return items;
+    }
+
+    /// <summary>
+    /// Which of <paramref name="pieces"/> (ARMO FormKeys from the donor's outfit) an
+    /// external SPID or SkyPatcher outfit replacement leaves behind: the outfit the game
+    /// actually puts on comes from such a config and doesn't list them. NPC2's own
+    /// SkyPatcher entry doesn't count — it carries the donor outfit. Direct outfit items
+    /// only; a piece nested in a leveled list inside the replacement isn't seen, which
+    /// errs toward reporting it lost. Empty without a load order (unit tests).
+    /// </summary>
+    public RuntimeOutfitLoss FindRuntimeDroppedOutfitPieces(FormKey sourceNpcFormKey,
+        FormKey targetNpcFormKey, ModSetting? modSetting, IReadOnlyCollection<FormKey> pieces)
+    {
+        var linkCache = _env?.LinkCache;
+        if (linkCache == null || pieces.Count == 0) return RuntimeOutfitLoss.None;
+
+        var display = ResolveForDisplay(targetNpcFormKey, sourceNpcFormKey, modSetting, true);
+        if (display.Source is not (OutfitDisplaySource.Spid or OutfitDisplaySource.SkyPatcher)
+            || display.OutfitFormKey == null)
+            return RuntimeOutfitLoss.None;
+        if (!linkCache.TryResolve<IOutfitGetter>(display.OutfitFormKey.Value, out var outfit))
+            return RuntimeOutfitLoss.None;
+
+        var worn = new HashSet<FormKey>();
+        if (outfit.Items != null)
+            foreach (var item in outfit.Items)
+                if (item != null && !item.IsNull) worn.Add(item.FormKey);
+
+        var dropped = pieces.Where(p => !worn.Contains(p)).ToList();
+        return dropped.Count == 0
+            ? RuntimeOutfitLoss.None
+            : new RuntimeOutfitLoss(dropped, display.SourceDetail ?? DescribeOutfit(outfit.FormKey, linkCache));
     }
 
     /// <summary>Mirrors Patcher.cs's includeOutfit resolution: the per-NPC
@@ -714,7 +849,7 @@ public class OutfitDisplayResolver
     /// or removing a wig from the mod's outfit re-stales the tile too.
     /// </summary>
     public string ComputeWigIdentitySuffix(FormKey sourceNpcFormKey, ModSetting? modSetting,
-        bool includeDefaultOutfitRenderFlag)
+        bool includeDefaultOutfitRenderFlag, FormKey? targetNpcFormKey = null)
     {
         if (modSetting == null) return string.Empty;
 
@@ -798,9 +933,16 @@ public class OutfitDisplayResolver
                 // outfit toggle because the depiction ignores both toggles. This suffix is
                 // mugshot-only (metadata stamp + staleness), so the output-faithful live
                 // preview is unaffected by it.
+                // Wigs the output loses aren't depicted (NpcMeshResolver skips them), so
+                // they leave the segment and a change in that state re-stales the tile.
                 if (wigMode == WigHandlingMode.None && wigKeys.Count > 0)
                 {
-                    sb.Append("+wigdepict[" + string.Join(",", wigKeys) + "]");
+                    var dropped = ComputeWigPersistence(sourceNpcFormKey,
+                            targetNpcFormKey ?? sourceNpcFormKey, modSetting)
+                        .DroppedSources.Select(s => s.RecordFormKey.ToString()).ToHashSet();
+                    var depictedWigs = wigKeys.Where(k => !dropped.Contains(k)).ToList();
+                    if (depictedWigs.Count > 0)
+                        sb.Append("+wigdepict[" + string.Join(",", depictedWigs) + "]");
                 }
 
                 // Wig segment — content-based (mode + sorted keys) so adding/removing a wig
@@ -825,9 +967,18 @@ public class OutfitDisplayResolver
                 // keys only, and regardless of the outfit toggle because the depiction
                 // ignores both toggles. Mugshot-only, so the output-faithful live
                 // preview is unaffected.
+                // Antlers a SPID/SkyPatcher outfit drops in game are NOT depicted
+                // (NpcMeshResolver skips them), so they leave the segment too: gaining or
+                // losing such a config re-stales exactly the affected tiles.
                 if (antlerMode == AntlerHandlingMode.None && antlerKeys.Count > 0)
                 {
-                    sb.Append("+antlerdepict[" + string.Join(",", antlerKeys) + "]");
+                    var lost = FindRuntimeDroppedOutfitPieces(sourceNpcFormKey,
+                            targetNpcFormKey ?? sourceNpcFormKey, modSetting,
+                            itemKeys.Where(k => modSetting.DetectedAntlerArmors.Contains(k)).ToList())
+                        .Dropped.Select(k => k.ToString()).ToHashSet();
+                    var depicted = antlerKeys.Where(k => !lost.Contains(k)).ToList();
+                    if (depicted.Count > 0)
+                        sb.Append("+antlerdepict[" + string.Join(",", depicted) + "]");
                 }
 
                 // Antler segment — the outfit (source 1) antlers the preview reflects.

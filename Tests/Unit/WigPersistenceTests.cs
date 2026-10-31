@@ -13,11 +13,11 @@ namespace NPC_Plugin_Chooser_2.Tests.Unit;
 /// answer to "will this NPC's wig reach the patch output?", which drives BOTH the
 /// mugshot tile's crossed-out has-wig badge and the 3D preview's warning banner.
 ///
-/// <para>The two surfaces diverge on purpose and this decides for both: the
-/// mugshot always DRAWS a Default-Outfit wig (it is the NPC's hair) and marks the
-/// gap on the badge, while the output-faithful preview leaves the wig to the
-/// ordinary Include-Headgear-gated outfit walk and warns in a banner. If this
-/// helper is wrong, both lie in the same direction.</para>
+/// <para>This decides for both surfaces, and for the mugshot image itself: a wig it
+/// reports dropped is left off the mugshot (matching the game) with the No Wig badge
+/// explaining the gap, while the output-faithful preview leaves the wig to the
+/// ordinary Include-Headgear-gated outfit walk and warns in a banner. If this helper
+/// is wrong, all three lie in the same direction.</para>
 ///
 /// <para>Pure settings + persisted scan data in the active output modes: no record
 /// resolution and no environment. The one exception is plain Create's inert-outfit
@@ -275,5 +275,55 @@ public class WigPersistenceTests
 
         single.Headline.Should().Contain("wig this mod gives");
         many.Headline.Should().Contain("wigs this mod gives");
+    }
+
+    /// <summary>A SPID/SkyPatcher outfit replacing the one carrying the wig: the
+    /// banner must name the config, and the advice must steer to a handling mode —
+    /// Include Outfits is exactly the lever that does NOT work here, since the runtime
+    /// outfit wins over any record write.</summary>
+    [Fact]
+    public void RuntimeOutfitReplaced_NamesTheConfigAndRecommendsAHandlingMode()
+    {
+        const string spid = "SPID: DX_Auri_DISTR.ini (line 21)";
+        var result = new WigPersistenceResult(WigDropReason.RuntimeOutfitReplaced,
+            new[] { new NpcWigSource { Kind = NpcWigSourceKind.Outfit, RecordFormKey = WigArmo } })
+        {
+            RuntimeSourceDetail = spid,
+        };
+
+        result.AnyDropped.Should().BeTrue();
+        result.Headline.Should().Contain(spid).And.Contain("lost in game");
+        result.FixAdvice.Should().Contain("Forward To Outfit").And.Contain("Forward To Skin");
+        result.FixAdvice.Should().Contain("Include Outfits can't help");
+    }
+
+    /// <summary>In plain Create the handling dropdown can't act, so the advice has to
+    /// name the output mode first.</summary>
+    [Fact]
+    public void RuntimeOutfitReplaced_InPlainCreate_PointsAtTheOutputMode()
+    {
+        var result = new WigPersistenceResult(WigDropReason.RuntimeOutfitReplaced,
+            new[] { new NpcWigSource { Kind = NpcWigSourceKind.Outfit } })
+        {
+            RuntimeSourceDetail = "SkyPatcher: outfits.ini (line 3)",
+            HandlingModeAvailable = false,
+        };
+
+        result.FixAdvice.Should().Contain("Create and Patch").And.Contain("Forward To Outfit");
+    }
+
+    /// <summary>The runtime check simulates the SPID/SkyPatcher stack against the load
+    /// order; with no environment it must stay quiet, so the record-level reasons
+    /// above are still what decides.</summary>
+    [Fact]
+    public void RuntimeCheck_WithoutEnvironment_ReportsNothingAndKeepsRecordLevelReason()
+    {
+        var settings = ActiveOutputMode();
+        settings.DefaultWigHandlingMode = WigHandlingMode.None;
+
+        Resolver(settings).FindRuntimeDroppedOutfitPieces(Npc, Npc, Mod(), new[] { WigArmo })
+            .AnyDropped.Should().BeFalse();
+        Resolver(settings).ComputeWigPersistence(Npc, Npc, Mod())
+            .Reason.Should().Be(WigDropReason.ModeLeaveAsIs);
     }
 }

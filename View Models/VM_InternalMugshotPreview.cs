@@ -88,6 +88,10 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     /// how to keep it. (The mugshot takes the other route: it draws the wig and
     /// crosses out its has-wig badge.) Informational only — never marks a cached
     /// mugshot stale.</summary>
+    /// <summary>Antlers left in an outfit (Leave As Is) that a SPID/SkyPatcher config
+    /// replaces at runtime; the text names the config and the fix.</summary>
+    [Reactive] public bool HasAntlerLostNotice { get; private set; }
+    [Reactive] public string AntlerLostNoticeText { get; private set; } = string.Empty;
     [Reactive] public bool HasWigNotPersistedNotice { get; private set; }
     [Reactive] public string WigNotPersistedNoticeText { get; private set; } = string.Empty;
     [Reactive] public string WigNotPersistedNoticeTooltip { get; private set; } = string.Empty;
@@ -651,6 +655,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             ApplyAttireOverrides(attire);
             ApplyOutfitNotice(outfitDisplay);
             SetAntlerRemovalNotice(_resolver.AntlerRemovalAppliesForActiveSelection(formKey));
+            SetAntlerLostNotice(_resolver.AntlerRuntimeLossNoticeForActiveSelection(formKey));
             SetWigNotPersistedNotice(_resolver.WigNotPersistedAppliesForActiveSelection(formKey));
             ClearAntlerSelector(); // no explicit mod scope on the active-selection path
             ClearWigSelector();
@@ -722,6 +727,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             ApplyAttireOverrides(attire);
             ApplyOutfitNotice(outfitDisplay);
             SetAntlerRemovalNotice(_resolver.AntlerRemovalApplies(formKey, modSetting));
+            SetAntlerLostNotice(_resolver.AntlerRuntimeLossNotice(formKey, modSetting, targetNpcFormKey));
             SetWigNotPersistedNotice(_resolver.WigNotPersistedApplies(formKey, modSetting, targetNpcFormKey));
             PopulateAntlerSelector(modSetting, formKey);
             PopulateWigSelector(modSetting, formKey);
@@ -776,6 +782,12 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             ? "Antlers are removed from this NPC in the patched output (this mod's Antler Handling Mode is "
               + "Remove) and are hidden here to match."
             : string.Empty;
+    }
+
+    private void SetAntlerLostNotice(string notice)
+    {
+        HasAntlerLostNotice = notice.Length > 0;
+        AntlerLostNoticeText = notice;
     }
 
     /// <summary>Applies the "wig won't be in your output" banner. The headline is

@@ -246,6 +246,9 @@ public sealed class InternalMugshotGenerator
             // they vanish from the tile entirely, since the outfit walk treats their
             // head-slot armature as headgear. The tile flags the wig gap on its has-wig
             // badge; the live 3D preview stays output-faithful and does not pass this.
+            // Exception: a piece the game output loses is left off, so the mugshot matches
+            // the game — a mode-None antler a SPID/SkyPatcher outfit drops, or a mode-None
+            // wig the output doesn't keep (the No Antlers / No Wig badges explain).
             // (Batch generation routes through here too.)
             long preAttire = sw.ElapsedMilliseconds;
             var meshOverrides = _resolver.ResolveAttireMeshOverrides(
@@ -553,7 +556,7 @@ public sealed class InternalMugshotGenerator
                     npcFormKey, _settings.InternalMugshot,
                     effectiveIncludeDefaultOutfit, effectiveIncludeHeadgear,
                     outfitDisplay.IdentityStamp + _resolver.ComputeWigIdentitySuffix(
-                        npcFormKey, modSetting, effectiveIncludeDefaultOutfit),
+                        npcFormKey, modSetting, effectiveIncludeDefaultOutfit, targetNpcFormKey),
                     stampNpcAssets ? missingMeshPathsOut : null,
                     stampNpcAssets ? missingTexturePathsOut : null,
                     stampNpcAssets ? faceGenMismatch : null,

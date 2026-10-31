@@ -1070,6 +1070,58 @@ public class NpcMeshResolver
         return false;
     }
 
+    /// <summary>Active-selection companion to <see cref="AntlerRuntimeLossNotice"/>
+    /// for the live preview's info banner.</summary>
+    public string AntlerRuntimeLossNoticeForActiveSelection(FormKey targetNpcFormKey)
+    {
+        var modSetting = LookupSelectedModSetting(targetNpcFormKey, out var sourceFormKey);
+        return AntlerRuntimeLossNotice(sourceFormKey, modSetting, targetNpcFormKey);
+    }
+
+    /// <summary>
+    /// Non-empty when this mod's Default-Outfit antlers are lost in game: the patch-side
+    /// Antler Handling Mode leaves them in the outfit (Leave As Is, or plain Create where
+    /// handling can't run) and an external SPID/SkyPatcher config replaces that outfit with
+    /// one that lacks them — the antler counterpart of
+    /// <see cref="WigDropReason.RuntimeOutfitReplaced"/>. Only outfit antlers (source 1)
+    /// can be lost this way; WornArmor and head-part antlers don't ride the outfit.
+    /// Patch-side mode deliberately (not the Render variant), as this is a claim about
+    /// the output.
+    /// </summary>
+    public string AntlerRuntimeLossNotice(FormKey npcFormKey, ModSetting? modSetting,
+        FormKey? targetNpcFormKey = null)
+    {
+        if (modSetting == null || !_settings.ModHasAntlers(modSetting)) return string.Empty;
+        if (_settings.GetEffectiveAntlerMode(modSetting) != AntlerHandlingMode.None) return string.Empty;
+        var linkCache = _env.LinkCache;
+        if (linkCache == null) return string.Empty;
+        // Same record AntlerRemovalApplies reads its outfit antlers off.
+        var appearanceKey = ResolveAppearanceNpcKey(npcFormKey, modSetting);
+        var context = BuildContext(appearanceKey, modSetting);
+        var npc = ResolveRecord<INpcGetter>(appearanceKey.ToLink<INpcGetter>(), linkCache, context);
+        if (npc == null || npc.DefaultOutfit.IsNull) return string.Empty;
+        var outfit = ResolveRecord<IOutfitGetter>(npc.DefaultOutfit, linkCache, context);
+        if (outfit?.Items == null) return string.Empty;
+        var antlers = outfit.Items
+            .Where(i => i != null && !i.IsNull && modSetting.DetectedAntlerArmors.Contains(i.FormKey))
+            .Select(i => i.FormKey)
+            .ToList();
+
+        var loss = _outfitDisplayResolver.FindRuntimeDroppedOutfitPieces(
+            npcFormKey, targetNpcFormKey ?? npcFormKey, modSetting, antlers);
+        if (!loss.AnyDropped) return string.Empty;
+        return $"The antlers this mod gives this NPC are lost in game: {loss.SourceDetail} replaces " +
+               "the outfit carrying them. " +
+               (_settings.WigHandlingActiveForOutputMode
+                   ? "Include Outfits can't help: the runtime outfit wins over the record. To keep them, " +
+                     "set this mod's Antler Handling Mode to \"Forward To Outfit\" (adds them to the outfit " +
+                     "the NPC actually wears) or \"Forward To Skin\"."
+                   : "Include Outfits can't help: the runtime outfit wins over the record, and plain Create " +
+                     "output mode can't run antler handling. To keep them, switch to Create and Patch or " +
+                     "SkyPatcher output and set this mod's Antler Handling Mode to \"Forward To Outfit\" or " +
+                     "\"Forward To Skin\".");
+    }
+
     /// <summary>One ExtraPart baked shape of a head part, for a child row of the
     /// "Set Antler Head Parts" selector. <see cref="ShapeName"/> is the baked NIF
     /// shape name (= the ExtraPart's EditorID); it is the highlight key AND the
@@ -1294,6 +1346,30 @@ public class NpcMeshResolver
         outfitDisplay = _outfitDisplayResolver.ResolveForDisplay(
             targetNpcFormKey ?? npcFormKey, npcFormKey, modSetting, includeDefaultOutfit);
 
+        // Mode-None outfit pieces the game never shows. The mugshot depicts mode-None
+        // wigs and antlers to show the mod's face, but not ones the game output loses —
+        // the tile's No Wig / No Antlers badges explain the gap instead. Antlers: a
+        // SPID/SkyPatcher config swaps in an outfit without them (AntlerRuntimeLossNotice).
+        // Wigs: any drop ComputeWigPersistence reports — that runtime case, or the
+        // record-level one where the outfit carrying the wig isn't forwarded.
+        HashSet<FormKey>? undepictedPieces = null;
+        if (alwaysRenderOutfitWigsAndAntlers && modSetting != null)
+        {
+            undepictedPieces = new HashSet<FormKey>();
+            if (antlerMode == AntlerHandlingMode.None && modSetting.DetectedAntlerArmors.Any())
+            {
+                undepictedPieces.UnionWith(_outfitDisplayResolver.FindRuntimeDroppedOutfitPieces(
+                    npcFormKey, targetNpcFormKey ?? npcFormKey, modSetting,
+                    modSetting.DetectedAntlerArmors.ToList()).Dropped);
+            }
+            if (wigMode == WigHandlingMode.None && _settings.ModHasWigs(modSetting))
+            {
+                undepictedPieces.UnionWith(_outfitDisplayResolver.ComputeWigPersistence(
+                        npcFormKey, targetNpcFormKey ?? npcFormKey, modSetting)
+                    .DroppedSources.Select(s => s.RecordFormKey));
+            }
+        }
+
         // The effective OUTFIT above stays keyed to this NPC — the Traits flag doesn't
         // inherit inventory, so a templated NPC wears its own. Everything the walk below
         // reads off the NPC RECORD is traits-inherited (race + sex for the armature
@@ -1307,7 +1383,7 @@ public class NpcMeshResolver
         var appearanceKey = ResolveAppearanceNpcKey(npcFormKey, modSetting);
         return ResolveAttireMeshOverrides(appearanceKey, linkCache,
             BuildContext(appearanceKey, modSetting), includeDefaultOutfit, includeHeadgear, outfitDisplay,
-            wigMode, antlerMode, modSetting, alwaysRenderOutfitWigsAndAntlers);
+            wigMode, antlerMode, modSetting, alwaysRenderOutfitWigsAndAntlers, undepictedPieces);
     }
 
     private IReadOnlyList<MeshOverride> ResolveAttireMeshOverrides(
@@ -1315,7 +1391,7 @@ public class NpcMeshResolver
         bool includeDefaultOutfit, bool includeHeadgear, OutfitDisplayResult outfitDisplay,
         WigHandlingMode wigMode = WigHandlingMode.None,
         AntlerHandlingMode antlerMode = AntlerHandlingMode.None, ModSetting? modSetting = null,
-        bool alwaysRenderOutfitWigsAndAntlers = false)
+        bool alwaysRenderOutfitWigsAndAntlers = false, IReadOnlySet<FormKey>? undepictedPieces = null)
     {
         var result = new List<MeshOverride>();
         // Outfit is the dominant toggle — headgear is part of the outfit and never
@@ -1367,7 +1443,7 @@ public class NpcMeshResolver
         // NPC wears in game.
         var wigPlan = maybeWigsOrAntlers
             ? BuildWigRenderPlan(npcGetter, modSetting!, wigMode, antlerMode, linkCache, context,
-                alwaysRenderOutfitWigsAndAntlers)
+                alwaysRenderOutfitWigsAndAntlers, undepictedPieces)
             : null;
         if (wigPlan != null)
         {
@@ -1540,8 +1616,9 @@ public class NpcMeshResolver
     /// doesn't auto-restale the mugshots of the NPCs inheriting from it; substitute
     /// here only together with every other call site.</para></summary>
     public string ComputeWigIdentitySuffix(FormKey sourceNpcFormKey, ModSetting? modSetting,
-        bool includeDefaultOutfit)
-        => _outfitDisplayResolver.ComputeWigIdentitySuffix(sourceNpcFormKey, modSetting, includeDefaultOutfit);
+        bool includeDefaultOutfit, FormKey? targetNpcFormKey = null)
+        => _outfitDisplayResolver.ComputeWigIdentitySuffix(sourceNpcFormKey, modSetting, includeDefaultOutfit,
+            targetNpcFormKey);
 
     /// <summary>Piece classification for the wig-forwarding pass: Wig pieces
     /// emit only their hair-slot ARMAs (matching WigForwarder's transfer);
@@ -1598,7 +1675,8 @@ public class NpcMeshResolver
     /// </summary>
     private WigRenderPlan? BuildWigRenderPlan(INpcGetter npcGetter, ModSetting modSetting,
         WigHandlingMode wigMode, AntlerHandlingMode antlerMode, ILinkCache linkCache,
-        NpcResolutionContext? context, bool alwaysRenderOutfitWigsAndAntlers)
+        NpcResolutionContext? context, bool alwaysRenderOutfitWigsAndAntlers,
+        IReadOnlySet<FormKey>? undepictedPieces = null)
     {
         if (npcGetter.DefaultOutfit == null || npcGetter.DefaultOutfit.IsNull) return null;
         var donorOutfit = ResolveRecord<IOutfitGetter>(npcGetter.DefaultOutfit, linkCache, context);
@@ -1633,7 +1711,9 @@ public class NpcMeshResolver
                         // would otherwise draw them promotes their head-slot armature
                         // to headgear — so with the attire toggles off (the mugshot
                         // default) they vanished entirely under "Leave As Is". Depict
-                        // them; whether they reach the OUTPUT is a separate question.
+                        // them — unless a runtime outfit drops them in game, where the
+                        // mugshot follows the game output and leaves them off.
+                        if (undepictedPieces?.Contains(item.FormKey) == true) break;
                         AddRenderPiece(plan, item.FormKey, true, PieceForward.Depiction, linkCache, context);
                         break;
                     // None (preview): legacy passthrough — the outfit walk depicts it,
@@ -1665,7 +1745,9 @@ public class NpcMeshResolver
                         // this mod supplies. Purely a depiction — whether the wig
                         // reaches the output is a separate question the tile answers
                         // with the crossed-out has-wig badge (VM_NpcsMenuMugshot) and
-                        // the preview with its own banner.
+                        // the preview with its own banner. A wig the output loses is the
+                        // exception: the mugshot follows the game and leaves it off.
+                        if (undepictedPieces?.Contains(item.FormKey) == true) break;
                         AddRenderPiece(plan, item.FormKey, false, PieceForward.Depiction, linkCache, context);
                         break;
                     // None (preview): legacy passthrough — the outfit walk depicts it,
