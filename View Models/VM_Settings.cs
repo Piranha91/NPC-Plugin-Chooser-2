@@ -2444,7 +2444,14 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             string.IsNullOrWhiteSpace(ModsFolder) ? null : ModsFolder,
             _model.ModSettings.Count,
             async () => (await _faceFinderClient.GetAllModNamesAsync()).Count);
-        var window = new SetupWizardWindow(wizard) { Owner = System.Windows.Application.Current.MainWindow };
+        // Resolve the owner before constructing the window: when Application.MainWindow is null (it
+        // can be, after the splash screen closes), WPF adopts the first new Window as MainWindow, so
+        // reading it afterwards returns the wizard itself and setting Owner to it throws.
+        var owner = System.Windows.Application.Current.Windows.OfType<System.Windows.Window>()
+                        .FirstOrDefault(w => w.IsActive)
+                    ?? System.Windows.Application.Current.MainWindow;
+        var window = new SetupWizardWindow(wizard);
+        if (owner != null && owner != window) window.Owner = owner;
         if (window.ShowDialog() != true) return;
 
         await ApplySetupWizardAsync(wizard.ToDraft());
