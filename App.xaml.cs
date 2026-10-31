@@ -559,7 +559,9 @@ namespace NPC_Plugin_Chooser_2
             // namespaces and types, NpcRenderRequest): an older DLL won't load at all.
             // 3.1.0 added IBsaArchiveByteReader (in-memory BSA assets, the
             // NpcChooserBsaProviderAdapter's TryReadBytes) and AssetCache.Resolver.
-            var requiredViewerVersion = new Version(3, 1, 0);
+            // 3.1.1 added OrbitCamera.OnMouseMove(x, y, viewportHeight), the
+            // cursor-locked pan both 3D viewports call.
+            var requiredViewerVersion = new Version(3, 1, 1);
             if (SkyRenderInfo.Version < requiredViewerVersion)
             {
                 StartupLogger.Log(

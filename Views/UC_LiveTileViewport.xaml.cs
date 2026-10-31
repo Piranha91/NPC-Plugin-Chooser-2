@@ -294,7 +294,7 @@ public partial class UC_LiveTileViewport : UserControl
     {
         if (_viewer == null) return;
         var pos = e.GetPosition(GlControl);
-        _viewer.Camera.OnMouseMove((float)pos.X, (float)pos.Y);
+        _viewer.Camera.OnMouseMove((float)pos.X, (float)pos.Y, (float)GlControl.ActualHeight);
         if (_leftDragActive
             && (Math.Abs(pos.X - _leftDragStart.X) >= SystemParameters.MinimumHorizontalDragDistance
                 || Math.Abs(pos.Y - _leftDragStart.Y) >= SystemParameters.MinimumVerticalDragDistance))

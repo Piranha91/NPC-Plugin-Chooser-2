@@ -985,6 +985,15 @@
                                 <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
                                 <Setter Property="CaretBrush" Value="{DynamicResource PrimaryForeground}"/>
                             </Style>
+                            <!-- Same for IntegerUpDown (archive memory budget):
+                                 implicit styles match the exact type only, so the
+                                 DoubleUpDown style above doesn't reach it. -->
+                            <Style TargetType="{x:Type xctk:IntegerUpDown}">
+                                <Setter Property="Background" Value="{DynamicResource TextBoxBackground}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
+                                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+                                <Setter Property="CaretBrush" Value="{DynamicResource PrimaryForeground}"/>
+                            </Style>
                         </Border.Resources>
                         <Border.Style>
                             <Style TargetType="Border">

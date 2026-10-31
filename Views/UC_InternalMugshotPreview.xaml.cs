@@ -487,7 +487,7 @@ public partial class UC_InternalMugshotPreview : UserControl
     {
         if (_viewer == null) return;
         var pos = e.GetPosition(GlControl);
-        _viewer.Camera.OnMouseMove((float)pos.X, (float)pos.Y);
+        _viewer.Camera.OnMouseMove((float)pos.X, (float)pos.Y, (float)GlControl.ActualHeight);
 
         // Auto mode: re-fit distance for the new camera angle so the
         // character stays inside the framing band as the user rotates.
