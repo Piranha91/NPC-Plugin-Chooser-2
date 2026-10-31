@@ -54,12 +54,11 @@ public static class HandlingModeDisplay
         _ => backend.ToString(),
     };
 
-    // Recast is left out until the patcher writes Recast output; the enum value exists so settings
-    // and tokens can carry it.
     public static readonly IReadOnlyList<OutputBackend> OutputBackendsInDisplayOrder = new[]
     {
         OutputBackend.ESP,
         OutputBackend.SkyPatcher,
+        OutputBackend.Recast,
     };
 
     public static string ToDisplayString(RecastMode mode) => mode switch
