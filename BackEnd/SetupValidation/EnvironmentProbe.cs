@@ -1,5 +1,8 @@
 using System.IO;
 using System.Text.RegularExpressions;
+using GameFinder.RegistryUtils;
+using GameFinder.StoreHandlers.Steam;
+using GameFinder.StoreHandlers.Steam.Models.ValueTypes;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Environments;
 using Mutagen.Bethesda.Installs;
@@ -37,12 +40,33 @@ public sealed class EnvironmentProbe
     {
         try
         {
-            return GameLocations.TryGetGameFolder(release.ToGameRelease(), out var folder) ? folder.Path : null;
+            var gameRelease = release.ToGameRelease();
+            string? mutagenFolder = GameLocations.TryGetGameFolder(gameRelease, out var folder) ? folder.Path : null;
+            if (gameRelease is not (GameRelease.EnderalLE or GameRelease.EnderalSE or GameRelease.EnderalSEGog))
+            {
+                return mutagenFolder;
+            }
+
+            // Mutagen falls back to Skyrim's own Steam app (489830 / 72850) for Enderal, which reports every
+            // Skyrim install as Enderal. Enderal's master is the only marker that tells the two apart, so a
+            // folder only counts with it — and the standalone Steam release (976620) is looked up as well.
+            return new[] { mutagenFolder, gameRelease == GameRelease.EnderalSE ? FindSteamGameFolder(EnderalSESteamAppId) : null }
+                .FirstOrDefault(f => f != null && File.Exists(Path.Combine(f, "Data", EnderalMasterFileName)));
         }
         catch
         {
             return null;
         }
+    }
+
+    private const string EnderalMasterFileName = "Enderal - Forgotten Stories.esm";
+    private const uint EnderalSESteamAppId = 976620;
+
+    private static string? FindSteamGameFolder(uint appId)
+    {
+        if (!OperatingSystem.IsWindows()) return null;
+        var steam = new SteamHandler(NexusMods.Paths.FileSystem.Shared, WindowsRegistry.Shared, null);
+        return steam.FindOneGameById(AppId.From(appId), out _)?.Path.GetFullPath();
     }
 
     public static EnvironmentProbe Run(SkyrimRelease release, string? dataFolder)
