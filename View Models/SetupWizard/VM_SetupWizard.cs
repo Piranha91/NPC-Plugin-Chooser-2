@@ -6,6 +6,7 @@ using System.Reactive.Linq;
 using Microsoft.WindowsAPICodePack.Dialogs;
 using Mutagen.Bethesda.Skyrim;
 using Noggog;
+using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.BackEnd.SetupValidation;
 using NPC_Plugin_Chooser_2.Models;
 using ReactiveUI;
@@ -278,7 +279,8 @@ public sealed class VM_SetupWizard : ReactiveObject, IDisposable
     {
         try
         {
-            Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+            // Shell-executing a URL silently does nothing when launched under MO2; OpenUrl goes through Explorer.
+            Auxilliary.OpenUrl(url);
         }
         catch (Exception ex)
         {

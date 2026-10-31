@@ -205,8 +205,8 @@ public sealed class ModlistFilterStep : WizardStep
     public override bool IsApplicable => Wizard.ModManager != SetupModManager.Other;
     public override string Title => "Active Mods Filter";
     public override string Explanation =>
-        "Optionally scan only the mods that are enabled in a mod manager profile, using its modlist.txt. Set this up now: " +
-        "it is applied during the first scan. Vortex has no modlist.txt; you can write one yourself (one +FolderName line per mod).";
+        "Optionally list only the mods that are enabled in a mod manager profile, using its modlist.txt. You can turn this " +
+        "on or change it later in Settings. Vortex has no modlist.txt; you can write one yourself (one +FolderName line per mod).";
 
     [Reactive] public IReadOnlyList<string> ProfileModlists { get; private set; } = Array.Empty<string>();
     [Reactive] public bool HasProfileModlists { get; private set; }

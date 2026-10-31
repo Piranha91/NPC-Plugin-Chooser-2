@@ -416,7 +416,7 @@ public static class SetupValidators
         if (nested.Count > 0)
         {
             findings.Add(SetupFinding.Warning(
-                $"{nested.Count} folder(s) have an extra folder level (for example {Path.GetFileName(nested[0])}). " +
+                $"{nested.Count} folder(s) have an extra folder level: {string.Join(", ", nested.Select(Path.GetFileName))}. " +
                 "Each mod's folder must directly contain the plugin-named folders (Mugshots\\ModName\\Plugin.esp\\...). " +
                 "Move the inner folder up one level."));
         }
@@ -432,7 +432,7 @@ public static class SetupValidators
         {
             findings.Add(SetupFinding.Info(
                 $"If '{vanilla}' holds base-game mugshots, rename it to 'Base Game' so it matches N.P.C.2's Base Game entry " +
-                "(or drag it onto that entry in the Mods tab later)."));
+                "(or link it later in the NPCs tab by dragging one of its mugshots onto a Base Game tile)."));
         }
 
         if (good.Count > 0 && !string.IsNullOrWhiteSpace(modsFolder) && Directory.Exists(modsFolder))
@@ -447,7 +447,8 @@ public static class SetupValidators
             {
                 findings.Add(SetupFinding.Info(
                     $"Not matched by name: {string.Join(", ", unmatched.Take(5))}{(unmatched.Count > 5 ? ", ..." : "")}. " +
-                    "N.P.C.2 still lists these; link them to the right mod by dragging them in the Mods tab."));
+                    "N.P.C.2 still lists these; link one to the right mod in the NPCs tab by dragging its mugshot onto " +
+                    "that mod's tile."));
             }
         }
         else if (good.Count > 0)
