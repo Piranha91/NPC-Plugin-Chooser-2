@@ -36,7 +36,10 @@ namespace NPC_Plugin_Chooser_2.View_Models;
         private readonly CompositeDisposable _disposables = new();
         private CancellationTokenSource? _summaryImageLoadCts;
         
-        private record SummaryNpcData(FormKey TargetNpcFormKey, FormKey SourceNpcFormKey, string NpcDisplayName, string ModDisplayName, string SourceNpcDisplayName, bool IsGuest, string ImagePath, bool HasMugshot, bool IsAmbiguous, bool HasIssue, string IssueText, bool HasNoData, string NoDataText);
+        // Holds only what can be computed from in-memory state. The mugshot path is
+        // resolved per page in UpdateDisplay: it needs disk probes (and a PNG metadata
+        // read for autogen staleness), which is too slow to do for every selection.
+        private record SummaryNpcData(FormKey TargetNpcFormKey, FormKey SourceNpcFormKey, string NpcDisplayName, string ModDisplayName, string SourceNpcDisplayName, bool IsGuest, VM_ModSetting? ModSetting, bool IsAmbiguous, bool HasIssue, string IssueText, bool HasNoData, string NoDataText);
         private List<SummaryNpcData> _allNpcData = new();
         private List<VM_SummaryListItem> _allListItems = new();
         private readonly ISubject<Unit> _refreshImageSizesSubject = new Subject<Unit>();
@@ -58,7 +61,13 @@ namespace NPC_Plugin_Chooser_2.View_Models;
         [Reactive] public int MaxNpcsPerPage { get; set; }
 
         // --- Main Display Properties ---
-        public ObservableCollection<object> DisplayedItems { get; } = new();
+        // Separate collections so each view mode's control only observes its own items.
+        // The gallery's WrapPanel doesn't virtualize, so sharing one collection made it
+        // build a container for every list row while hidden.
+        public ObservableCollection<VM_SummaryMugshot> GalleryItems { get; } = new();
+        // Replaced wholesale (one rebind) rather than filled item-by-item, so the
+        // DataGrid doesn't process a CollectionChanged event per row.
+        [Reactive] public List<VM_SummaryListItem> ListItems { get; private set; } = new();
 
         // --- Bottom Row / Pagination Properties ---
         [Reactive] public int CurrentPage { get; set; } = 1;
@@ -232,10 +241,15 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             
             var allSelections = _settings.SelectedAppearanceMods;
             
+            // First match wins, matching the FirstOrDefault lookup this replaces.
+            var modSettingsByName = new Dictionary<string, VM_ModSetting>(StringComparer.OrdinalIgnoreCase);
+            foreach (var mod in _modsViewModel.AllModSettings)
+            {
+                modSettingsByName.TryAdd(mod.DisplayName, mod);
+            }
+
             _allNpcData = new List<SummaryNpcData>();
             _allListItems = new List<VM_SummaryListItem>();
-
-            string placeholderPath = Path.Combine(AppContext.BaseDirectory, @"Resources\No Mugshot.png");
 
             foreach (var selection in allSelections)
             {
@@ -248,35 +262,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                 bool isGuest = !targetNpcKey.Equals(sourceNpcKey);
 
                 // For mugshot view, we need more details
-                var modSetting = _modsViewModel.AllModSettings.FirstOrDefault(m => m.DisplayName.Equals(modName, StringComparison.OrdinalIgnoreCase));
-
-                // Curated mugshots resolve via the mod's MugShotFolderPaths. Auto-generated
-                // PNGs live in a separate AutoGen folder that (post-2.1.7) is NOT registered
-                // in MugShotFolderPaths, so GetMugshotPathForNpc can't see them. Probe the
-                // AutoGen folder directly when curated resolution comes up empty, mirroring
-                // the NPCs/Mods menu fast-path (VM_NpcsMenuMugshot.LoadInitialImageAsync ->
-                // TryGetExistingFreshAutoGenPath). Without this the Summary tile starts as a
-                // placeholder and only the racy/cancellable LoadRealImageAsync could recover
-                // it, which is why auto-generated faces were missing here but shown elsewhere.
-                string? resolvedPath = _npcsViewModel.GetMugshotPathForNpc(modName, sourceNpcKey, targetNpcKey);
-                if (resolvedPath == null
-                    && modSetting != null
-                    && _batchMugshotGenerator.TryGetExistingFreshAutoGenPath(sourceNpcKey, modSetting, out var autoGenPath))
-                {
-                    resolvedPath = autoGenPath;
-                }
-                // Freshness probe said stale (or its identity inputs weren't
-                // resolvable) but a cached render still exists — show it rather
-                // than the placeholder, mirroring the NPCs-menu fallback.
-                else if (resolvedPath == null
-                    && modSetting != null
-                    && _batchMugshotGenerator.TryGetExistingAutoGenPath(sourceNpcKey, modSetting, out var anyAutoGenPath))
-                {
-                    resolvedPath = anyAutoGenPath;
-                }
-
-                string imagePath = resolvedPath ?? placeholderPath;
-                bool hasMugshot = !imagePath.Equals(placeholderPath, StringComparison.OrdinalIgnoreCase);
+                modSettingsByName.TryGetValue(modName, out var modSetting);
 
                 // Decorator info
                 bool isAmbiguous = false, hasIssue = false, hasNoData = false;
@@ -296,7 +282,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                 }
                 
                 // Create and store the lightweight data object
-                var data = new SummaryNpcData(targetNpcKey, sourceNpcKey, targetNpcName, modName, sourceNpcName, isGuest, imagePath, hasMugshot, isAmbiguous, hasIssue, issueText, hasNoData, noDataText);
+                var data = new SummaryNpcData(targetNpcKey, sourceNpcKey, targetNpcName, modName, sourceNpcName, isGuest, modSetting, isAmbiguous, hasIssue, issueText, hasNoData, noDataText);
                 _allNpcData.Add(data);
                 _allListItems.Add(new VM_SummaryListItem(targetNpcKey, targetNpcName, modName, sourceNpcName, isGuest));
             }
@@ -310,17 +296,19 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             // Cancel any image loading tasks from the previous page
             _summaryImageLoadCts?.Cancel();
             
-            DisplayedItems.Clear();
-            
+            GalleryItems.Clear();
+
             if (ViewMode == SummaryViewMode.List)
             {
-                // List view shows all filtered items without pagination
-                var filteredListItems = GetFilteredListItems();
-                foreach(var item in filteredListItems) DisplayedItems.Add(item);
+                // List view shows all filtered items without pagination.
+                // Copy so the DataGrid never holds a reference to _allListItems itself.
+                ListItems = new List<VM_SummaryListItem>(GetFilteredListItems());
                 TotalPages = 1;
             }
             else // Gallery View
             {
+                if (ListItems.Count > 0) ListItems = new List<VM_SummaryListItem>();
+
                 // Create a new cancellation source for the current page
                 _summaryImageLoadCts = new CancellationTokenSource();
                 var token = _summaryImageLoadCts.Token;
@@ -336,16 +324,18 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                     .ToList();
             
                 // Create the heavy ViewModels ONLY for the visible page
+                string placeholderPath = Path.Combine(AppContext.BaseDirectory, @"Resources\No Mugshot.png");
                 var viewModelsForPage = pagedData.Select(data =>
                 {
-                    var modSetting = _modsViewModel.AllModSettings.FirstOrDefault(m => m.DisplayName.Equals(data.ModDisplayName, StringComparison.OrdinalIgnoreCase));
-            
+                    string imagePath = ResolveImagePath(data) ?? placeholderPath;
+                    bool hasMugshot = !imagePath.Equals(placeholderPath, StringComparison.OrdinalIgnoreCase);
+
                     // Call the factory with only the runtime parameters.
                     // Autofac will automatically inject the singleton dependencies.
                     return _summaryMugshotFactory(
-                        data.ImagePath, data.TargetNpcFormKey, data.SourceNpcFormKey, data.NpcDisplayName, data.ModDisplayName, data.SourceNpcDisplayName,
-                        data.IsGuest, data.IsAmbiguous, data.HasIssue, data.IssueText, data.HasNoData, data.NoDataText, 
-                        data.HasMugshot, modSetting);
+                        imagePath, data.TargetNpcFormKey, data.SourceNpcFormKey, data.NpcDisplayName, data.ModDisplayName, data.SourceNpcDisplayName,
+                        data.IsGuest, data.IsAmbiguous, data.HasIssue, data.IssueText, data.HasNoData, data.NoDataText,
+                        hasMugshot, data.ModSetting);
 
                 }).ToList();
 
@@ -353,7 +343,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                 // Add them to the display collection
                 foreach(var vm in viewModelsForPage)
                 {
-                    DisplayedItems.Add(vm);
+                    GalleryItems.Add(vm);
                 }
             
                 Task.Run(async () =>
@@ -368,6 +358,33 @@ namespace NPC_Plugin_Chooser_2.View_Models;
 
             if (!SummaryViewIsZoomLocked) SummaryViewHasUserManuallyZoomed = false;
             _refreshImageSizesSubject.OnNext(Unit.Default);
+        }
+
+        private string? ResolveImagePath(SummaryNpcData data)
+        {
+            // Curated mugshots resolve via the mod's MugShotFolderPaths. Auto-generated
+            // PNGs live in a separate AutoGen folder that (post-2.1.7) is NOT registered
+            // in MugShotFolderPaths, so GetMugshotPathForNpc can't see them. Probe the
+            // AutoGen folder directly when curated resolution comes up empty, mirroring
+            // the NPCs/Mods menu fast-path (VM_NpcsMenuMugshot.LoadInitialImageAsync ->
+            // TryGetExistingFreshAutoGenPath). Without this the Summary tile starts as a
+            // placeholder and only the racy/cancellable LoadRealImageAsync could recover
+            // it, which is why auto-generated faces were missing here but shown elsewhere.
+            string? resolvedPath = _npcsViewModel.GetMugshotPathForNpc(data.ModDisplayName, data.SourceNpcFormKey, data.TargetNpcFormKey);
+            if (resolvedPath != null || data.ModSetting == null) return resolvedPath;
+
+            if (_batchMugshotGenerator.TryGetExistingFreshAutoGenPath(data.SourceNpcFormKey, data.ModSetting, out var autoGenPath))
+            {
+                return autoGenPath;
+            }
+            // Freshness probe said stale (or its identity inputs weren't
+            // resolvable) but a cached render still exists — show it rather
+            // than the placeholder, mirroring the NPCs-menu fallback.
+            if (_batchMugshotGenerator.TryGetExistingAutoGenPath(data.SourceNpcFormKey, data.ModSetting, out var anyAutoGenPath))
+            {
+                return anyAutoGenPath;
+            }
+            return null;
         }
 
         private List<SummaryNpcData> GetFilteredData()

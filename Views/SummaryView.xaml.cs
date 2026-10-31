@@ -45,12 +45,6 @@ namespace NPC_Plugin_Chooser_2.Views
                 // Replace "SummaryItemsControl" and "ZoomPercentageTextBox" with the
                 // actual x:Name of your controls in SummaryView.xaml.
 
-                // Binds the collection of mugshots/items to the ItemsControl.
-                this.OneWayBind(ViewModel,
-                        vm => vm.DisplayedItems,
-                        v => v.SummaryItemsControl.ItemsSource)
-                    .DisposeWith(d);
-
                 // Binds the zoom level to the TextBox for display and editing.
                 this.Bind(ViewModel,
                         vm => vm.SummaryViewZoomLevel,
@@ -106,9 +100,9 @@ namespace NPC_Plugin_Chooser_2.Views
 
         private void RefreshMugshotImageSizes()
         {
-            if (ViewModel?.DisplayedItems == null || ViewModel.ViewMode != VM_Summary.SummaryViewMode.Gallery) return;
+            if (ViewModel?.GalleryItems == null || ViewModel.ViewMode != VM_Summary.SummaryViewMode.Gallery) return;
 
-            var imagesToProcess = ViewModel.DisplayedItems.OfType<IHasMugshotImage>().ToList();
+            var imagesToProcess = ViewModel.GalleryItems.OfType<IHasMugshotImage>().ToList();
             if (!imagesToProcess.Any()) return;
 
             Dispatcher.BeginInvoke(new Action(() =>

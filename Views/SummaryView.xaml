@@ -47,7 +47,7 @@
                           PreviewMouseWheel="MugshotScrollViewer_PreviewMouseWheel"
                           SizeChanged="MugshotScrollViewer_SizeChanged"
                           Visibility="{Binding ViewMode, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Gallery}">
-                <ItemsControl x:Name="SummaryItemsControl" ItemsSource="{Binding DisplayedItems}">
+                <ItemsControl x:Name="SummaryItemsControl" ItemsSource="{Binding GalleryItems}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <WrapPanel Orientation="Horizontal"
@@ -145,7 +145,7 @@
                 </ItemsControl>
             </ScrollViewer>
 
-            <DataGrid ItemsSource="{Binding DisplayedItems}"
+            <DataGrid ItemsSource="{Binding ListItems}"
                       AutoGenerateColumns="False"
                       IsReadOnly="True"
                       CanUserAddRows="False"
