@@ -52,6 +52,9 @@ public class MugshotSettingsHashCoverageTests
         ["IncludeHeadgear"] = "hashed via the effective-attire parameter (per-NPC override aware)",
         ["PrewarmNextNpcMugshots"] = "background cache warm-up; performance only",
         ["WarmUpRendererAtStartup"] = "background archive warm-up; performance only",
+        ["ServeArchiveAssetsFromMemory"] = "where BSA bytes are staged (memory vs SkyRenderCache); the renderer " +
+                                           "receives the same bytes either way (2,948 assets hash-identical, 2026-10)",
+        ["ArchiveMemoryBudgetMB"] = "size of the in-memory BSA byte cache; evicted files are re-read, same bytes",
         ["UseCompressedTextures"] = "hashed via the EFFECTIVE process policy (TextureUploadPolicy, v20): " +
                                     "an env var or DdsMaxFinalMip.txt can override the setting, " +
                                     "so the field alone would name the wrong route",

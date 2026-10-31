@@ -355,7 +355,25 @@ namespace NPC_Plugin_Chooser_2
             // CharacterViewer.Rendering leaf services.
             builder.RegisterType<NpcMeshResolver>().AsSelf().SingleInstance();
             builder.RegisterType<RenderLogGate>().AsSelf().SingleInstance();
-            builder.RegisterType<GameAssetResolver>().AsSelf().SingleInstance();
+            // Lambda rather than RegisterType: the BSA serving mode is an init
+            // property, chosen at startup by BsaAssetMode (setting, or env var /
+            // file trigger overriding it).
+            builder.Register(c =>
+                {
+                    var mode = BsaAssetMode.Read(c.Resolve<Settings>().InternalMugshot);
+                    StartupLogger.Log($"BSA asset mode: {(mode.ExtractToDisk ? "extract" : "memory")} " +
+                                      $"budget={(mode.BudgetBytes is { } b ? $"{b / (1024 * 1024)}MB" : "default")} (from {mode.Source})");
+                    var dataFolder = c.Resolve<IDataFolderProvider>();
+                    var bsaProvider = c.Resolve<IBsaArchiveProvider>();
+                    var logGate = c.Resolve<RenderLogGate>();
+                    var logger = c.Resolve<IRenderLogger>();
+                    return mode.BudgetBytes is { } budget
+                        ? new GameAssetResolver(dataFolder, bsaProvider, logGate, logger)
+                            { ExtractBsaAssetsToDisk = mode.ExtractToDisk, InMemoryAssetBudgetBytes = budget }
+                        : new GameAssetResolver(dataFolder, bsaProvider, logGate, logger)
+                            { ExtractBsaAssetsToDisk = mode.ExtractToDisk };
+                })
+                .AsSelf().SingleInstance();
             builder.RegisterType<CharacterPreviewCache>().AsSelf().SingleInstance();
             builder.RegisterType<VM_CharacterViewer>().AsSelf();  // transient — one per preview window
 
@@ -539,7 +557,9 @@ namespace NPC_Plugin_Chooser_2
             // original hair mod's archive).
             // 3.0.0 split the renderer into SkyRender + SkyRender.Character (renamed
             // namespaces and types, NpcRenderRequest): an older DLL won't load at all.
-            var requiredViewerVersion = new Version(3, 0, 0);
+            // 3.1.0 added IBsaArchiveByteReader (in-memory BSA assets, the
+            // NpcChooserBsaProviderAdapter's TryReadBytes) and AssetCache.Resolver.
+            var requiredViewerVersion = new Version(3, 1, 0);
             if (SkyRenderInfo.Version < requiredViewerVersion)
             {
                 StartupLogger.Log(
@@ -623,7 +643,9 @@ namespace NPC_Plugin_Chooser_2
                 splashVM.UpdateProgress(90, "Running render harness...");
                 _renderHarnessExitRequested = await RenderHarnessRunner.RunAsync(
                     container.Resolve<Settings>(),
-                    container.Resolve<InternalMugshotGenerator>());
+                    container.Resolve<InternalMugshotGenerator>(),
+                    container.Resolve<GameAssetResolver>(),
+                    container.Resolve<ModIssueScanner>());
                 StartupLogger.Log($"Render harness finished (exitRequested={_renderHarnessExitRequested})");
             }
 

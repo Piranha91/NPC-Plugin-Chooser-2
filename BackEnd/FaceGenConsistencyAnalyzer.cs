@@ -50,6 +50,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 public sealed class FaceGenConsistencyAnalyzer
 {
     private readonly NifMeshBuilder _meshBuilder;
+    private readonly GameAssetResolver _assetResolver;
 
     // Session cache of the (expensive) NIF survey, keyed by path + size + mtime so a
     // re-validation or a mugshot re-generation doesn't re-parse an unchanged FaceGen.
@@ -64,6 +65,7 @@ public sealed class FaceGenConsistencyAnalyzer
         // Reuse the shared mesh builder the rest of the rendering pipeline uses
         // (same wiring as FaceGenAnalysisCache) rather than constructing a parallel parser.
         _meshBuilder = previewCache.MeshBuilder;
+        _assetResolver = previewCache.Assets.Resolver;
     }
 
     /// <summary>Surveys the NIF's baked shape names, memoized by (path, length, mtime).
@@ -74,9 +76,11 @@ public sealed class FaceGenConsistencyAnalyzer
         string key;
         try
         {
-            var fi = new System.IO.FileInfo(nifPath);
-            key = fi.Exists
-                ? fi.FullName + "|" + fi.Length + "|" + fi.LastWriteTimeUtc.Ticks
+            // Through the resolver: a BSA asset served from memory has a resolved path
+            // but no file, and its length/mtime come from the archive.
+            key = _assetResolver.AssetFileExists(nifPath)
+                ? System.IO.Path.GetFullPath(nifPath) + "|" + _assetResolver.GetResolvedLength(nifPath) + "|" +
+                  _assetResolver.GetResolvedLastWriteTicks(nifPath)
                 : nifPath + "|missing";
         }
         catch

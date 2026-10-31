@@ -101,6 +101,26 @@ public static class RenderHarnessRunner
         /// timings in RenderLogs\RenderTimings.csv when LogRenderTimings.txt
         /// exists.</summary>
         public ClickSimulationConfig? ClickSimulation { get; set; }
+
+        /// <summary>Renders each variant's <see cref="Renders"/> all at once
+        /// (one GenerateAsync per render, bounded by the generator's render
+        /// limiter) instead of one after another: the load a mugshot batch puts
+        /// on the asset resolver. Off by default.</summary>
+        public bool ParallelBatch { get; set; }
+
+        /// <summary>With <see cref="ParallelBatch"/>, runs <see cref="ClickSimulation"/>
+        /// at the same time as the first variant's batch instead of before it, so
+        /// tile bursts compete with the batch as live tiles do.</summary>
+        public bool ConcurrentClickSimulation { get; set; }
+
+        /// <summary>Render limit for the run (the UI allows 1-32), restored
+        /// afterwards. Null keeps the user's MaxParallelPortraitRenders.</summary>
+        public int? MaxParallelRenders { get; set; }
+
+        /// <summary>Mods (by DisplayName) to run the Mod Issues scan on after
+        /// the renders, ignoring its cache; the results go to ModIssueScan.json.
+        /// The scan also stores them in ModIssuesCache.json, as the tab does.</summary>
+        public List<string> ModIssueScanMods { get; set; } = new();
     }
 
     public class ClickSimulationConfig
@@ -147,7 +167,8 @@ public static class RenderHarnessRunner
     /// still honors ExitWhenDone so an unattended sweep can't hang the app
     /// open on an error).
     /// </summary>
-    public static async Task<bool> RunAsync(Settings settings, InternalMugshotGenerator generator)
+    public static async Task<bool> RunAsync(Settings settings, InternalMugshotGenerator generator,
+        SkyRender.GameAssetResolver assetResolver, ModIssueScanner modIssueScanner)
     {
         HarnessConfig config;
         var log = new StringBuilder();
@@ -171,13 +192,36 @@ public static class RenderHarnessRunner
             ? Path.Combine(AppContext.BaseDirectory, "RenderHarnessOutput")
             : config.OutputDirectory;
 
+        int userMaxParallel = settings.MaxParallelPortraitRenders;
         try
         {
             Directory.CreateDirectory(outDir);
 
+            if (config.MaxParallelRenders is { } maxParallel)
+            {
+                generator.SetMaxParallelRenders(maxParallel);
+                log.AppendLine($"MaxParallelRenders={maxParallel} (user setting {userMaxParallel})");
+            }
+
+            string cacheDir = Path.Combine(AppContext.BaseDirectory, "SkyRenderCache");
+            var statsBefore = assetResolver.GetBsaAssetStats();
+            var (cacheFilesBefore, cacheBytesBefore) = CountFiles(cacheDir);
+            log.AppendLine($"BsaAssetMode: inMemory={assetResolver.ServesBsaAssetsFromMemory} " +
+                           $"budget={assetResolver.InMemoryAssetBudgetBytes / (1024 * 1024)}MB");
+            log.AppendLine($"SkyRenderCache before: files={cacheFilesBefore} bytes={cacheBytesBefore}");
+            log.AppendLine($"BsaAssetStats before: {statsBefore}");
+            var runSw = Stopwatch.StartNew();
+
+            // Own buffer: when concurrent it appends while the batch logs.
+            var clickLog = new StringBuilder();
+            Task clickSimulation = Task.CompletedTask;
             if (config.ClickSimulation != null)
             {
-                await RunClickSimulationAsync(settings, generator, config.ClickSimulation, outDir, log);
+                clickSimulation = RunClickSimulationAsync(settings, generator, config.ClickSimulation, outDir, clickLog);
+                if (!(config.ParallelBatch && config.ConcurrentClickSimulation))
+                {
+                    await clickSimulation;
+                }
             }
 
             // Snapshot the mugshot settings so variant overrides never leak
@@ -218,9 +262,24 @@ public static class RenderHarnessRunner
                     JsonConvert.PopulateObject(snapshot, settings.InternalMugshot);
                     ApplyOverrides(settings.InternalMugshot, variant.Settings, log, variantName);
 
-                    foreach (var render in config.Renders)
+                    if (config.ParallelBatch)
                     {
-                        await RunOneAsync(settings, generator, render, variantName, variantDir, log);
+                        var batchSw = Stopwatch.StartNew();
+                        var lines = await Task.WhenAll(config.Renders.Select(render => Task.Run(async () =>
+                        {
+                            var renderLog = new StringBuilder();
+                            await RunOneAsync(settings, generator, render, variantName, variantDir, renderLog);
+                            return renderLog.ToString();
+                        })));
+                        foreach (var line in lines) log.Append(line);
+                        log.AppendLine($"[{variantName}] ParallelBatch: renders={config.Renders.Count} wallMs={batchSw.ElapsedMilliseconds}");
+                    }
+                    else
+                    {
+                        foreach (var render in config.Renders)
+                        {
+                            await RunOneAsync(settings, generator, render, variantName, variantDir, log);
+                        }
                     }
                 }
             }
@@ -228,10 +287,43 @@ public static class RenderHarnessRunner
             {
                 JsonConvert.PopulateObject(snapshot, settings.InternalMugshot);
             }
+
+            await clickSimulation;
+            runSw.Stop();
+            log.Append(clickLog);
+
+            var statsAfter = assetResolver.GetBsaAssetStats();
+            var (cacheFilesAfter, cacheBytesAfter) = CountFiles(cacheDir);
+            using var process = Process.GetCurrentProcess();
+            process.Refresh();
+            log.AppendLine($"Run wallMs={runSw.ElapsedMilliseconds}");
+            log.AppendLine($"BsaAssetStats after: {statsAfter}");
+            log.AppendLine($"BsaAssetStats delta: materialized={statsAfter.Materialized - statsBefore.Materialized} " +
+                           $"failures={statsAfter.MaterializeFailures - statsBefore.MaterializeFailures} " +
+                           $"bytes={statsAfter.MaterializedBytes - statsBefore.MaterializedBytes} " +
+                           $"ms={statsAfter.MaterializeMs - statsBefore.MaterializeMs:F0} " +
+                           $"storeHits={statsAfter.StoreHits - statsBefore.StoreHits} " +
+                           $"reReads={statsAfter.ReReads - statsBefore.ReReads} " +
+                           $"reReadBytes={statsAfter.ReReadBytes - statsBefore.ReReadBytes} " +
+                           $"reReadMs={statsAfter.ReReadMs - statsBefore.ReReadMs:F0} " +
+                           $"residentBytes={statsAfter.StoreResidentBytes}");
+            log.AppendLine($"SkyRenderCache after: files={cacheFilesAfter} bytes={cacheBytesAfter} " +
+                           $"(+{cacheFilesAfter - cacheFilesBefore} files)");
+            log.AppendLine($"Process: peakWorkingSet={process.PeakWorkingSet64} peakPagedMemory={process.PeakPagedMemorySize64} " +
+                           $"privateBytes={process.PrivateMemorySize64} gcTotalAllocated={GC.GetTotalAllocatedBytes()}");
+
+            if (config.ModIssueScanMods.Count > 0)
+            {
+                await RunModIssueScanAsync(settings, modIssueScanner, assetResolver, config.ModIssueScanMods, outDir, log);
+            }
         }
         catch (Exception ex)
         {
             log.AppendLine($"FATAL: {ex}");
+        }
+        finally
+        {
+            generator.SetMaxParallelRenders(userMaxParallel);
         }
 
         // Undo the startup autogen suppression (see App.xaml.cs) so the
@@ -450,6 +542,51 @@ public static class RenderHarnessRunner
                 log.AppendLine($"[{variantName}] override '{name}': could not convert '{token}' to {prop.PropertyType.Name} — skipped ({ex.Message})");
             }
         }
+    }
+
+    /// <summary>Runs the Mod Issues scan on the named mods (cache ignored) and
+    /// writes the issues each one reports to ModIssueScan.json, for comparing
+    /// scans across BSA serving modes.</summary>
+    private static async Task RunModIssueScanAsync(Settings settings, ModIssueScanner scanner,
+        SkyRender.GameAssetResolver assetResolver, List<string> modNames, string outDir, StringBuilder log)
+    {
+        try
+        {
+            var targets = settings.ModSettings
+                .Where(m => modNames.Contains(m.DisplayName, StringComparer.OrdinalIgnoreCase))
+                .Where(ModIssueScanner.IsEligible)
+                .Select(m => new ModIssueScanner.ModScanTarget(m, null))
+                .ToList();
+            var statsBefore = assetResolver.GetBsaAssetStats();
+            var sw = Stopwatch.StartNew();
+            var results = await scanner.RunAsync(targets, ignoreCache: true,
+                new Progress<ModIssueScanner.ProgressInfo>(_ => { }), System.Threading.CancellationToken.None);
+            var statsAfter = assetResolver.GetBsaAssetStats();
+            log.AppendLine($"ModIssueScan: mods={targets.Count}/{modNames.Count} wallMs={sw.ElapsedMilliseconds} " +
+                           string.Join(" ", results.Select(r => $"[{r.Key}: npcs={r.Value.ScannedNpcCount} failed={r.Value.FailedNpcCount} issues={r.Value.Issues.Count}]")) +
+                           $" materialized+={statsAfter.Materialized - statsBefore.Materialized} " +
+                           $"failures+={statsAfter.MaterializeFailures - statsBefore.MaterializeFailures}");
+            var dump = results.ToDictionary(r => r.Key, r => r.Value.Issues);
+            File.WriteAllText(Path.Combine(outDir, "ModIssueScan.json"),
+                JsonConvert.SerializeObject(dump, Formatting.Indented));
+        }
+        catch (Exception ex)
+        {
+            log.AppendLine($"ModIssueScan FATAL: {ex}");
+        }
+    }
+
+    private static (int Files, long Bytes) CountFiles(string dir)
+    {
+        if (!Directory.Exists(dir)) return (0, 0);
+        int files = 0;
+        long bytes = 0;
+        foreach (var f in new DirectoryInfo(dir).EnumerateFiles("*", SearchOption.AllDirectories))
+        {
+            files++;
+            bytes += f.Length;
+        }
+        return (files, bytes);
     }
 
     private static string Sanitize(string name)

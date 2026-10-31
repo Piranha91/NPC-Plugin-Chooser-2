@@ -1163,6 +1163,16 @@ public sealed class InternalMugshotSettings
     // into the schema-v20 settings hash. See TextureUploadPolicy.
     public bool UseCompressedTextures { get; set; } = true;
 
+    // When true (default), the renderer reads files out of BSA archives into memory instead
+    // of extracting them to SkyRenderCache next to the exe: nothing is written to disk, at
+    // the cost of re-reading files once more than ArchiveMemoryBudgetMB of them were read
+    // (measured 2026-10: render time on par with extraction). Same bytes either way, so the
+    // images don't change and it isn't part of the settings hash. Off restores extraction.
+    // Read once at startup (restart to apply); see BsaAssetMode, whose environment
+    // variable and file trigger override both values.
+    public bool ServeArchiveAssetsFromMemory { get; set; } = true;
+    public int ArchiveMemoryBudgetMB { get; set; } = 256;
+
     // Background warm-ups (performance only; never change pixels). Both are
     // memory-gated: skipped while free RAM is below NpcMugshotPrewarmer's headroom.
     // PrewarmNextNpcMugshots: once the current NPC's tiles are done, warm the CPU

@@ -156,6 +156,9 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public double MugshotCacheFreeRamPercent { get; set; }
     // DDS upload route; read once at startup (TextureUploadPolicy), so changes need a restart.
     [Reactive] public bool MugshotUseCompressedTextures { get; set; }
+    // BSA serving mode; read once at startup (BsaAssetMode), so changes need a restart.
+    [Reactive] public bool MugshotServeArchiveAssetsFromMemory { get; set; }
+    [Reactive] public int MugshotArchiveMemoryBudgetMB { get; set; }
     // Background warm-ups (NpcMugshotPrewarmer); read when each warm-up starts, so live.
     [Reactive] public bool MugshotPrewarmNextNpc { get; set; }
     [Reactive] public bool MugshotWarmUpAtStartup { get; set; }
@@ -745,6 +748,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         MugshotCacheFixedGB = _model.InternalMugshot.CacheFixedBudgetGB;
         MugshotCacheFreeRamPercent = _model.InternalMugshot.CacheFreeRamPercent;
         MugshotUseCompressedTextures = _model.InternalMugshot.UseCompressedTextures;
+        MugshotServeArchiveAssetsFromMemory = _model.InternalMugshot.ServeArchiveAssetsFromMemory;
+        MugshotArchiveMemoryBudgetMB = _model.InternalMugshot.ArchiveMemoryBudgetMB;
         MugshotPrewarmNextNpc = _model.InternalMugshot.PrewarmNextNpcMugshots;
         MugshotWarmUpAtStartup = _model.InternalMugshot.WarmUpRendererAtStartup;
         InternalHeadTopFraction = _model.InternalMugshot.HeadTopFraction;
@@ -1157,6 +1162,10 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(p => { _model.InternalMugshot.CacheFreeRamPercent = p; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.MugshotUseCompressedTextures).Skip(1)
             .Subscribe(b => { _model.InternalMugshot.UseCompressedTextures = b; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.MugshotServeArchiveAssetsFromMemory).Skip(1)
+            .Subscribe(b => { _model.InternalMugshot.ServeArchiveAssetsFromMemory = b; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.MugshotArchiveMemoryBudgetMB).Skip(1)
+            .Subscribe(mb => { _model.InternalMugshot.ArchiveMemoryBudgetMB = mb; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.MugshotPrewarmNextNpc).Skip(1)
             .Subscribe(b => { _model.InternalMugshot.PrewarmNextNpcMugshots = b; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.MugshotWarmUpAtStartup).Skip(1)

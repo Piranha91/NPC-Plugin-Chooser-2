@@ -100,10 +100,17 @@ public class NifHandler
     /// configuration, not just the flat path list.
     /// </summary>
     public static IReadOnlyList<NifShapeTextureInfo> GetShapeTextureDetails(string nifPath)
+        => GetShapeTextureDetails(nifPath, null);
+
+    /// <summary>As <see cref="GetShapeTextureDetails(string)"/>, for a path the renderer's
+    /// resolver produced: a BSA asset it serves from memory has no file at that path, so the
+    /// NIF is loaded through <paramref name="resolver"/>.</summary>
+    public static IReadOnlyList<NifShapeTextureInfo> GetShapeTextureDetails(string nifPath,
+        SkyRender.GameAssetResolver? resolver)
     {
         var results = new List<NifShapeTextureInfo>();
-        using NifFile nif = new NifFile();
-        if (nif.Load(nifPath) != 0) return results;
+        using NifFile? nif = SkyRender.NifFileLoader.TryLoad(nifPath, resolver);
+        if (nif == null) return results;
 
         NiHeader header = nif.GetHeader();
         using var shapes = nif.GetShapes();

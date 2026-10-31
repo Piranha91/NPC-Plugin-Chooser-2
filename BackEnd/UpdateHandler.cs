@@ -20,10 +20,19 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 public class UpdateHandler 
 {
     private readonly Settings _settings;
+    private readonly IReadOnlyList<string> _archiveCacheFolders;
 
-    public UpdateHandler(Settings settings)
+    /// <param name="archiveCacheFolders">Renderer extraction folders the 2.2.6 migration offers to
+    /// delete; null means the real ones next to the exe. Tests pass their own (or none), since the
+    /// test host's folder holds the integration tests' extractions.</param>
+    public UpdateHandler(Settings settings, IReadOnlyList<string>? archiveCacheFolders = null)
     {
         _settings = settings;
+        _archiveCacheFolders = archiveCacheFolders ?? new[]
+        {
+            CharacterViewerHost.BsaAssetMode.ExtractionCacheFolder,
+            CharacterViewerHost.BsaAssetMode.LegacyExtractionCacheFolder,
+        };
     }
 
     /// <summary>
@@ -98,6 +107,8 @@ public class UpdateHandler
             // their donors (VM_Mods.ResolveAndApplySkyPatcherGuests). Keep it unconditional while
             // that is true.
             InvalidateCachesForContextFreeRaceVerdicts_Initial();
+            // Before the container builds the GameAssetResolver, which reads the mode once.
+            await OfferInMemoryArchiveAssets_Initial(splashReporter);
         }
 
         Debug.WriteLine("Settings update process complete.");
@@ -887,6 +898,113 @@ public class UpdateHandler
             pluginProvider.UnloadPlugins(loadedPaths);
         }
     }
+
+    /// <summary>
+    /// 2.2.6: the internal renderer reads BSA assets into memory by default
+    /// (<see cref="InternalMugshotSettings.ServeArchiveAssetsFromMemory"/>) instead of extracting
+    /// them to its cache folder. Existing settings files have no value for it, so they pick up
+    /// the new default; a user who still has extracted files is asked whether to delete them and
+    /// keep the new behavior, or keep extracting. Mugshots and the 3D preview both filled the
+    /// folder, so its contents decide, not the mugshot renderer setting. Releases up to 2.2.5
+    /// (CharacterViewer.Rendering) extracted to CharacterViewerCache, SkyRender builds to
+    /// SkyRenderCache; both sit next to the exe. The renderer's even older
+    /// %TEMP%\SynthEBD_ViewerCache is left alone: SynthEBD's own preview shared it.
+    /// </summary>
+    private async Task OfferInMemoryArchiveAssets_Initial(VM_SplashScreen? splashReporter)
+    {
+        await OfferInMemoryArchiveAssets(_settings, _archiveCacheFolders,
+            message => ScrollableMessageBox.Confirm(message, "2.2.6 Update: Mugshot Renderer"),
+            splashReporter);
+    }
+
+    internal enum ArchiveAssetOfferOutcome { NotApplicable, NothingToDelete, Accepted, Declined }
+
+    /// <summary>Core of <see cref="OfferInMemoryArchiveAssets_Initial"/>, with the cache folders
+    /// and the prompt passed in so it can run against temp folders in tests. Asks only when the
+    /// in-memory mode is still on (not switched off by an earlier "No") and the folders hold
+    /// files; so it stops asking once answered, even on a build whose version still satisfies
+    /// the &lt; 2.2.6 gate.</summary>
+    internal static async Task<ArchiveAssetOfferOutcome> OfferInMemoryArchiveAssets(Settings settings,
+        IReadOnlyList<string> cacheFolders, Func<string, bool> confirm, VM_SplashScreen? splashReporter = null)
+    {
+        if (!settings.InternalMugshot.ServeArchiveAssetsFromMemory)
+        {
+            return ArchiveAssetOfferOutcome.NotApplicable;
+        }
+
+        var present = new List<(string Folder, int Files, long Bytes)>();
+        foreach (var folder in cacheFolders)
+        {
+            var (files, bytes) = CountFiles(folder);
+            if (files > 0) present.Add((folder, files, bytes));
+        }
+        if (present.Count == 0) return ArchiveAssetOfferOutcome.NothingToDelete;
+
+        int totalFiles = present.Sum(p => p.Files);
+        long totalBytes = present.Sum(p => p.Bytes);
+        var message = new StringBuilder();
+        message.AppendLine("In NPC2 2.2.6, the internal mugshot renderer and the 3D preview read assets from BSA archives " +
+                           "directly into memory instead of extracting them to a cache folder first. The images look the same either way.");
+        message.AppendLine();
+        message.AppendLine($"You currently have {totalFiles:N0} extracted files using {FormatSize(totalBytes)} of disk space in:");
+        foreach (var p in present) message.AppendLine($"  {p.Folder}");
+        message.AppendLine();
+        message.AppendLine("Would you like to delete these files and switch to the new default? " +
+                           "If you choose No, NPC2 keeps extracting files as before.");
+        message.AppendLine();
+        message.Append("You can switch back later under Mugshot Settings > \"Read archive files in memory\".");
+
+        if (!confirm(message.ToString()))
+        {
+            settings.InternalMugshot.ServeArchiveAssetsFromMemory = false;
+            Debug.WriteLine("2.2.6 Update: user kept extracting BSA assets to disk.");
+            return ArchiveAssetOfferOutcome.Declined;
+        }
+
+        splashReporter?.UpdateStep("Updating to 2.2.6: deleting extracted renderer files...");
+        var failures = await Task.Run(() =>
+        {
+            var failed = new List<string>();
+            foreach (var p in present)
+            {
+                try { Directory.Delete(p.Folder, recursive: true); }
+                catch (Exception ex) { failed.Add($"{p.Folder}: {ex.Message}"); }
+            }
+            return failed;
+        });
+        if (failures.Count > 0)
+        {
+            // In-memory mode stays on; leftover files are only wasted space.
+            ScrollableMessageBox.ShowWarning(
+                "Some extracted renderer files could not be deleted; you can delete them yourself:\n\n" +
+                string.Join("\n", failures), "2.2.6 Update: Mugshot Renderer");
+        }
+        Debug.WriteLine($"2.2.6 Update: deleted {totalFiles} extracted renderer files ({totalBytes} bytes).");
+        return ArchiveAssetOfferOutcome.Accepted;
+    }
+
+    private static (int Files, long Bytes) CountFiles(string folder)
+    {
+        try
+        {
+            if (!Directory.Exists(folder)) return (0, 0);
+            int files = 0;
+            long bytes = 0;
+            foreach (var f in new DirectoryInfo(folder).EnumerateFiles("*", SearchOption.AllDirectories))
+            {
+                files++;
+                bytes += f.Length;
+            }
+            return (files, bytes);
+        }
+        catch
+        {
+            return (0, 0); // unreadable: nothing we could delete either
+        }
+    }
+
+    private static string FormatSize(long bytes) =>
+        bytes >= 1024L * 1024 * 1024 ? $"{bytes / (1024.0 * 1024 * 1024):0.#} GB" : $"{Math.Max(1, bytes / (1024 * 1024)):N0} MB";
 
     private void UpdateTo2_0_4_Initial()
     {

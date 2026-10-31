@@ -1160,6 +1160,20 @@
                                       Margin="0,6,0,0"
                                       ToolTip="On (default): textures go to the GPU in their compressed formats with the mod's own mip levels, skipping CPU decoding. About twice as fast on high-poly mods and uses much less RAM; differences are sub-visible, mostly a few pixels at hair-strand edges. Off: textures are decoded on the CPU first (the older route). Applies to mugshots and the 3D preview after restarting. Changing it re-renders only mugshots made with the other setting since this option was added."/>
 
+                            <!-- BSA serving mode. Read once at startup by BsaAssetMode. -->
+                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                <CheckBox Content="Read archive files in memory (restart required)"
+                                          IsChecked="{Binding MugshotServeArchiveAssetsFromMemory, Mode=TwoWay}"
+                                          VerticalAlignment="Center"
+                                          ToolTip="On (default): meshes and textures inside BSA archives are read straight into memory, so rendering writes nothing to the SkyRenderCache folder next to N.P.C.2. Off: they are extracted to that folder first (the older route), which can use several GB of disk space. The images are the same either way. Takes effect after restarting."/>
+                                <TextBlock Text="Memory (MB):" VerticalAlignment="Center" Margin="12,0,4,0"/>
+                                <xctk:IntegerUpDown Width="75" Minimum="32" Maximum="8192" Increment="64"
+                                                    Value="{Binding MugshotArchiveMemoryBudgetMB, Mode=TwoWay}"
+                                                    IsEnabled="{Binding MugshotServeArchiveAssetsFromMemory}"
+                                                    VerticalAlignment="Center"
+                                                    ToolTip="How much recently read archive data to keep in memory. Files read longer ago are read from the archive again when needed, so a larger value means fewer repeat reads and more RAM in use. Takes effect after restarting."/>
+                            </StackPanel>
+
                             <!-- Background warm-ups (NpcMugshotPrewarmer). Performance only;
                                  both skip themselves when free RAM is low. -->
                             <CheckBox Content="Prepare the next NPC's mugshots in advance"

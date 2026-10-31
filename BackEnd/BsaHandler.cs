@@ -194,65 +194,9 @@ public class BsaHandler : OptionalUIModule
     {
         return Task.Run<(bool ok, string? error)>(() =>
         {
-            IArchiveReader? bsaReader;
-            lock (_readersLock)
+            if (!TryGetReaderForRead(bsaPath, relativePath, out var bsaReader, out var readerError))
             {
-                _openBsaArchiveReaders.TryGetValue(bsaPath, out var entry);
-                bsaReader = entry?.Reader;
-            }
-
-            // Recovery path: the reader wasn't pre-cached (e.g. a hard unload
-            // dropped it mid-session while a longer-lived consumer — the
-            // CharacterViewer BSA adapter — still expected it). The path index
-            // that led the caller here already vouched for the file, so open a
-            // reader on demand rather than failing; a failure would be cached
-            // as NotFound by the renderer's asset resolver for the rest of the
-            // session (headless mugshots). Logged loudly because steady-state
-            // code should never hit this — it signals a refcount/lifetime bug.
-            if (bsaReader == null)
-            {
-                AppendLog($"BSA-CACHE-MISS: The reader for {bsaPath} was not pre-cached; opening on demand.", false, true);
-                if (!File.Exists(bsaPath))
-                {
-                    string msg = $"BSA-CACHE-MISS: {bsaPath} does not exist on disk; cannot extract {relativePath}.";
-                    AppendLog(msg, true, true);
-                    return (false, msg);
-                }
-                IArchiveReader? fresh = null;
-                try
-                {
-                    fresh = Archive.CreateReader(_environmentStateProvider.SkyrimVersion.ToGameRelease(), bsaPath);
-                }
-                catch (Exception ex)
-                {
-                    string msg = $"BSA-CACHE-MISS: failed to open {bsaPath} on demand: {ex.Message}";
-                    AppendLog(msg, true, true);
-                    return (false, msg);
-                }
-                if (fresh == null)
-                {
-                    string msg = $"BSA-CACHE-MISS: on-demand reader for {bsaPath} is null.";
-                    AppendLog(msg, true, true);
-                    return (false, msg);
-                }
-                lock (_readersLock)
-                {
-                    if (_openBsaArchiveReaders.TryGetValue(bsaPath, out var raced))
-                    {
-                        // Another thread re-cached it while we were opening ours.
-                        (fresh as IDisposable)?.Dispose();
-                        bsaReader = raced.Reader;
-                    }
-                    else
-                    {
-                        // Cache with refcount 1 so repeated extractions from the
-                        // same archive don't re-parse its file table. Nobody owns
-                        // this ref; it lives until the next full unload, same as
-                        // the CharacterViewer adapter's startup-opened readers.
-                        _openBsaArchiveReaders[bsaPath] = new ReaderEntry { Reader = fresh, RefCount = 1 };
-                        bsaReader = fresh;
-                    }
-                }
+                return (false, readerError);
             }
 
             try
@@ -276,7 +220,117 @@ public class BsaHandler : OptionalUIModule
             }
         });
     }
-    
+
+    /// <summary>
+    /// Reads a single file from the specified BSA into memory, through the same cached
+    /// reader and <see cref="IArchiveFile.AsStream"/> path as <see cref="ExtractFileAsync"/>,
+    /// without touching the disk. Synchronous: the renderer calls it from its own worker
+    /// threads. Safe to call concurrently — every <c>AsStream()</c> opens its own read-only
+    /// FileStream on the archive, and Mutagen's folder/file tables are thread-safe lazies.
+    /// </summary>
+    public bool TryReadFileBytes(string bsaPath, string relativePath, out byte[]? bytes, out string? error)
+    {
+        bytes = null;
+        if (!TryGetReaderForRead(bsaPath, relativePath, out var bsaReader, out error))
+        {
+            return false;
+        }
+
+        try
+        {
+            if (!TryGetFileFromSingleReader(relativePath, bsaReader, out var archiveFile) || archiveFile == null)
+            {
+                error = $"Could not find {relativePath} within {bsaPath} for reading.";
+                AppendLog(error, true, true);
+                return false;
+            }
+
+            using Stream sourceStream = archiveFile.AsStream();
+            // Size is the decompressed length; the copy loop stays correct if it is off,
+            // and a single Read on a decompressing stream may return less than asked.
+            using var buffer = new MemoryStream(checked((int)archiveFile.Size));
+            sourceStream.CopyTo(buffer);
+            bytes = buffer.Length == buffer.Capacity ? buffer.GetBuffer() : buffer.ToArray();
+            error = null;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            string stack = ExceptionLogger.GetExceptionStack(ex);
+            error = $"Failed to read {relativePath} from cached BSA reader for {bsaPath}: {stack}";
+            AppendLog(error, true, true);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// The cached reader for <paramref name="bsaPath"/>, opened on demand when it isn't
+    /// cached. Shared by <see cref="ExtractFileAsync"/> and <see cref="TryReadFileBytes"/>.
+    /// </summary>
+    private bool TryGetReaderForRead(string bsaPath, string relativePath,
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out IArchiveReader? bsaReader, out string? error)
+    {
+        error = null;
+        lock (_readersLock)
+        {
+            _openBsaArchiveReaders.TryGetValue(bsaPath, out var entry);
+            bsaReader = entry?.Reader;
+        }
+        if (bsaReader != null) return true;
+
+        // Recovery path: the reader wasn't pre-cached (e.g. a hard unload
+        // dropped it mid-session while a longer-lived consumer — the
+        // CharacterViewer BSA adapter — still expected it). The path index
+        // that led the caller here already vouched for the file, so open a
+        // reader on demand rather than failing; a failure would be cached
+        // as NotFound by the renderer's asset resolver for the rest of the
+        // session (headless mugshots). Logged loudly because steady-state
+        // code should never hit this — it signals a refcount/lifetime bug.
+        AppendLog($"BSA-CACHE-MISS: The reader for {bsaPath} was not pre-cached; opening on demand.", false, true);
+        if (!File.Exists(bsaPath))
+        {
+            error = $"BSA-CACHE-MISS: {bsaPath} does not exist on disk; cannot read {relativePath}.";
+            AppendLog(error, true, true);
+            return false;
+        }
+        IArchiveReader? fresh;
+        try
+        {
+            fresh = Archive.CreateReader(_environmentStateProvider.SkyrimVersion.ToGameRelease(), bsaPath);
+        }
+        catch (Exception ex)
+        {
+            error = $"BSA-CACHE-MISS: failed to open {bsaPath} on demand: {ex.Message}";
+            AppendLog(error, true, true);
+            return false;
+        }
+        if (fresh == null)
+        {
+            error = $"BSA-CACHE-MISS: on-demand reader for {bsaPath} is null.";
+            AppendLog(error, true, true);
+            return false;
+        }
+        lock (_readersLock)
+        {
+            if (_openBsaArchiveReaders.TryGetValue(bsaPath, out var raced))
+            {
+                // Another thread re-cached it while we were opening ours.
+                (fresh as IDisposable)?.Dispose();
+                bsaReader = raced.Reader;
+            }
+            else
+            {
+                // Cache with refcount 1 so repeated reads from the same
+                // archive don't re-parse its file table. Nobody owns this
+                // ref; it lives until the next full unload, same as the
+                // CharacterViewer adapter's startup-opened readers.
+                _openBsaArchiveReaders[bsaPath] = new ReaderEntry { Reader = fresh, RefCount = 1 };
+                bsaReader = fresh;
+            }
+        }
+        return true;
+    }
+
     /// <summary>
     /// Opens (or refcount-bumps) cached readers for every BSA owned by
     /// <paramref name="modSetting"/>'s plugins at its folders. Returns the

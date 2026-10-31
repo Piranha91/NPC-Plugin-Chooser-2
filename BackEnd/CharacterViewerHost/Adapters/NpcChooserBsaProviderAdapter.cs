@@ -25,7 +25,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost.Adapters;
 /// <c>GameAssetResolver</c> consults those before vanilla. This adapter
 /// stays focused on real BSA lookups.</para>
 /// </summary>
-public sealed class NpcChooserBsaProviderAdapter : IBsaArchiveProvider
+public sealed class NpcChooserBsaProviderAdapter : IBsaArchiveProvider, IBsaArchiveByteReader
 {
     private readonly BsaHandler _bsa;
     private readonly Settings _settings;
@@ -445,7 +445,37 @@ public sealed class NpcChooserBsaProviderAdapter : IBsaArchiveProvider
         {
             Trace($"TryExtractToDisk: FAILED — file=[{subpath}] from bsa=[{containingBsaPath}] dest=[{destPath}] :: {extractError}");
         }
+        else
+        {
+            BsaAssetHashDiag.LogFile("extract", containingBsaPath, subpath, destPath);
+        }
         error = ok ? null : extractError;
+        return ok;
+    }
+
+    /// <summary>
+    /// In-memory counterpart of <see cref="TryExtractToDisk"/>: reads the file from the EXACT
+    /// BSA the caller located, for the same reason (never re-broadcast). Writes nothing, so
+    /// there is no disk-full case to report. Called concurrently by the renderer's resolver.
+    /// </summary>
+    public bool TryReadBytes(string containingBsaPath, string subpath, out byte[]? bytes, out string? error)
+    {
+        bytes = null;
+        if (string.IsNullOrEmpty(containingBsaPath))
+        {
+            error = "empty containingBsaPath";
+            Trace($"TryReadBytes: REJECTED — empty containingBsaPath, file=[{subpath}]");
+            return false;
+        }
+        bool ok = _bsa.TryReadFileBytes(containingBsaPath, subpath, out bytes, out error);
+        if (!ok)
+        {
+            Trace($"TryReadBytes: FAILED — file=[{subpath}] from bsa=[{containingBsaPath}] :: {error}");
+        }
+        else if (bytes != null)
+        {
+            BsaAssetHashDiag.LogBytes("memory", containingBsaPath, subpath, bytes);
+        }
         return ok;
     }
 

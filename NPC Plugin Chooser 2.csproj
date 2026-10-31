@@ -42,7 +42,7 @@
          A build can override the version (for example -p:SkyRenderVersion=3.0.2-beta.1 to test a
          prerelease from a local feed). -->
     <PropertyGroup>
-      <SkyRenderVersion Condition="'$(SkyRenderVersion)' == ''">3.0.1</SkyRenderVersion>
+      <SkyRenderVersion Condition="'$(SkyRenderVersion)' == ''">3.1.0</SkyRenderVersion>
     </PropertyGroup>
     <ItemGroup>
       <PackageReference Include="SkyRender.Character" Version="$(SkyRenderVersion)" />

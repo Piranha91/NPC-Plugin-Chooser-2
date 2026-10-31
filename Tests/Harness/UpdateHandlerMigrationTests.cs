@@ -29,7 +29,9 @@ namespace NPC_Plugin_Chooser_2.Tests.Harness;
 /// </summary>
 public class UpdateHandlerMigrationTests
 {
-    private static UpdateHandler Make(Settings s) => new(s);
+    // No renderer cache folders: the real ones next to the test host hold the integration
+    // tests' extractions, and the 2.2.6 step would offer (on a UI thread) to delete them.
+    private static UpdateHandler Make(Settings s) => new(s, Array.Empty<string>());
 
     // ---- UpdateTo2_1_7_Initial : SubsurfaceStrength 2.0f -> 0.1f ----------------------
 

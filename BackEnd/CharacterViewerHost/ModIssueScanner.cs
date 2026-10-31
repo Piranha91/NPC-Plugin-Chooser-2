@@ -628,7 +628,7 @@ public sealed class ModIssueScanner
                 {
                     byShape = nifParseCache.GetOrAdd(job.DiskPath,
                         dp => new Lazy<IReadOnlyList<NifHandler.NifShapeTextureInfo>>(
-                            () => NifHandler.GetShapeTextureDetails(dp),
+                            () => NifHandler.GetShapeTextureDetails(dp, _assetResolver),
                             LazyThreadSafetyMode.ExecutionAndPublication)).Value;
                 }
                 catch
