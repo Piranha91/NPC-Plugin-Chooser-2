@@ -120,7 +120,7 @@
                     <Setter Property="Padding" Value="4,2"/>
                     <Style.Triggers>
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter Property="Background" Value="{DynamicResource ButtonHoverBackground}"/>
+                            <Setter Property="Background" Value="{DynamicResource SelectedItemBackground}"/>
                             <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
                         </Trigger>
                     </Style.Triggers>

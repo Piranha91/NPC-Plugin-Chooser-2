@@ -154,7 +154,45 @@
                       HeadersVisibility="Column"
                       SelectionMode="Extended"
                       SelectionUnit="FullRow"
-                      Visibility="{Binding ViewMode, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=List}">
+                      Visibility="{Binding ViewMode, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=List}"
+                      Background="{DynamicResource SecondaryBackground}"
+                      Foreground="{DynamicResource PrimaryForeground}"
+                      BorderBrush="{DynamicResource BorderBrush}"
+                      RowBackground="{DynamicResource SecondaryBackground}"
+                      HorizontalGridLinesBrush="{DynamicResource BorderBrush}"
+                      VerticalGridLinesBrush="{DynamicResource BorderBrush}">
+                <!-- Styled inline like EasyNpcTransferWindow; the theme files carry NO implicit
+                     DataGrid styles, so without these the grid falls back to system colors. -->
+                <DataGrid.ColumnHeaderStyle>
+                    <Style TargetType="DataGridColumnHeader">
+                        <Setter Property="Background" Value="{DynamicResource ButtonBackground}"/>
+                        <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
+                        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+                        <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                        <Setter Property="Padding" Value="6,4"/>
+                    </Style>
+                </DataGrid.ColumnHeaderStyle>
+                <DataGrid.CellStyle>
+                    <Style TargetType="DataGridCell">
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
+                        <Setter Property="BorderBrush" Value="Transparent"/>
+                        <Setter Property="Padding" Value="4,2"/>
+                        <Style.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <!-- Not ButtonHoverBackground: GitHub Light and Tokyo Night don't define it. -->
+                                <Setter Property="Background" Value="{DynamicResource SelectedItemBackground}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </DataGrid.CellStyle>
+                <DataGrid.RowStyle>
+                    <Style TargetType="DataGridRow">
+                        <Setter Property="Background" Value="{DynamicResource SecondaryBackground}"/>
+                        <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
+                    </Style>
+                </DataGrid.RowStyle>
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="NPC" Binding="{Binding NpcDisplayName}" Width="2*"/>
                     <DataGridTextColumn Header="Selected Mod" Binding="{Binding SelectedModName}" Width="2*"/>
