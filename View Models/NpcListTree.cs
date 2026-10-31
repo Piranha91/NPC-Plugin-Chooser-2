@@ -17,7 +17,11 @@ namespace NPC_Plugin_Chooser_2.View_Models;
 /// </summary>
 internal static class NpcListTree
 {
-    internal readonly record struct Row<T>(T Node, int Depth, bool IsContext, bool HasChildren);
+    /// <param name="Guides">One entry per ancestor lane (0..Depth-1): whether that lane's vertical
+    /// line runs on below this row, i.e. the ancestor one level deeper on this row's path has a later
+    /// sibling. The last entry is this row's own elbow lane. Drives the connector lines.</param>
+    internal readonly record struct Row<T>(T Node, int Depth, bool IsContext, bool HasChildren,
+        IReadOnlyList<bool> Guides);
 
     /// <summary>
     /// Lays out <paramref name="sortedMatches"/> as a tree.
@@ -73,14 +77,18 @@ internal static class NpcListTree
         }
 
         var rows = new List<Row<T>>(parent.Count);
-        void Emit(T node, int depth)
+        void Emit(T node, int depth, bool[] guides)
         {
             bool hasChildren = children.TryGetValue(node, out var kids);
-            rows.Add(new Row<T>(node, depth, !matches.Contains(node), hasChildren));
+            rows.Add(new Row<T>(node, depth, !matches.Contains(node), hasChildren, guides));
             if (!hasChildren || !isExpanded(node)) return;
-            foreach (var kid in kids!.OrderBy(k => rank[k])) Emit(kid, depth + 1);
+            var ordered = kids!.OrderBy(k => rank[k]).ToList();
+            for (int i = 0; i < ordered.Count; i++)
+            {
+                Emit(ordered[i], depth + 1, [..guides, i < ordered.Count - 1]);
+            }
         }
-        foreach (var root in roots.OrderBy(r => rank[r])) Emit(root, 0);
+        foreach (var root in roots.OrderBy(r => rank[r])) Emit(root, 0, []);
         return rows;
     }
 

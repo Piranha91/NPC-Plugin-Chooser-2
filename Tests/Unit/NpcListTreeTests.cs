@@ -45,6 +45,24 @@ public class NpcListTreeTests
     }
 
     [Fact]
+    public void Guides_MarkWhichAncestorLanesRunOnBelowEachRow()
+    {
+        var guard = new Node("Guard");
+        var a = new Node("A", guard);
+        var a1 = new Node("A1", a);
+        var b = new Node("B", guard);
+
+        var rows = NpcListTree.Build(new[] { guard, a, a1, b }, n => n.Parent, n => n.Expanded);
+
+        // Guard's lane runs past A and A1 down to B, its last child; A's lane ends at A1.
+        rows.Select(r => (r.Node.Name, string.Join(",", r.Guides))).Should().Equal(
+            ("Guard", ""),
+            ("A", "True"),
+            ("A1", "True,False"),
+            ("B", "False"));
+    }
+
+    [Fact]
     public void AMatchWhoseTemplateDidNotMatch_KeepsItsPlace_UnderADimmedContextRow()
     {
         var guard = new Node("Guard");

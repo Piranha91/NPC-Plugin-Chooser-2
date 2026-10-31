@@ -78,6 +78,7 @@ public class VM_NpcsMenuSelection : ReactiveObject
     [Reactive] public bool ShowTreeGutter { get; set; }
     [Reactive] public bool HasTreeChildren { get; set; }
     [Reactive] public bool IsTreeExpanded { get; set; } = true;
+    [Reactive] public IReadOnlyList<bool> TreeGuides { get; set; } = Array.Empty<bool>();
     // An ancestor shown only so a matching templated NPC keeps its place; drawn dimmed.
     [Reactive] public bool IsTreeContextRow { get; set; }
 

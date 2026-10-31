@@ -617,8 +617,15 @@
                                     </Border.ContextMenu>
                                      <DockPanel>
                                      <!-- Template tree gutter (Settings > Display Settings > Group templated NPCs) -->
-                                     <StackPanel DockPanel.Dock="Left" Orientation="Horizontal"
-                                                 Visibility="{Binding ShowTreeGutter, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                     <Grid DockPanel.Dock="Left"
+                                           Visibility="{Binding ShowTreeGutter, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                     <local:NpcTreeLines Guides="{Binding TreeGuides}"
+                                                         HasChildren="{Binding HasTreeChildren}"
+                                                         IsExpanded="{Binding IsTreeExpanded}"
+                                                         RowInset="{Binding Padding, RelativeSource={RelativeSource AncestorType=Border}}"
+                                                         RowBorder="{Binding BorderThickness, RelativeSource={RelativeSource AncestorType=Border}}"
+                                                         IsHitTestVisible="False"/>
+                                     <StackPanel Orientation="Horizontal">
                                          <Border Width="{Binding TreeIndent}"/>
                                          <Grid Width="14">
                                              <Button Command="{Binding DataContext.ToggleNpcTreeExpandedCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
@@ -648,6 +655,7 @@
                                              </Button>
                                          </Grid>
                                      </StackPanel>
+                                     </Grid>
                                      <Grid>
                                          <Grid.ColumnDefinitions>
                                              <ColumnDefinition Width="Auto"/>

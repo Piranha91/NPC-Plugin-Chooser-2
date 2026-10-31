@@ -6773,6 +6773,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
                 npc.TreeIndent = 0;
                 npc.HasTreeChildren = false;
                 npc.IsTreeContextRow = false;
+                npc.TreeGuides = Array.Empty<bool>();
             }
             return sorted;
         }
@@ -6784,6 +6785,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
             row.Node.TreeIndent = row.Depth * TreeIndentPerLevel;
             row.Node.HasTreeChildren = row.HasChildren;
             row.Node.IsTreeContextRow = row.IsContext;
+            row.Node.TreeGuides = row.Guides;
         }
         return rows.Select(r => r.Node).ToList();
     }
