@@ -42,7 +42,7 @@ namespace NPC_Plugin_Chooser_2
         // when true, OnStartup shuts the app down after core initialization
         // instead of opening the main window.
         private bool _renderHarnessExitRequested;
-        public const string ProgramVersion = "2.2.5"; // Central version definition
+        public const string ProgramVersion = "2.2.6"; // Central version definition
 
         // App constructor should be minimal
         public App()
