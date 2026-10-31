@@ -444,6 +444,12 @@ public sealed class NpcChooserBsaProviderAdapter : IBsaArchiveProvider, IBsaArch
         if (!ok)
         {
             Trace($"TryExtractToDisk: FAILED — file=[{subpath}] from bsa=[{containingBsaPath}] dest=[{destPath}] :: {extractError}");
+            // The renderer would drop this asset and still return a PNG; the
+            // guard makes the render discard it and tells the user why.
+            if (extractError != null && extractError.StartsWith(BsaHandler.DiskFullPrefix, StringComparison.Ordinal))
+            {
+                DiskSpaceGuard.ReportDiskFull(destPath);
+            }
         }
         else
         {

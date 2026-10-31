@@ -584,6 +584,10 @@ public class BsaHandler : OptionalUIModule
     /// treating the failure as immediately fatal).</summary>
     public const string SharingViolationPrefix = "SHARING VIOLATION";
 
+    /// <summary>Marker prefix on <see cref="ExtractFileFromBsa"/> error strings whose cause was
+    /// the destination drive running out of space.</summary>
+    public const string DiskFullPrefix = "DISK FULL";
+
     /// <summary>True when an IOException is a Win32 sharing/lock violation (file in use).</summary>
     private static bool IsFileLockError(IOException ex)
     {
@@ -624,6 +628,15 @@ public class BsaHandler : OptionalUIModule
             // without the error flag; callers defer judgment to end-of-run verification.
             string msg = $"{SharingViolationPrefix} extracting BSA file: {file.Path} to {destPath}. Error: {ExceptionLogger.GetExceptionStack(ioEx)}";
             AppendLog(msg, false, true);
+            return (false, msg);
+        }
+        catch (IOException ioEx) when (DiskSpaceGuard.IsDiskFullError(ioEx))
+        {
+            // File.Create already made destPath; drop the truncated copy so nothing
+            // later mistakes it for a complete extraction.
+            try { File.Delete(destPath); } catch { /* best-effort */ }
+            string msg = $"{DiskFullPrefix} extracting BSA file: {file.Path} to {destPath}. Error: {ExceptionLogger.GetExceptionStack(ioEx)}";
+            AppendLog(msg, true);
             return (false, msg);
         }
         catch (IOException ioEx) // Catch specific IO errors

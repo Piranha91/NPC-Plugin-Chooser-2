@@ -174,6 +174,15 @@ public sealed class InternalMugshotGenerator
             var linkCache = _env.LinkCache;
             if (linkCache == null) { Trace($"EXIT tid={tid} npc={npcFormKey} no-linkcache elapsed={sw.ElapsedMilliseconds}ms"); return false; }
 
+            // With the extraction cache or output drive nearly full, BSA assets
+            // fail to extract and the render comes back missing heads, eyes or
+            // outfits. Don't start one; the guard warns the user.
+            if (!DiskSpaceGuard.CheckRenderPreflight(outputPath))
+            {
+                Trace($"EXIT tid={tid} npc={npcFormKey} low-disk-space elapsed={sw.ElapsedMilliseconds}ms");
+                return false;
+            }
+
             // Resolve scoped to the explicit per-tile mod. Records come from
             // its plugins (LinkCache.Winner fallback for anything the mod
             // doesn't override) and asset paths get rebased to mod folders
@@ -366,6 +375,9 @@ public sealed class InternalMugshotGenerator
             // render hits the warm caches and pays only GL upload + draw + readback.
             // Best-effort and non-throwing — a miss just decodes on the render
             // thread as before.
+            // Disk-full extractions are counted process-wide, so a failure in a
+            // parallel render also discards this one; it likely shared the cache.
+            long diskFullBefore = DiskSpaceGuard.DiskFullEventCount;
             long prePrewarm = sw.ElapsedMilliseconds;
             await _renderer.PrewarmAsync(request).ConfigureAwait(false);
             Trace($"  PrewarmAsync tid={Environment.CurrentManagedThreadId} elapsed={sw.ElapsedMilliseconds - prePrewarm}ms");
@@ -393,6 +405,15 @@ public sealed class InternalMugshotGenerator
             // before any disk I/O when the caller asked for validated-only
             // output, so an incomplete render leaves no PNG, no tracker
             // entry, and no metadata behind.
+            // An asset that failed to extract for lack of space is absent from
+            // the image, so the PNG is partial; keep the placeholder instead.
+            if (DiskSpaceGuard.DiskFullEventCount != diskFullBefore)
+            {
+                LogTimings();
+                Trace($"EXIT tid={Environment.CurrentManagedThreadId} npc={npcFormKey} discarded-disk-full totalElapsed={sw.ElapsedMilliseconds}ms");
+                return false;
+            }
+
             int missingMeshCount = missingMeshPathsOut?.Count ?? 0;
             int missingTextureCount = missingTexturePathsOut?.Count ?? 0;
             if (assetValidatedOnly && (missingMeshCount > 0 || missingTextureCount > 0))
@@ -566,6 +587,15 @@ public sealed class InternalMugshotGenerator
             // delete would never see it. Track-if-exists handles both cases.
             _tracker.TrackIfFileExists(outputPath);
             Trace($"EXIT tid={Environment.CurrentManagedThreadId} npc={npcFormKey} cancelled totalElapsed={sw.ElapsedMilliseconds}ms");
+            return false;
+        }
+        catch (Exception ex) when (DiskSpaceGuard.IsDiskFullError(ex))
+        {
+            // The PNG write (or metadata stamp) ran out of space: whatever landed
+            // is truncated, so remove it rather than track it.
+            try { File.Delete(outputPath); } catch { /* best-effort */ }
+            DiskSpaceGuard.ReportDiskFull(outputPath);
+            Trace($"EXIT tid={Environment.CurrentManagedThreadId} npc={npcFormKey} ERROR disk-full totalElapsed={sw.ElapsedMilliseconds}ms err={ex.Message}");
             return false;
         }
         catch (Exception ex)
