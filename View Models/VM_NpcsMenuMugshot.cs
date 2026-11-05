@@ -149,6 +149,14 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     /// without the depicted outfit changing.</summary>
     [Reactive] public bool HasOutfitNotice { get; set; } = false;
     [Reactive] public string OutfitNoticeText { get; set; } = string.Empty;
+    /// <summary>True when this tile's mod ships a SkyPatcher or SPID outfit
+    /// config that targets this NPC while that distributor's DLL is missing, so
+    /// the config never runs (the render shows the outfit actually worn).
+    /// Drives the missing-patcher badge; detail in
+    /// <see cref="MissingPatcherNoticeText"/>. Computed live like the outfit
+    /// notice.</summary>
+    [Reactive] public bool HasMissingPatcherNotice { get; set; } = false;
+    [Reactive] public string MissingPatcherNoticeText { get; set; } = string.Empty;
     /// <summary>True when this tile's mod has its effective Antler Handling Mode
     /// set to <see cref="AntlerHandlingMode.Remove"/> AND this NPC actually
     /// carries an antler the patch will strip (outfit / WornArmor / FaceGen head
@@ -1018,6 +1026,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             // computed live from current configs, applies to any real mugshot
             // since it describes the runtime outcome, not the PNG's pedigree.
             string outfitNotice = ComputeOutfitNoticeSafe();
+            string missingPatcherNotice = ComputeMissingPatcherNoticeSafe();
 
             // Antler-removal notice (effective Antler Handling Mode = Remove and
             // this NPC actually carries a strippable antler) — computed live like
@@ -1030,7 +1039,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             // constructor skipped (it simulates SPID/SkyPatcher, so it runs here).
             var wigPersistence = ComputeWigPersistenceSafe(includeRuntimeReplacement: true);
 
-            return (bitmap, meshes, textures, physicsNotices, missingOutfitAssets, dataFolderAssets, facegen, faceGenMismatch, outfitNotice, antlerNotice, wigPersistence);
+            return (bitmap, meshes, textures, physicsNotices, missingOutfitAssets, dataFolderAssets, facegen, faceGenMismatch, outfitNotice, missingPatcherNotice, antlerNotice, wigPersistence);
         });
 
         // Always apply (even with empty lists) so a re-load of a tile whose
@@ -1045,6 +1054,9 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
 
         OutfitNoticeText = loadResult.outfitNotice;
         HasOutfitNotice = loadResult.outfitNotice.Length > 0;
+
+        MissingPatcherNoticeText = loadResult.missingPatcherNotice;
+        HasMissingPatcherNotice = loadResult.missingPatcherNotice.Length > 0;
 
         AntlerRemovalNoticeText = loadResult.antlerNotice;
         HasAntlerRemovalNotice = loadResult.antlerNotice.Length > 0;
@@ -2655,13 +2667,37 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         }
     }
 
-    /// <summary>Recomputes <see cref="OutfitNoticeText"/> off the UI thread
-    /// and applies it. Fire-and-forget from load/generation paths.</summary>
+    /// <summary>Recomputes <see cref="OutfitNoticeText"/> and
+    /// <see cref="MissingPatcherNoticeText"/> off the UI thread and applies
+    /// them. Fire-and-forget from load/generation paths.</summary>
     private async Task RefreshOutfitNoticeAsync()
     {
         var notice = await Task.Run(ComputeOutfitNoticeSafe);
         OutfitNoticeText = notice;
         HasOutfitNotice = notice.Length > 0;
+
+        var patcherNotice = await Task.Run(ComputeMissingPatcherNoticeSafe);
+        MissingPatcherNoticeText = patcherNotice;
+        HasMissingPatcherNotice = patcherNotice.Length > 0;
+    }
+
+    /// <summary>Computes the missing-patcher notice for this tile: non-empty
+    /// when this mod ships a SkyPatcher/SPID outfit config targeting the NPC
+    /// whose distributor DLL is not installed. Safe on background threads.</summary>
+    private string ComputeMissingPatcherNoticeSafe()
+    {
+        try
+        {
+            var sourceMod = _settings.ModSettings.FirstOrDefault(m => m.DisplayName == ModName);
+            if (sourceMod == null) return string.Empty;
+            var dormant = _outfitDisplayResolver.FindDormantDistributions(_targetNpcFormKey, sourceMod);
+            return string.Join(Environment.NewLine + Environment.NewLine, dormant.Select(d => d.Describe()));
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"ComputeMissingPatcherNoticeSafe failed for {SourceNpcFormKey}: {ex.Message}");
+            return string.Empty;
+        }
     }
 
     /// <summary>Computes the "antlers removed" notice for this tile: non-empty

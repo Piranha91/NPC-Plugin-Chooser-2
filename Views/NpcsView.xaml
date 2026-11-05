@@ -1097,6 +1097,21 @@
                                              </Viewbox>
                                          </Grid>
 
+                                         <!-- Missing-patcher indicator: this mod ships a
+                                              SkyPatcher/SPID outfit config targeting this NPC, but
+                                              that distributor's DLL isn't installed, so the config
+                                              never runs (the render shows the outfit actually worn).
+                                              Red to set it apart from the orange outfit-conflict
+                                              badge; the tooltip names the file and missing DLL. -->
+                                         <Grid Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
+                                               Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}"
+                                               Visibility="{Binding HasMissingPatcherNotice, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                               ToolTip="{Binding MissingPatcherNoticeText}">
+                                             <Viewbox Stretch="Uniform">
+                                                 <TextBlock Text="⚠" FontWeight="Bold" Foreground="Red"/>
+                                             </Viewbox>
+                                         </Grid>
+
                                          <!-- Missing-asset indicator: fires for unresolved meshes
                                               OR textures; the tooltip enumerates each category
                                               under its own heading. -->

@@ -110,6 +110,17 @@ public enum WigDropReason
 
 /// <summary>Result of <see cref="OutfitDisplayResolver.CompareModOutfit"/>: the appearance
 /// mod's own outfit, the outfit actually worn in game, and a sentence explaining why.</summary>
+/// <summary>An outfit distribution config that targets an NPC but never runs because
+/// its distributor DLL is missing from the data folder. <see cref="ConfigFile"/> is
+/// data-folder-relative; <see cref="MissingDll"/> is the DLL that would load it.</summary>
+public sealed record DormantOutfitDistribution(string Patcher, string ConfigFile, int LineNumber, string MissingDll)
+{
+    public string Describe() =>
+        $"'{ConfigFile}' (line {LineNumber}) distributes an outfit to this NPC, but {Patcher} is not " +
+        $"installed ({MissingDll} is missing), so the game never applies it. The preview shows the " +
+        $"outfit the NPC actually wears.";
+}
+
 public sealed record ModOutfitComparison(FormKey ModOutfit, OutfitDisplayResult InGame, string InGameDescription);
 
 /// <summary>Result of <see cref="OutfitDisplayResolver.FindRuntimeDroppedOutfitPieces"/>:
@@ -245,6 +256,9 @@ public sealed record OutfitDisplayResult
 /// entry in config order applies.</item>
 /// <item>Any runtime candidate whose outfit doesn't resolve in the current
 /// load order is skipped (falls through to the next candidate).</item>
+/// <item>A distributor whose DLL is absent from the data folder contributes
+/// nothing: its configs are parsed but kept dormant, and surface only through
+/// <see cref="FindDormantDistributions"/>.</item>
 /// </list>
 /// </summary>
 public class OutfitDisplayResolver
@@ -286,7 +300,27 @@ public class OutfitDisplayResolver
     {
         public List<OrderedSkyPatcherEntry> SkyPatcherEntries = new();
         public List<SpidOutfitEntry> SpidEntries = new();
+        /// <summary>Entries parsed from configs whose distributor DLL is not in the
+        /// data folder: the game never applies them, so the display walk ignores
+        /// them; kept only to report the mismatch (<see cref="FindDormantDistributions"/>).</summary>
+        public List<SkyPatcherOutfitInstruction> DormantSkyPatcherEntries = new();
+        public List<SpidOutfitEntry> DormantSpidEntries = new();
         public string Signature = string.Empty;
+    }
+
+    /// <summary>Data-folder-relative paths of the distributor DLLs (the same files
+    /// SynthEBD's MiscValidation checks). Without the DLL, SKSE never loads the
+    /// distributor and its configs are inert.</summary>
+    public const string SkyPatcherDllRelativePath = @"SKSE\Plugins\SkyPatcher.dll";
+    public const string SpidDllRelativePath = @"SKSE\Plugins\po3_SpellPerkItemDistributor.dll";
+
+    /// <summary>File existence probe for the distributor DLLs. Under MO2 the
+    /// process sees the virtual data folder, so a plain File.Exists on the data
+    /// path resolves through the VFS like every other data-folder read here.</summary>
+    private bool IsDataFilePresent(string relativePath)
+    {
+        try { return File.Exists(Path.Combine(_env.DataFolderPath.ToString(), relativePath)); }
+        catch { return false; }
     }
 
     public void InvalidateCaches()
@@ -571,6 +605,70 @@ public class OutfitDisplayResolver
                     : null,
             },
         };
+    }
+
+    /// <summary>
+    /// Outfit distribution lines that target <paramref name="targetNpcFormKey"/> but
+    /// never run because their distributor (SkyPatcher / SPID) DLL is not installed —
+    /// the configs <see cref="ResolveForDisplay"/> ignores for that reason. With a
+    /// non-null <paramref name="modSetting"/>, only configs that mod itself ships
+    /// (present under one of its folders) are reported. One row per config file
+    /// (its first matching line).
+    /// </summary>
+    public IReadOnlyList<DormantOutfitDistribution> FindDormantDistributions(
+        FormKey targetNpcFormKey, ModSetting? modSetting)
+    {
+        var linkCache = _env.LinkCache;
+        if (linkCache == null) return Array.Empty<DormantOutfitDistribution>();
+        EnsureCachesCurrent(linkCache);
+
+        var configs = GetConfigs();
+        if (configs.DormantSkyPatcherEntries.Count == 0 && configs.DormantSpidEntries.Count == 0)
+            return Array.Empty<DormantOutfitDistribution>();
+        if (!linkCache.TryResolve<INpcGetter>(targetNpcFormKey, out var winnerNpc))
+            return Array.Empty<DormantOutfitDistribution>();
+        var facts = GetFacts(targetNpcFormKey, winnerNpc, linkCache);
+        if (facts == null) return Array.Empty<DormantOutfitDistribution>();
+
+        var results = new List<DormantOutfitDistribution>();
+        var seenFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var instruction in configs.DormantSkyPatcherEntries)
+        {
+            if (seenFiles.Contains("sky|" + instruction.SourceFile)) continue;
+            if (!_skyPatcherParser.MatchesNpc(instruction, facts, ResolveSkyPatcherIdentifier).Applies) continue;
+            var dataRelative = Path.Combine("SKSE", "Plugins", "SkyPatcher", "npc", instruction.SourceFile);
+            if (modSetting != null && !ModShipsDataFile(modSetting, dataRelative)) continue;
+            seenFiles.Add("sky|" + instruction.SourceFile);
+            results.Add(new DormantOutfitDistribution("SkyPatcher", dataRelative, instruction.LineNumber,
+                SkyPatcherDllRelativePath));
+        }
+        foreach (var entry in configs.DormantSpidEntries)
+        {
+            if (seenFiles.Contains("spid|" + entry.SourceFile)) continue;
+            if (!_spidParser.MatchesNpc(entry, facts, ResolveSpidFilterForm).Applies) continue;
+            if (modSetting != null && !ModShipsDataFile(modSetting, entry.SourceFile)) continue;
+            seenFiles.Add("spid|" + entry.SourceFile);
+            results.Add(new DormantOutfitDistribution("Spell Perk Item Distributor (SPID)", entry.SourceFile,
+                entry.LineNumber, SpidDllRelativePath));
+        }
+        return results;
+    }
+
+    private static bool ModShipsDataFile(ModSetting modSetting, string dataRelativePath)
+    {
+        foreach (var folder in modSetting.CorrespondingFolderPaths)
+        {
+            if (string.IsNullOrWhiteSpace(folder)) continue;
+            try
+            {
+                if (File.Exists(Path.Combine(folder, dataRelativePath))) return true;
+            }
+            catch
+            {
+                // Malformed folder path — not a match.
+            }
+        }
+        return false;
     }
 
     /// <summary>
@@ -1227,10 +1325,12 @@ public class OutfitDisplayResolver
             _lastSignatureCheckTick = now;
 
             var (skyFiles, spidFiles) = DiscoverConfigInputs();
-            var signature = BuildSignature(skyFiles, spidFiles);
+            bool skyInstalled = IsDataFilePresent(SkyPatcherDllRelativePath);
+            bool spidInstalled = IsDataFilePresent(SpidDllRelativePath);
+            var signature = $"sky={skyInstalled};spid={spidInstalled}||" + BuildSignature(skyFiles, spidFiles);
             if (_configs != null && _configs.Signature == signature) return;
 
-            _configs = BuildConfigCache(skyFiles, spidFiles, signature);
+            _configs = BuildConfigCache(skyFiles, spidFiles, skyInstalled, spidInstalled, signature);
         }
     }
 
@@ -1294,7 +1394,8 @@ public class OutfitDisplayResolver
     }
 
     private ConfigCache BuildConfigCache(
-        List<SkyPatcherOutfitConfigParser.DiscoveredConfig> skyFiles, List<string> spidFiles, string signature)
+        List<SkyPatcherOutfitConfigParser.DiscoveredConfig> skyFiles, List<string> spidFiles,
+        bool skyPatcherInstalled, bool spidInstalled, string signature)
     {
         var cache = new ConfigCache { Signature = signature };
 
@@ -1323,7 +1424,10 @@ public class OutfitDisplayResolver
             }
             foreach (var instruction in _skyPatcherParser.ParseFile(lines, file.RelativePath))
             {
-                cache.SkyPatcherEntries.Add(new OrderedSkyPatcherEntry(instruction, false, file.RelativePath));
+                if (skyPatcherInstalled)
+                    cache.SkyPatcherEntries.Add(new OrderedSkyPatcherEntry(instruction, false, file.RelativePath));
+                else
+                    cache.DormantSkyPatcherEntries.Add(instruction);
             }
         }
         if (!markerPlaced) cache.SkyPatcherEntries.Add(MakeNpc2Marker());
@@ -1337,11 +1441,14 @@ public class OutfitDisplayResolver
                 Debug.WriteLine($"OutfitDisplayResolver: failed reading '{file}': {ex.Message}");
                 continue;
             }
-            cache.SpidEntries.AddRange(_spidParser.ParseFile(lines, Path.GetFileName(file)));
+            var parsed = _spidParser.ParseFile(lines, Path.GetFileName(file));
+            (spidInstalled ? cache.SpidEntries : cache.DormantSpidEntries).AddRange(parsed);
         }
 
         Debug.WriteLine($"OutfitDisplayResolver: cached {cache.SkyPatcherEntries.Count(e => !e.IsNpc2Marker)} " +
-                        $"SkyPatcher outfit instruction(s), {cache.SpidEntries.Count} SPID outfit entr(ies).");
+                        $"SkyPatcher outfit instruction(s), {cache.SpidEntries.Count} SPID outfit entr(ies); " +
+                        $"dormant (distributor not installed): {cache.DormantSkyPatcherEntries.Count} SkyPatcher, " +
+                        $"{cache.DormantSpidEntries.Count} SPID.");
         return cache;
     }
 
