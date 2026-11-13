@@ -244,4 +244,71 @@ public class VM_NpcSelectionBarGuestPruneTests
         s.CachedSkyPatcherTemplates.Should().Contain(DonorEnv,
             "the sweep only reconsiders flags whose shares it just removed");
     }
+
+    // ------------------------------------------------------------------
+    // Regenerated replacer pack (carrier FormIDs shifted)
+    // ------------------------------------------------------------------
+
+    private static HashSet<(FormKey, FormKey)> Pairs(params (FormKey Target, FormKey Donor)[] pairs) =>
+        pairs.ToHashSet();
+
+    [Fact]
+    public void ShiftedCarrier_OldShareRemoved_ItsSelectionCleared_NewShareKept()
+    {
+        // Before regeneration TargetA <- DonorLive ("Camilla"). Afterwards DonorLive is
+        // Gerdur's carrier (TargetB) and Camilla's carrier is DonorEnv. DonorLive still
+        // exists, so donor existence alone kept the old share drawing Gerdur's face.
+        var s = new Settings();
+        AddGuest(s, TargetA, Mod, DonorLive, "Camilla");
+        AddGuest(s, TargetA, Mod, DonorEnv, "Camilla");  // re-registered by this scan
+        AddGuest(s, TargetB, Mod, DonorLive, "Gerdur");  // re-registered by this scan
+        s.CachedSkyPatcherTemplates.Add(DonorLive);
+        s.CachedSkyPatcherTemplates.Add(DonorEnv);
+        s.SelectedAppearanceMods[TargetA] = (Mod, DonorLive);
+        var bar = MakeBar(s);
+
+        var removed = bar.PruneStaleGuestAppearances(Mod, Set(DonorLive, DonorEnv), Set(DonorLive, DonorEnv),
+            Pairs((TargetA, DonorEnv), (TargetB, DonorLive)));
+
+        removed.Should().Be(1);
+        s.GuestAppearances[TargetA].Should().ContainSingle().Which.Should().Be((Mod, DonorEnv, "Camilla"));
+        s.GuestAppearances[TargetB].Should().ContainSingle().Which.Should().Be((Mod, DonorLive, "Gerdur"));
+        s.SelectedAppearanceMods.Should().NotContainKey(TargetA,
+            "the selection pointed at a carrier that now holds a different NPC");
+        s.CachedSkyPatcherTemplates.Should().Contain(DonorLive, "TargetB's share still uses it");
+    }
+
+    [Fact]
+    public void ManualShareOfNonCarrierDonor_OnScannedTarget_Kept()
+    {
+        // The pair rule only covers carrier donors; an ordinary own-NPC donor shared by hand onto
+        // a target the ini also covers is the user's curation, not an import to reconcile.
+        var s = new Settings();
+        AddGuest(s, TargetA, Mod, DonorLive, "Chooey");
+        AddGuest(s, TargetA, Mod, DonorEnv, "Amalee");
+        s.CachedSkyPatcherTemplates.Add(DonorEnv);
+        var bar = MakeBar(s);
+
+        var removed = bar.PruneStaleGuestAppearances(Mod, Set(DonorLive), Set(DonorEnv),
+            Pairs((TargetA, DonorEnv)));
+
+        removed.Should().Be(0);
+        s.GuestAppearances[TargetA].Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void CarrierShare_OnTargetTheScanNoLongerCovers_KeptWhileDonorExists()
+    {
+        // Without a fresh pair for the target the scan says nothing about it; fall back to the
+        // donor-existence rule rather than guessing.
+        var s = new Settings();
+        AddGuest(s, TargetB, Mod, DonorLive, "Chooey");
+        s.CachedSkyPatcherTemplates.Add(DonorLive);
+        var bar = MakeBar(s);
+
+        var removed = bar.PruneStaleGuestAppearances(Mod, Set(DonorLive), Set(),
+            Pairs((TargetA, DonorEnv)));
+
+        removed.Should().Be(0);
+    }
 }

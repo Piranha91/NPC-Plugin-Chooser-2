@@ -303,6 +303,25 @@ public class Validator : OptionalUIModule
                 }
             }
 
+            // A replacer pack's own carrier record (the dummy its SkyPatcher copyVisualStyle= /
+            // Recast face = rules copy FROM) is not an NPC to restyle. Under a runtime backend the
+            // patcher would build a "_Template" surrogate of the carrier and emit a rule pointing
+            // the carrier at that copy of itself — pure noise layered over the pack's own rules.
+            // Older batch selections could pick these hidden dummies, so screen saved ones too.
+            if (_settings.UsesSurrogates &&
+                npcFormKey.Equals(appearanceNpcFormKey) &&
+                _settings.CachedSkyPatcherTemplates.Contains(npcFormKey) &&
+                appearanceModSetting.CorrespondingModKeys.Contains(npcFormKey.ModKey))
+            {
+                AppendLog(
+                    $"  SCREENING WARNING: {npcIdentifier} is a SkyPatcher/Recast replacer carrier record of '{selectedModDisplayName}', " +
+                    "not an NPC to restyle; the mod's own rules already apply it to its targets. Skipping.",
+                    forceLog: true);
+                Reject(npcFormKey, npcIdentifier, selectedModDisplayName, "Replacer carrier record, not a real NPC");
+                await Task.Delay(1, ct);
+                continue;
+            }
+
             using (ContextualPerformanceTracer.Trace("Validator.CheckFolderPaths"))
             {
 

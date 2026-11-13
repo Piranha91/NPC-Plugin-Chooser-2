@@ -1719,9 +1719,11 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 .Concat(vmToRefresh.NpcFormKeysToDisplayName.Keys)
                 .ToHashSet();
             var freshDonorKeys = guests.Select(g => g.SourceNpc).ToHashSet();
+            var freshImportPairs = guests.Select(g => (g.TargetNpc, g.SourceNpc)).ToHashSet();
             if (liveDonorKeys.Count > 0 || freshDonorKeys.Count > 0)
             {
-                _npcSelectionBar.PruneStaleGuestAppearances(vmToRefresh.DisplayName, liveDonorKeys, freshDonorKeys);
+                _npcSelectionBar.PruneStaleGuestAppearances(vmToRefresh.DisplayName, liveDonorKeys, freshDonorKeys,
+                    freshImportPairs);
             }
 
             // Mirror the analysis-time cache so a subsequent CleanupCorrespondingFolders
@@ -2794,14 +2796,24 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             .GroupBy(g => g.ModDisplayName, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.Select(x => x.Source).ToHashSet(),
                 StringComparer.OrdinalIgnoreCase);
+        var freshPairsByMod = allSkyPatcherGuests
+            .GroupBy(g => g.ModDisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Select(x => (x.Target, x.Source)).ToHashSet(),
+                StringComparer.OrdinalIgnoreCase);
         foreach (var (vm, liveDonorKeys) in analyzedDonorKeys)
         {
             if (analysisFailedVms.Contains(vm)) continue;
             var freshDonorKeys = freshDonorsByMod.TryGetValue(vm.DisplayName, out var fresh)
                 ? fresh
                 : new HashSet<FormKey>();
+            // Every analyzed mod had its inis/TOMLs scanned, so a mod with no entry here simply
+            // produced no pairs — an empty set, not "unknown" (which would be null).
+            var freshImportPairs = freshPairsByMod.TryGetValue(vm.DisplayName, out var pairs)
+                ? pairs
+                : new HashSet<(FormKey, FormKey)>();
             if (liveDonorKeys.Count == 0 && freshDonorKeys.Count == 0) continue;
-            _npcSelectionBar.PruneStaleGuestAppearances(vm.DisplayName, liveDonorKeys, freshDonorKeys);
+            _npcSelectionBar.PruneStaleGuestAppearances(vm.DisplayName, liveDonorKeys, freshDonorKeys,
+                freshImportPairs);
         }
 
         return analysisFailedVms;
