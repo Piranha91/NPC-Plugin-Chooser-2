@@ -199,7 +199,7 @@ public sealed class InternalMugshotGenerator
             // thread — opening readers for hundreds of mods can take several seconds
             // and would otherwise block the UI thread that triggered the call.
             long preEnsure = sw.ElapsedMilliseconds;
-            await Task.Run(() => _bsa.EnsureAllArchivesOpened(), token).ConfigureAwait(false);
+            await Task.Run(() => EnsureArchivesFor(modSetting), token).ConfigureAwait(false);
             host.ArchivesMs = sw.ElapsedMilliseconds - preEnsure;
             Trace($"  EnsureAllArchivesOpened tid={Environment.CurrentManagedThreadId} elapsed={host.ArchivesMs}ms");
 
@@ -632,6 +632,15 @@ public sealed class InternalMugshotGenerator
     private readonly System.Collections.Concurrent.ConcurrentDictionary<(FormKey Npc, string Mod, FormKey? Target), string[]>
         _prewarmFallbackHits = new();
 
+    // Startup-wide index plus the depicted mod's own archives. The second step
+    // matters for a mod the folder scan discovered after the startup walk latched
+    // (a fresh install): without it the scoped BSA tier has nothing to search.
+    private void EnsureArchivesFor(ModSetting? modSetting)
+    {
+        _bsa.EnsureAllArchivesOpened();
+        (_bsa as Adapters.NpcChooserBsaProviderAdapter)?.EnsureArchivesForMod(modSetting);
+    }
+
     private static (FormKey, string, FormKey?) TileKey(FormKey npc, ModSetting? mod, FormKey? target)
         => (npc, mod?.DisplayName ?? "", target);
 
@@ -651,7 +660,7 @@ public sealed class InternalMugshotGenerator
             if (_env.LinkCache == null) return false;
             var paths = _resolver.Resolve(npcFormKey, modSetting);
             if (paths == null) return false;
-            await Task.Run(() => _bsa.EnsureAllArchivesOpened(), token).ConfigureAwait(false);
+            await Task.Run(() => EnsureArchivesFor(modSetting), token).ConfigureAwait(false);
             if (!_resolver.FaceGenExists(npcFormKey, modSetting)) return false;
             var (includeOutfit, includeHeadgear) = _settings.GetEffectiveAttireFlags(npcFormKey);
             var meshOverrides = _resolver.ResolveAttireMeshOverrides(

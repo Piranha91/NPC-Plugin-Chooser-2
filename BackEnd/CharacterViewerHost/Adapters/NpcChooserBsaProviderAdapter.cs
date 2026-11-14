@@ -34,6 +34,33 @@ public sealed class NpcChooserBsaProviderAdapter : IBsaArchiveProvider, IBsaArch
     private volatile bool _allOpened;
     private volatile bool _loadOrderWidened;
 
+    // Archive scopes (mod name + plugins + folders) whose BSAs have been indexed
+    // this session. The startup walk covers the PERSISTED mod list only, and it
+    // can finish before the mod-folder scan discovers a newly installed mod — that
+    // mod's archives were then never indexed and every BSA-only asset rendered as
+    // MISSING until the next launch. EnsureArchivesForMod consults this set so a
+    // render scoped to such a mod indexes its archives first.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _indexedModScopes =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private static string? ScopeSignature(ModSetting ms)
+    {
+        try
+        {
+            var keys = ms.CorrespondingModKeys.Select(k => k.FileName.String)
+                .OrderBy(s => s, StringComparer.OrdinalIgnoreCase);
+            var folders = ms.CorrespondingFolderPaths.ToList()
+                .OrderBy(s => s, StringComparer.OrdinalIgnoreCase);
+            return $"{ms.DisplayName}|{string.Join(",", keys)}|{string.Join("|", folders)}";
+        }
+        catch (InvalidOperationException)
+        {
+            // Lists mutated mid-read by the UI thread; treat as unknown so the
+            // caller re-indexes (cheap when nothing is new).
+            return null;
+        }
+    }
+
     public NpcChooserBsaProviderAdapter(BsaHandler bsa, Settings settings, EnvironmentStateProvider env)
     {
         _bsa = bsa;
@@ -99,6 +126,7 @@ public sealed class NpcChooserBsaProviderAdapter : IBsaArchiveProvider, IBsaArch
                 long modStart = sw.ElapsedMilliseconds;
                 _bsa.AddMissingModToCache(ms, release).GetAwaiter().GetResult();
                 _bsa.OpenBsaReadersFor(ms, release);
+                if (ScopeSignature(ms) is { } sig) _indexedModScopes.TryAdd(sig, 0);
                 long modElapsed = sw.ElapsedMilliseconds - modStart;
                 if (modElapsed > 50)
                 {
@@ -157,6 +185,7 @@ public sealed class NpcChooserBsaProviderAdapter : IBsaArchiveProvider, IBsaArch
                 var sw = Stopwatch.StartNew();
                 _bsa.AddMissingModToCache(modSetting, release).GetAwaiter().GetResult();
                 _bsa.OpenBsaReadersFor(modSetting, release);
+                if (ScopeSignature(modSetting) is { } sig) _indexedModScopes.TryAdd(sig, 0);
                 Trace($"RefreshArchivesForMod '{modSetting.DisplayName}' folders=[{string.Join("|", modSetting.CorrespondingFolderPaths)}] elapsed={sw.ElapsedMilliseconds}ms");
             }
             catch (Exception ex)
@@ -166,6 +195,23 @@ public sealed class NpcChooserBsaProviderAdapter : IBsaArchiveProvider, IBsaArch
                 Trace($"RefreshArchivesForMod '{modSetting.DisplayName}' FAILED: {ex.Message}");
             }
         }
+    }
+
+    /// <summary>
+    /// Indexes <paramref name="modSetting"/>'s archives unless this exact scope
+    /// (name, plugins, folders) was already indexed this session. Call before a
+    /// render scoped to the mod: the startup walk only sees the persisted mod
+    /// list, so a mod discovered by the folder scan after it — a fresh install —
+    /// would otherwise have no BSA in the index at all. A scope change (folder or
+    /// plugin added) also produces a new signature and so re-indexes.
+    /// </summary>
+    public void EnsureArchivesForMod(ModSetting? modSetting)
+    {
+        if (modSetting == null) return;
+        var sig = ScopeSignature(modSetting);
+        if (sig != null && _indexedModScopes.ContainsKey(sig)) return;
+        Trace($"EnsureArchivesForMod: '{modSetting.DisplayName}' not indexed this session; indexing now");
+        RefreshArchivesForMod(modSetting);
     }
 
     /// <summary>
