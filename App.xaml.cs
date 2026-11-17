@@ -57,6 +57,9 @@ namespace NPC_Plugin_Chooser_2
             // pre-UI crash leaves no window and no output.
             AppDomain.CurrentDomain.UnhandledException += (_, ev) => LogCrash("AppDomain.UnhandledException", ev.ExceptionObject as Exception);
             this.DispatcherUnhandledException += (_, ev) => LogCrash("DispatcherUnhandledException", ev.Exception);
+            // After the logger, so a recovered 3D-viewport failure is still in CrashLog.txt.
+            this.DispatcherUnhandledException += (_, ev) => GlViewportFailsafe.OnDispatcherUnhandledException(
+                () => _container?.Resolve<VM_Settings>(), ev);
 
             // Check for file-based startup logging trigger before anything else
             StartupLogger.InitializeFromFileTrigger();
