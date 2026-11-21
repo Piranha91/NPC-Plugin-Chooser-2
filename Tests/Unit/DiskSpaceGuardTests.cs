@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using FluentAssertions;
 using NPC_Plugin_Chooser_2.BackEnd;
@@ -9,11 +10,28 @@ namespace NPC_Plugin_Chooser_2.Tests.Unit;
 /// <summary>
 /// Locks the pure parts of <see cref="DiskSpaceGuard"/>: which exceptions count
 /// as out-of-space, the event counter a render compares before and after, and
-/// the warning text. No game, no UI thread (the dialog is skipped when there is
-/// no WPF Application).
+/// the warning text. No game, no UI thread. Warnings go to
+/// <see cref="DiskSpaceGuard.WarningSinkForTests"/>, never a dialog: the
+/// integration collection's WPF Application can be live while this class runs
+/// in parallel, and a real "Out of Disk Space" modal would block
+/// ImportChoiceDialogTests.
 /// </summary>
-public class DiskSpaceGuardTests
+public sealed class DiskSpaceGuardTests : IDisposable
 {
+    private readonly List<string> _warnings = new();
+
+    public DiskSpaceGuardTests()
+    {
+        DiskSpaceGuard.WarningSinkForTests = _warnings.Add;
+        DiskSpaceGuard.ResetWarningLatchForTests();
+    }
+
+    public void Dispose()
+    {
+        DiskSpaceGuard.WarningSinkForTests = null;
+        DiskSpaceGuard.ResetWarningLatchForTests();
+    }
+
     private static IOException Win32IoException(int win32Code) =>
         new("io failure", unchecked((int)0x80070000) | win32Code);
 
@@ -55,6 +73,21 @@ public class DiskSpaceGuardTests
         long before = DiskSpaceGuard.DiskFullEventCount;
         DiskSpaceGuard.ReportDiskFull(Path.Combine(Path.GetTempPath(), "x.dds"));
         DiskSpaceGuard.DiskFullEventCount.Should().BeGreaterThan(before);
+    }
+
+    [Fact]
+    public void ReportDiskFull_WarnsOncePerEpisode()
+    {
+        string path = Path.Combine(Path.GetTempPath(), "x.dds");
+        DiskSpaceGuard.ReportDiskFull(path);
+        DiskSpaceGuard.ReportDiskFull(path);
+
+        _warnings.Should().ContainSingle()
+            .Which.Should().Contain("is out of space");
+
+        DiskSpaceGuard.ResetWarningLatchForTests();
+        DiskSpaceGuard.ReportDiskFull(path);
+        _warnings.Should().HaveCount(2);
     }
 
     [Fact]

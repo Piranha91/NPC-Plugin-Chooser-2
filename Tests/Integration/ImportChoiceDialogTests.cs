@@ -11,6 +11,8 @@ namespace NPC_Plugin_Chooser_2.Tests.Integration;
 [Collection(NpcChooserIntegrationCollection.Name)]
 public class ImportChoiceDialogTests
 {
+    private const string DialogTitle = "Confirm Import";
+
     private readonly WpfStaFixture _sta;
     public ImportChoiceDialogTests(WpfStaFixture sta) => _sta = sta;
 
@@ -26,9 +28,14 @@ public class ImportChoiceDialogTests
             Exception? callbackError = null;
             Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
             {
-                var box = Application.Current.Windows.OfType<ScrollableMessageBox>().Single();
+                // Find this test's dialog by title: another ScrollableMessageBox
+                // (e.g. a stray warning) may also be open on this Application.
+                // The lookup sits inside the try so a miss fails the test
+                // instead of leaving the modal open and hanging the run.
                 try
                 {
+                    var box = Application.Current.Windows.OfType<ScrollableMessageBox>()
+                        .Single(w => w.Title == DialogTitle);
                     var panel = (StackPanel)box.FindName("ButtonPanel");
                     var buttons = panel.Children.OfType<Button>().Where(b => b.IsVisible).ToArray();
                     buttons.Select(b => b.Content).Should().Equal("Import & Keep Others", "Import & Clear Others", "Cancel");
@@ -47,12 +54,16 @@ public class ImportChoiceDialogTests
                 }
                 finally
                 {
-                    if (box.IsVisible) box.Close();
+                    foreach (var open in Application.Current.Windows.OfType<ScrollableMessageBox>()
+                                 .Where(w => w.Title == DialogTitle && w.IsVisible).ToList())
+                    {
+                        open.Close();
+                    }
                 }
             }));
 
             var result = ScrollableMessageBox.ChooseWithCancel(
-                "Import 2 choices? You have choices for 3 NPCs not listed in this file.", "Confirm Import",
+                "Import 2 choices? You have choices for 3 NPCs not listed in this file.", DialogTitle,
                 "Import & Keep Others", "Import & Clear Others");
 
             if (callbackError != null) throw callbackError;
