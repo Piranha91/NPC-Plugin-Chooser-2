@@ -36,6 +36,16 @@ public static class DiskSpaceGuard
     private static long _diskFullEvents;
     private static int _warningActive;
 
+    /// <summary>Test seam: when set, the warning text goes here instead of a
+    /// dialog. Unit tests must not depend on <c>Application.Current</c> being
+    /// null, because the integration fixture creates a process-wide WPF
+    /// Application that can be live while unit tests run in parallel.</summary>
+    internal static Action<string>? WarningSinkForTests;
+
+    /// <summary>Test seam: ends the current low-space episode so the next
+    /// shortage warns again.</summary>
+    internal static void ResetWarningLatchForTests() => Interlocked.Exchange(ref _warningActive, 0);
+
     /// <summary>Monotonic count of disk-full write failures this session.
     /// Snapshot before a render and compare after it.</summary>
     public static long DiskFullEventCount => Interlocked.Read(ref _diskFullEvents);
@@ -129,6 +139,13 @@ public static class DiskSpaceGuard
         bool legacyCacheExists = false;
         try { legacyCacheExists = Directory.Exists(LegacyCacheFolder); } catch { /* best-effort hint */ }
         string message = BuildWarningMessage(driveRoot, freeBytes, legacyCacheExists);
+
+        var sink = WarningSinkForTests;
+        if (sink != null)
+        {
+            sink(message);
+            return;
+        }
 
         var dispatcher = Application.Current?.Dispatcher;
         if (dispatcher == null) return; // tests / headless harness
