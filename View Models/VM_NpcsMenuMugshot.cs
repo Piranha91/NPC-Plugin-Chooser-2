@@ -23,7 +23,6 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Mutagen.Bethesda.Skyrim;
 using Noggog;
-using SixLabors.ImageSharp;
 using SkyRender;
 using SkyRender.Character;
 
@@ -2907,11 +2906,16 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         this.HasMugshot = true;
 
         // We also need to update the dimensions from the in-memory data
-        var info = Image.Identify(imageData);
-        OriginalPixelWidth = info.Width;
-        OriginalPixelHeight = info.Height;
-        OriginalDipWidth = info.Width;
-        OriginalDipHeight = info.Height;
+        // Header dimensions; the bitmap decoded above from the same bytes is the fallback.
+        if (!ImageHeaderReader.TryGetDimensions(imageData, out int width, out int height))
+        {
+            width = bitmap.PixelWidth;
+            height = bitmap.PixelHeight;
+        }
+        OriginalPixelWidth = width;
+        OriginalPixelHeight = height;
+        OriginalDipWidth = width;
+        OriginalDipHeight = height;
         OriginalDipDiagonal = Math.Sqrt(OriginalDipWidth * OriginalDipWidth + OriginalDipHeight * OriginalDipHeight);
 
         // Newly-loaded image with fresh dimensions — trigger a (throttled) re-pack.

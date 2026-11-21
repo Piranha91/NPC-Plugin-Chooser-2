@@ -3,14 +3,14 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Windows;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
-using SixLabors.ImageSharp.Formats.Png;
-using SixLabors.ImageSharp.Processing;
-using Image = SixLabors.ImageSharp.Image;
-using Size = SixLabors.ImageSharp.Size;
+using NPC_Plugin_Chooser_2.BackEnd;
+using Size = System.Drawing.Size;
 
 namespace NPC_Plugin_Chooser_2.View_Models;
 
@@ -92,25 +92,15 @@ public class ImagePacker
                 {
                     try
                     {
-                        // Use ImageSharp for all processing
-                        using var image = LoadImageFromSource(img);
-                        
-                        if (image == null) continue;
+                        var source = LoadBitmapSource(img);
 
-                        // CenterCropAndResize is now an ImageSharp operation
-                        image.Mutate(x => x.Resize(new ResizeOptions
-                        {
-                            Mode = ResizeMode.Crop,
-                            Size = new Size(modePixelSize.Width, modePixelSize.Height)
-                        }));
+                        if (source == null) continue;
 
-                        // Convert the processed ImageSharp image back to a WPF BitmapSource
-                        img.MugshotSource = ImageToImageSource(image);
+                        img.MugshotSource = CenterCropResize(source, modePixelSize.Width, modePixelSize.Height);
                         img.OriginalPixelWidth = modePixelSize.Width;
                         img.OriginalPixelHeight = modePixelSize.Height;
-                        
-                        // With ImageSharp, DPI is not a primary concern. We assume screen DPI (96)
-                        // where 1 pixel = 1 DIP (Device Independent Pixel).
+
+                        // The resized bitmap is rendered at 96 DPI, so 1 pixel = 1 DIP.
                         img.OriginalDipWidth = modePixelSize.Width;
                         img.OriginalDipHeight = modePixelSize.Height;
                         img.OriginalDipDiagonal = Math.Sqrt(img.OriginalDipWidth * img.OriginalDipWidth +
@@ -118,7 +108,7 @@ public class ImagePacker
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"[ImagePacker] ERROR normalizing image {img.ImagePath} with ImageSharp: {ex.Message}");
+                        Debug.WriteLine($"[ImagePacker] ERROR normalizing image {img.ImagePath}: {ex.Message}");
                     }
                 }
 
@@ -235,37 +225,58 @@ public class ImagePacker
         return bitmapImage;
     }
 
-    // --- NEW HELPER: Loads an image into ImageSharp from either a file or an existing WPF BitmapSource ---
-    private Image? LoadImageFromSource(IHasMugshotImage img)
+    /// <summary>The tile's current bitmap, or its file decoded (frozen) when it has none.</summary>
+    private static BitmapSource? LoadBitmapSource(IHasMugshotImage img)
     {
-        if (img.MugshotSource is BitmapSource bmpSource)
-        {
-            using var memoryStream = new MemoryStream();
-            var encoder = new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(bmpSource));
-            encoder.Save(memoryStream);
-            memoryStream.Position = 0;
-            return Image.Load(memoryStream);
-        }
-        
-        return File.Exists(img.ImagePath) ? Image.Load(img.ImagePath) : null;
-    }
-    
-    // --- REFACTORED: Converts an ImageSharp Image to a WPF BitmapSource ---
-    private BitmapSource ImageToImageSource(Image image)
-    {
-        using var memory = new MemoryStream();
-        // Save the image to the stream in PNG format
-        image.Save(memory, new PngEncoder());
-        memory.Position = 0;
+        if (img.MugshotSource is BitmapSource bmpSource) return bmpSource;
+        if (!File.Exists(img.ImagePath)) return null;
 
+        // Stream rather than UriSource: WPF caches UriSource bitmaps per URI, which would serve a
+        // stale image after a mugshot is regenerated in place.
+        using var fs = File.OpenRead(img.ImagePath);
         var bitmapImage = new BitmapImage();
         bitmapImage.BeginInit();
-        bitmapImage.StreamSource = memory;
         bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
+        bitmapImage.StreamSource = fs;
         bitmapImage.EndInit();
-        bitmapImage.Freeze(); // Crucial for multi-threading in WPF
+        bitmapImage.Freeze();
         return bitmapImage;
+    }
+
+    /// <summary>
+    /// Scales <paramref name="source"/> to cover <paramref name="targetWidth"/> x <paramref name="targetHeight"/>
+    /// and crops the overflow equally from both sides: the center-anchored "crop" resize ImageSharp's
+    /// ResizeMode.Crop performed here before. Fant resampling stays closest to ImageSharp's bicubic output
+    /// (PSNR ~48 dB on a 600-mugshot sample) at ~5 ms instead of ~80 ms per image (tools/imagebench).
+    /// Returns a frozen 96-DPI Pbgra32 bitmap.
+    /// </summary>
+    internal static BitmapSource CenterCropResize(BitmapSource source, int targetWidth, int targetHeight)
+    {
+        int sw = source.PixelWidth, sh = source.PixelHeight;
+        double scale = Math.Max(targetWidth / (double)sw, targetHeight / (double)sh);
+        int cropW = Math.Clamp((int)Math.Round(targetWidth / scale), 1, sw);
+        int cropH = Math.Clamp((int)Math.Round(targetHeight / scale), 1, sh);
+        var cropped = new CroppedBitmap(source, new Int32Rect((sw - cropW) / 2, (sh - cropH) / 2, cropW, cropH));
+        cropped.Freeze();
+
+        // BitmapScalingMode must sit on a DrawingGroup: set on the DrawingVisual it is ignored
+        // (measured; Fant and NearestNeighbor rendered identically). The explicit DIP rect makes
+        // the source's own DPI irrelevant.
+        var group = new DrawingGroup();
+        RenderOptions.SetBitmapScalingMode(group, BitmapScalingMode.Fant);
+        group.Children.Add(new ImageDrawing(cropped, new Rect(0, 0, targetWidth, targetHeight)));
+        group.Freeze();
+
+        var visual = new DrawingVisual();
+        using (var dc = visual.RenderOpen())
+        {
+            dc.DrawDrawing(group);
+        }
+
+        var target = new RenderTargetBitmap(targetWidth, targetHeight, 96, 96, PixelFormats.Pbgra32);
+        target.Render(visual);
+        target.Freeze();
+        return target;
     }
 
     private bool CanPackAll(List<(double Width, double Height)> baseContentSizes, double packerScale,
@@ -293,33 +304,22 @@ public class ImagePacker
         return true;
     }
 
-    // --- REFACTORED: Uses Image.Identify for better performance ---
+    /// <summary>Pixel dimensions read from the file header only (no pixel decode); zeros if unreadable.</summary>
     public static (int PixelWidth, int PixelHeight, double DipWidth, double DipHeight) GetImageDimensions(string imagePath)
     {
         if (string.IsNullOrEmpty(imagePath) || !File.Exists(imagePath) || new FileInfo(imagePath).Length == 0)
         {
             return (0, 0, 0, 0);
         }
-            
-        try
+
+        if (!ImageHeaderReader.TryGetDimensions(imagePath, out int pixelWidth, out int pixelHeight))
         {
-            // Image.Identify is extremely fast as it only reads metadata, not pixel data.
-            var info = Image.Identify(imagePath);
-            
-            int pixelWidth = info.Width;
-            int pixelHeight = info.Height;
-            
-            // In a modern UI context like WPF, we can treat 1 pixel as 1 DIP.
-            double dipWidth = pixelWidth;
-            double dipHeight = pixelHeight;
-            
-            return (pixelWidth, pixelHeight, dipWidth, dipHeight);
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"Error in GetImageDimensions (ImageSharp) for {imagePath}: {ex.Message}");
+            Debug.WriteLine($"GetImageDimensions: could not read image header for {imagePath}");
             return (0, 0, 0, 0);
         }
+
+        // In a modern UI context like WPF, we can treat 1 pixel as 1 DIP.
+        return (pixelWidth, pixelHeight, pixelWidth, pixelHeight);
     }
 }
 

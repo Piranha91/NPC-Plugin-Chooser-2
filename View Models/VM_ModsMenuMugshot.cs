@@ -20,7 +20,6 @@ using System.Windows.Media.Imaging;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
 using NPC_Plugin_Chooser_2.Models;
-using SixLabors.ImageSharp; // For Debug.WriteLine
 
 namespace NPC_Plugin_Chooser_2.View_Models;
 
@@ -781,8 +780,10 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         string finalImagePath;
         if (_settings.CacheFaceFinderImages)
         {
-            var format = Image.DetectFormat(imageData);
-            var extension = format?.FileExtensions.FirstOrDefault() ?? "png";
+            // Unrecognized bytes (e.g. an HTML error page) throw, as ImageSharp's DetectFormat did,
+            // rather than being cached under an image extension.
+            var extension = ImageHeaderReader.DetectExtension(imageData)
+                            ?? throw new NotSupportedException("Downloaded FaceFinder data is not a recognized image format.");
             finalImagePath = $"{baseSavePath}.{extension}";
 
             Directory.CreateDirectory(Path.GetDirectoryName(finalImagePath)!);
@@ -1510,11 +1511,16 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         this.ImagePath = "in-memory";
         this.HasMugshot = true; // A real image was loaded
 
-        var info = Image.Identify(imageData);
-        OriginalPixelWidth = info.Width;
-        OriginalPixelHeight = info.Height;
-        OriginalDipWidth = info.Width;
-        OriginalDipHeight = info.Height;
+        // Header dimensions; the bitmap decoded above from the same bytes is the fallback.
+        if (!ImageHeaderReader.TryGetDimensions(imageData, out int width, out int height))
+        {
+            width = bitmap.PixelWidth;
+            height = bitmap.PixelHeight;
+        }
+        OriginalPixelWidth = width;
+        OriginalPixelHeight = height;
+        OriginalDipWidth = width;
+        OriginalDipHeight = height;
         OriginalDipDiagonal = Math.Sqrt(OriginalDipWidth * OriginalDipWidth + OriginalDipHeight * OriginalDipHeight);
         
 

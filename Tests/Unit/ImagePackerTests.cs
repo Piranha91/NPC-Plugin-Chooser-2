@@ -14,10 +14,9 @@ namespace NPC_Plugin_Chooser_2.Tests.Unit;
 /// <c>CalculatePackerScale</c> / <c>CanPackAll</c> reached via <see cref="Reflect"/>, and the public
 /// static <see cref="ImagePacker.GetImageDimensions"/>. No WPF dispatcher is required: these are pure math.
 ///
-/// NOTE: the normalize/crop branch (normalizeAndCropImages:true) is not covered — it decodes/encodes
-/// real bitmaps through ImageSharp + WPF (LoadImageFromSource / ImageToImageSource) and only matters
-/// when images differ from the mode pixel size; that requires real image assets and a STA-ish WPF path,
-/// which belongs to the integration wave, not this pure-unit file.
+/// NOTE: the normalize/crop branch (normalizeAndCropImages:true) is not covered here — it resizes
+/// real WPF bitmaps (ImagePacker.CenterCropResize) and needs the STA fixture, so it lives in
+/// Integration/ImageWicRoundTripTests.
 /// </summary>
 public class ImagePackerTests
 {
@@ -403,7 +402,7 @@ public class ImagePackerTests
     public void GetImageDimensions_NonImageContent_ReturnsZeros()
     {
         using var tmp = new TempDir();
-        // Non-empty but not a decodable image: Image.Identify throws -> caught -> zeros.
+        // Non-empty but not a decodable image: header parse and WIC fallback both fail -> zeros.
         var notAnImage = tmp.WriteText("notanimage.png", "this is plain text, not a PNG");
 
         ImagePacker.GetImageDimensions(notAnImage).Should().Be((0, 0, 0.0, 0.0));

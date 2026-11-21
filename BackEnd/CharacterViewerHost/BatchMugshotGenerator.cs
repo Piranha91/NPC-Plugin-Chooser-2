@@ -10,7 +10,6 @@ using Mutagen.Bethesda.Plugins;
 using Newtonsoft.Json;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.View_Models;
-using SixLabors.ImageSharp;
 
 namespace NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
 
@@ -336,8 +335,10 @@ public sealed class BatchMugshotGenerator
             string? finalSavePath = null;
             if (_settings.CacheFaceFinderImages)
             {
-                var format = Image.DetectFormat(imageData);
-                var extension = format?.FileExtensions.FirstOrDefault() ?? "png";
+                // Unrecognized bytes (e.g. an HTML error page) throw, as ImageSharp's DetectFormat did,
+                // rather than being cached under an image extension.
+                var extension = ImageHeaderReader.DetectExtension(imageData)
+                                ?? throw new NotSupportedException("Downloaded FaceFinder data is not a recognized image format.");
                 finalSavePath = $"{baseSavePath}.{extension}";
 
                 Directory.CreateDirectory(Path.GetDirectoryName(finalSavePath)!);
@@ -445,8 +446,10 @@ public sealed class BatchMugshotGenerator
             string? finalSavePath = null;
             if (_settings.CacheFaceFinderImages)
             {
-                var format = Image.DetectFormat(imageData);
-                var extension = format?.FileExtensions.FirstOrDefault() ?? "png";
+                // Unrecognized bytes (e.g. an HTML error page) throw, as ImageSharp's DetectFormat did,
+                // rather than being cached under an image extension.
+                var extension = ImageHeaderReader.DetectExtension(imageData)
+                                ?? throw new NotSupportedException("Downloaded FaceFinder data is not a recognized image format.");
                 finalSavePath = $"{baseSavePath}.{extension}";
 
                 Directory.CreateDirectory(Path.GetDirectoryName(finalSavePath)!);

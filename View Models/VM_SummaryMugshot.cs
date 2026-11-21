@@ -12,7 +12,6 @@ using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using Splat;
 using System.Net.Http;
-using SixLabors.ImageSharp;
 using System.Windows.Media.Imaging;
 using System.Windows.Media;
 using System.Reactive.Disposables;
@@ -367,11 +366,16 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             this.HasMugshot = true;
 
             // We also need to update the dimensions from the in-memory data
-            var info = Image.Identify(imageData);
-            OriginalPixelWidth = info.Width;
-            OriginalPixelHeight = info.Height;
-            OriginalDipWidth = info.Width;
-            OriginalDipHeight = info.Height;
+            // Header dimensions; the bitmap decoded above from the same bytes is the fallback.
+            if (!ImageHeaderReader.TryGetDimensions(imageData, out int width, out int height))
+            {
+                width = bitmap.PixelWidth;
+                height = bitmap.PixelHeight;
+            }
+            OriginalPixelWidth = width;
+            OriginalPixelHeight = height;
+            OriginalDipWidth = width;
+            OriginalDipHeight = height;
             OriginalDipDiagonal = Math.Sqrt(OriginalDipWidth * OriginalDipWidth + OriginalDipHeight * OriginalDipHeight);
         }
 
