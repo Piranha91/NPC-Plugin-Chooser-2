@@ -2468,6 +2468,7 @@ public class Patcher : OptionalUIModule
             // declaration). Readers other consumers still hold stay alive.
             _bsaHandler.ReleaseReaders(openedBsaPaths);
             _recordDeltaPatcher.FinalizeLog();
+            NifHandler.ClearReadCache();
             UpdateProgress(selectionsToProcess.Count, selectionsToProcess.Count, "Finished.");
         }
 
@@ -2778,9 +2779,10 @@ public class Patcher : OptionalUIModule
             }
         }
 
-        // Each entry edits a different NPC's FaceGen copy and nifly is safe for
-        // concurrent loads on separate NifFile instances. The first file runs
-        // alone to prime nifly's native singletons before fanning out.
+        // Each entry edits a different NPC's FaceGen copy, and NIF loads on
+        // separate NifFile instances share no state, so they fan out safely.
+        // (The first file running alone dates from the old native library,
+        // which needed its singletons primed; it is harmless now.)
         StripOne(pendingEdits[0]);
         Parallel.ForEach(pendingEdits.Skip(1),
             new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, StripOne);
@@ -3031,7 +3033,8 @@ public class Patcher : OptionalUIModule
 
         // Each bake reads the shared donor wig NIF and writes only its own NPC's
         // FaceGen copy, on NifFile instances local to the call — safe to fan out.
-        // The first bake runs alone to prime nifly's native singletons.
+        // (The first bake running alone dates from the old native library's
+        // singleton priming; it is harmless now.)
         BakeOne(pendingBakes[0]);
         Parallel.ForEach(pendingBakes.Skip(1),
             new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, BakeOne);

@@ -69,11 +69,11 @@ public class WigHeadPartSpikeGeneratorTests
     private const string BisectShape = "01b";
 
     /// <summary>
-    /// Diagnostic control A: the FoxGlove facegen passed through a pure nifly
+    /// Diagnostic control A: the FoxGlove facegen passed through a pure NIF-library
     /// load→save round-trip with NO edits and NO plugin. In game (enabled
     /// INSTEAD of the other spike variants, winning the facegen conflict over
     /// the FoxGlove Test variant) Auri must look completely vanilla-FoxGlove.
-    /// If this alone dark-faces, the engine rejects nifly's serialization
+    /// If this alone dark-faces, the engine rejects the library's serialization
     /// itself and no amount of shape/record work can succeed.
     /// </summary>
     [Fact]
@@ -86,12 +86,11 @@ public class WigHeadPartSpikeGeneratorTests
         Directory.CreateDirectory(Path.GetDirectoryName(faceGenDest)!);
         File.Copy(Path.Combine(FoxGloveModRoot, "meshes", FaceGenRelDir, "00000D63.NIF"), faceGenDest);
 
-        using var nif = new nifly.NifFile();
+        var nif = new NiflySharp.NifFile();
         nif.Load(faceGenDest).Should().Be(0);
         nif.Save(faceGenDest).Should().Be(0);
 
-        using var reload = new nifly.NifFile();
-        reload.Load(faceGenDest).Should().Be(0, "the round-tripped facegen must stay loadable");
+        new NiflySharp.NifFile().Load(faceGenDest).Should().Be(0, "the round-tripped facegen must stay loadable");
     }
 
     /// <summary>
@@ -256,31 +255,22 @@ public class WigHeadPartSpikeGeneratorTests
             "the bald facegen must trigger the synthetic template, not a harvest");
 
         // Readback: the baked shape must carry the synthetic hair partition.
-        using (var check = new nifly.NifFile())
         {
+            var check = new NiflySharp.NifFile();
             check.Load(faceGenDest).Should().Be(0);
-            nifly.NiShape? bakedShape = null;
-            using var shapes = check.GetShapes();
-            foreach (var shape in shapes)
-            {
-                if (renames[BisectShape].Equals(shape.name?.get(), StringComparison.OrdinalIgnoreCase))
-                {
-                    bakedShape = shape;
-                    break;
-                }
-            }
+            var bakedShape = check.GetShapes().FirstOrDefault(shape =>
+                renames[BisectShape].Equals(shape.Name?.String, StringComparison.OrdinalIgnoreCase));
             bakedShape.Should().NotBeNull("the renamed wig shape must exist in the baked facegen");
-            using var partitions = new nifly.NiVectorBSDismemberSkinInstancePartitionInfo();
-            using var triParts = new nifly.vectorint();
-            check.GetShapePartitions(bakedShape, partitions, triParts)
+            check.GetBlock<NiflySharp.Blocks.BSDismemberSkinInstance>(bakedShape!.SkinInstanceRef)
+                .Should().NotBeNull("the baked shape must carry a dismember skin instance");
+            NifEdit.GetShapePartitions(check, bakedShape, out var partitions)
                 .Should().BeTrue("the baked shape must carry dismember partitions");
-            using var items = partitions.items();
-            items.Count.Should().BeGreaterThan(0);
-            for (int pi = 0; pi < items.Count; pi++)
+            partitions.Count.Should().BeGreaterThan(0);
+            foreach (var partition in partitions)
             {
-                ((int)items[pi].partID).Should().Be(131, "every partition must be SBP_131_HAIR");
+                ((int)partition.BodyPart).Should().Be(131, "every partition must be SBP_131_HAIR");
             }
-            ((ushort)items[0].flags).Should().Be((ushort)0x0101,
+            ((ushort)partitions[0].PartFlag).Should().Be((ushort)0x0101,
                 "first partition takes PF_EDITOR_VISIBLE | PF_START_NET_BONESET");
         }
 
@@ -506,18 +496,12 @@ public class WigHeadPartSpikeGeneratorTests
     private static void ExtractSingleShapeModelNif(string wigNifSource, string keepShape, string destPath)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
-        using var nif = new nifly.NifFile();
+        var nif = new NiflySharp.NifFile();
         nif.Load(wigNifSource).Should().Be(0);
-        var doomed = new List<nifly.NiShape>();
-        using (var shapes = nif.GetShapes())
-        {
-            foreach (var shape in shapes)
-            {
-                if (!keepShape.Equals(shape.name?.get(), StringComparison.OrdinalIgnoreCase))
-                    doomed.Add(shape);
-            }
-        }
-        foreach (var shape in doomed) nif.DeleteShape(shape);
+        var doomed = nif.GetShapes()
+            .Where(shape => !keepShape.Equals(shape.Name?.String, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        foreach (var shape in doomed) NifEdit.DeleteShape(nif, shape);
         nif.Save(destPath).Should().Be(0);
     }
 
@@ -772,8 +756,7 @@ public class WigHeadPartSpikeGeneratorTests
         baked.Should().Be(0, string.Join(Environment.NewLine, bakeLog));
 
         // The additions must actually be present.
-        using var nif = new nifly.NifFile();
-        nif.Load(faceGenDest).Should().Be(0);
+        new NiflySharp.NifFile().Load(faceGenDest).Should().Be(0);
         NifHandler.GetPhysicsXmlPathsFromNif(faceGenDest).Should().Contain(NewPhysicsXmlRelPath);
     }
 
@@ -799,79 +782,67 @@ public class WigHeadPartSpikeGeneratorTests
 
         var hairShapes = new[] { "FoxGloveHairMesh", "FoxGloveHairlineMesh", "FoxGloveHairScalp" };
 
-        using var dest = new nifly.NifFile();
+        var dest = new NiflySharp.NifFile();
         dest.Load(faceGenDest).Should().Be(0);
-        using var src = new nifly.NifFile();
+        var src = new NiflySharp.NifFile();
         src.Load(faceGenSource).Should().Be(0);
 
         // Source: keep ONLY the three hair shapes (under its skin node).
-        var srcDoomed = new List<nifly.NiShape>();
-        using (var shapes = src.GetShapes())
-            foreach (var s in shapes)
-                if (!hairShapes.Contains(s.name?.get(), StringComparer.OrdinalIgnoreCase)) srcDoomed.Add(s);
-        foreach (var s in srcDoomed) src.DeleteShape(s);
+        var srcDoomed = src.GetShapes()
+            .Where(s => !hairShapes.Contains(s.Name?.String, StringComparer.OrdinalIgnoreCase)).ToList();
+        foreach (var s in srcDoomed) NifEdit.DeleteShape(src, s);
 
         // Dest: strip the three hair shapes.
-        var destDoomed = new List<nifly.NiShape>();
-        using (var shapes = dest.GetShapes())
-            foreach (var s in shapes)
-                if (hairShapes.Contains(s.name?.get(), StringComparer.OrdinalIgnoreCase)) destDoomed.Add(s);
-        foreach (var s in destDoomed) dest.DeleteShape(s);
+        var destDoomed = dest.GetShapes()
+            .Where(s => hairShapes.Contains(s.Name?.String, StringComparer.OrdinalIgnoreCase)).ToList();
+        foreach (var s in destDoomed) NifEdit.DeleteShape(dest, s);
 
-        var destHeader = dest.GetHeader();
-        uint preCount = destHeader.GetNumBlocks();
+        var preCloneBlocks = new HashSet<NiflySharp.INiObject>(dest.Blocks, ReferenceEqualityComparer.Instance);
 
         // Clone the source skin node's children (now just the 3 hair shapes).
-        nifly.NiNode? srcSkin = null, destSkin = null;
-        var srcHeader = src.GetHeader();
-        for (uint i = 0; i < srcHeader.GetNumBlocks(); i++)
-            if (srcHeader.GetBlockById(i) is nifly.NiNode n &&
-                n.name?.get() == NifHandler.FaceGenSkinNodeName) { srcSkin = n; break; }
-        for (uint i = 0; i < preCount; i++)
-            if (destHeader.GetBlockById(i) is nifly.NiNode n &&
-                n.name?.get() == NifHandler.FaceGenSkinNodeName) { destSkin = n; break; }
+        var srcSkin = src.Blocks.OfType<NiflySharp.Blocks.NiNode>()
+            .FirstOrDefault(n => n.Name?.String == NifHandler.FaceGenSkinNodeName);
+        var destSkin = dest.Blocks.OfType<NiflySharp.Blocks.NiNode>()
+            .FirstOrDefault(n => n.Name?.String == NifHandler.FaceGenSkinNodeName);
         srcSkin.Should().NotBeNull();
         destSkin.Should().NotBeNull();
 
-        var slots = new List<uint>();
-        for (uint i = 0; i < srcSkin!.childRefs.GetSize(); i++) slots.Add(srcSkin.childRefs.GetBlockRef(i));
+        var slots = srcSkin!.Children.Indices.ToList();
         dest.CloneChildren(srcSkin, src);
 
         // Attach clones under the dest skin node; remap bones by name.
         var nodeIdsByName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        for (uint i = 0; i < destHeader.GetNumBlocks(); i++)
-            if (destHeader.GetBlockById(i) is nifly.NiNode n)
+        for (int i = 0; i < dest.Blocks.Count; i++)
+            if (dest.Blocks[i] is NiflySharp.Blocks.NiNode n)
             {
-                var nm = n.name?.get();
-                if (!string.IsNullOrEmpty(nm) && !nodeIdsByName.ContainsKey(nm)) nodeIdsByName[nm] = (int)i;
+                var nm = n.Name?.String;
+                if (!string.IsNullOrEmpty(nm) && !nodeIdsByName.ContainsKey(nm)) nodeIdsByName[nm] = i;
             }
-        uint destRootId = dest.GetBlockID(dest.GetRootNode());
+        dest.GetBlockIndex(dest.GetRootNode(), out int destRootId);
 
         int attached = 0;
         for (int slot = 0; slot < slots.Count; slot++)
         {
-            if (slots[slot] == uint.MaxValue) continue;
-            uint destId = srcSkin.childRefs.GetBlockRef((uint)slot);
-            if (destId == uint.MaxValue || destId < preCount) continue;
-            if (destHeader.GetBlockById(destId) is not nifly.NiShape destShape) continue;
-            destSkin!.childRefs.AddBlockRef(destId);
+            if (slots[slot] == NiflySharp.NiRef.NPOS) continue;
+            int destId = srcSkin.Children.GetBlockRef(slot);
+            var destBlock = dest.GetBlock(destId);
+            if (destBlock == null || preCloneBlocks.Contains(destBlock)) continue;
+            if (destBlock is not NiflySharp.INiShape destShape) continue;
+            destSkin!.Children.AddBlockRef(destId);
             attached++;
 
-            if (srcHeader.GetBlockById(slots[slot]) is not nifly.NiShape srcShape) continue;
-            using var boneNames = new nifly.vectorstring();
-            src.GetShapeBoneList(srcShape, boneNames);
-            using var boneIds = new nifly.vectorint();
-            foreach (string bn in boneNames)
+            if (src.GetBlock(slots[slot]) is not NiflySharp.INiShape srcShape) continue;
+            var boneIds = new List<int>();
+            foreach (string bn in src.GetShapeBoneNames(srcShape))
             {
                 nodeIdsByName.Should().ContainKey(bn);
                 boneIds.Add(nodeIdsByName[bn]);
             }
-            dest.SetShapeBoneIDList(destShape, boneIds);
-            var skinRef = destShape.SkinInstanceRef();
-            if (skinRef != null && !skinRef.IsEmpty() &&
-                destHeader.GetBlockById(skinRef.index) is nifly.NiSkinInstance si)
+            NifEdit.SetShapeBoneIDList(dest, destShape, boneIds);
+            if (dest.GetBlock<NiflySharp.Blocks.NiSkinInstance>(destShape.SkinInstanceRef) is { } si)
             {
-                si.targetRef.index = destRootId;
+                if (si.SkeletonRoot is { } root) root.Index = destRootId;
+                else si.SkeletonRoot = new NiflySharp.NiBlockPtr<NiflySharp.Blocks.NiNode>(destRootId);
             }
         }
         attached.Should().Be(3);

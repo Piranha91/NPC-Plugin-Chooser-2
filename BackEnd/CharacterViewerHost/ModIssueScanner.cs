@@ -364,8 +364,8 @@ public sealed class ModIssueScanner
 
         // NPCs run in parallel: the resolver stack is exercised concurrently by
         // the batch mugshot generator already, GameAssetResolver's scope state
-        // is AsyncLocal (isolated per task flow), and nifly loads are
-        // thread-safe. NIF parses dominate the cost and dedupe via the shared cache.
+        // is AsyncLocal (isolated per task flow), and NIF loads share no
+        // state between NifFile instances. NIF parses dominate the cost and dedupe via the shared cache.
         int completed = 0;
         int failedNpcs = 0;
         using var gate = new SemaphoreSlim(Math.Max(1, Environment.ProcessorCount - 1));

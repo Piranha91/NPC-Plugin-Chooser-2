@@ -67,8 +67,7 @@ public class NifHandlerShapeRenameTests
             after.Except(renames.Values).Should().BeEquivalentTo(before.Except(renames.Keys),
                 "every shape the map does not name is untouched");
 
-            using var reloaded = new nifly.NifFile();
-            reloaded.Load(nif).Should().Be(0, "the renamed NIF must remain loadable");
+            new NiflySharp.NifFile().Load(nif).Should().Be(0, "the renamed NIF must remain loadable");
         }
         finally { File.Delete(nif); }
     }

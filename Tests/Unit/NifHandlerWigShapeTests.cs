@@ -36,16 +36,13 @@ public class NifHandlerWigShapeTests
             int removed = NifHandler.RemoveShapesByName(temp, names);
             removed.Should().Be(2);
 
-            using var nif = new nifly.NifFile();
+            var nif = new NiflySharp.NifFile();
             nif.Load(temp).Should().Be(0, "the stripped NIF must remain loadable");
             var remaining = new List<string>();
-            using (var shapes = nif.GetShapes())
+            foreach (var shape in nif.GetShapes())
             {
-                foreach (var shape in shapes)
-                {
-                    string? name = shape.name?.get();
-                    if (!string.IsNullOrEmpty(name)) remaining.Add(name);
-                }
+                string? name = shape.Name?.String;
+                if (!string.IsNullOrEmpty(name)) remaining.Add(name);
             }
 
             remaining.Should().NotContain("FoxGloveHairMesh");

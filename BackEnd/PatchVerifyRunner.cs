@@ -236,8 +236,11 @@ public static class PatchVerifyRunner
         env.OutputMod = new SkyrimMod(
             ModKey.FromName(env.OutputPluginName, ModType.Plugin), env.SkyrimVersion);
 
+        NifHandler.ResetReadCacheStats();
         await patcher.RunPatchingLogic(validSelections, false, true, CancellationToken.None);
         patcher.WriteUnifiedTokenFile();
+        var (lookups, parses) = NifHandler.ReadCacheStats;
+        log.AppendLine($"NIF read lookups: {lookups}, parses: {parses}");
     }
 
     // ----------------------------------------------------------------------------------------

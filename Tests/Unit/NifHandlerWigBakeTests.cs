@@ -9,7 +9,7 @@ using Xunit;
 namespace NPC_Plugin_Chooser_2.Tests.Unit;
 
 /// <summary>
-/// Wig→HeadPart bake feasibility spike, checkpoint A (the nifly API leg):
+/// Wig→HeadPart bake feasibility spike, checkpoint A (the NIF library leg):
 /// exercises <see cref="NifHandler.BakeWigIntoFaceGen"/> against the real
 /// FoxGlove Auri specimens — the 13-render-shape / 3-collision-shape / ~300
 /// SMP-bone wig merged into the baked FaceGen. Proves that CloneChildren
@@ -90,17 +90,15 @@ public class NifHandlerWigBakeTests
             baked.Should().Be(13, string.Join(Environment.NewLine, logLines));
 
             // ---- Reload and dissect the result ----
-            using var nif = new nifly.NifFile();
+            var nif = new NiflySharp.NifFile();
             nif.Load(tempFaceGen).Should().Be(0, "the baked NIF must remain loadable");
-            var header = nif.GetHeader();
 
             // Donor hair stripped, original head kept.
             var shapeNames = new List<string>();
-            var shapesByName = new Dictionary<string, nifly.NiShape>(StringComparer.OrdinalIgnoreCase);
-            var shapes = nif.GetShapes();
-            foreach (var shape in shapes)
+            var shapesByName = new Dictionary<string, NiflySharp.INiShape>(StringComparer.OrdinalIgnoreCase);
+            foreach (var shape in nif.GetShapes())
             {
-                string? name = shape.name?.get();
+                string? name = shape.Name?.String;
                 if (string.IsNullOrEmpty(name)) continue;
                 shapeNames.Add(name);
                 shapesByName[name] = shape;
@@ -118,15 +116,14 @@ public class NifHandlerWigBakeTests
             foreach (var newName in renames.Values)
             {
                 shapeNames.Should().Contain(newName);
-                uint shapeBlockId = nif.GetBlockID(shapesByName[newName]);
-                header.GetBlockTypeStringById(shapeBlockId).Should().Be("BSDynamicTriShape",
+                shapesByName[newName].Should().BeOfType<NiflySharp.Blocks.BSDynamicTriShape>(
                     $"baked wig shape '{newName}' must use the CK's facegen block type");
                 // CK-baked facegen shapes universally use BSDismemberSkinInstance
                 // (hair-classified partitions); plain NiSkinInstance has no
                 // working facegen precedent.
-                var skinRef = shapesByName[newName].SkinInstanceRef();
+                var skinRef = shapesByName[newName].SkinInstanceRef;
                 skinRef.IsEmpty().Should().BeFalse();
-                header.GetBlockTypeStringById(skinRef.index).Should().Be("BSDismemberSkinInstance",
+                nif.GetBlock(skinRef).Should().BeOfType<NiflySharp.Blocks.BSDismemberSkinInstance>(
                     $"baked wig shape '{newName}' must carry dismember partition data");
             }
             shapeNames.Should().NotContain(new[] { "VirtualGroundBDO", "colWigMiniBDO", "colHeadBDO" });
@@ -135,56 +132,53 @@ public class NifHandlerWigBakeTests
             // hang under the root (which may itself be the skin node).
             var skinNode = FindNode(nif, NifHandler.FaceGenSkinNodeName);
             skinNode.Should().NotBeNull("FaceGen NIFs carry the skin node");
-            var skinChildIds = GetChildIds(skinNode!);
+            var skinChildIds = skinNode!.Children.Indices.Where(i => i >= 0).ToHashSet();
             foreach (var newName in renames.Values)
             {
-                uint shapeId = nif.GetBlockID(shapesByName[newName]);
+                nif.GetBlockIndex(shapesByName[newName], out int shapeId).Should().BeTrue();
                 skinChildIds.Should().Contain(shapeId,
                     $"render shape '{newName}' must live under {NifHandler.FaceGenSkinNodeName}");
             }
 
             // Every skinned cloned shape's bone IDs resolve to NiNodes with the
             // right names — the stale-source-pointer remap worked.
-            uint blockCount = header.GetNumBlocks();
+            int blockCount = nif.Blocks.Count;
             foreach (var pair in renames)
             {
                 var destShape = shapesByName[pair.Value];
-                if (!destShape.IsSkinned()) continue;
+                if (!destShape.IsSkinned) continue;
 
-                using var boneIds = new nifly.vectorint();
-                nif.GetShapeBoneIDList(destShape, boneIds);
+                var skin = nif.GetBlock<NiflySharp.INiSkin>(destShape.SkinInstanceRef);
+                skin.Should().NotBeNull($"'{pair.Value}' is skinned");
+                var boneIds = skin!.Bones.Indices.Where(i => i >= 0).ToList();
                 boneIds.Count.Should().BeGreaterThan(0, $"'{pair.Value}' is skinned");
-                using var boneNames = new nifly.vectorstring();
-                nif.GetShapeBoneList(destShape, boneNames);
+                var boneNames = nif.GetShapeBoneNames(destShape);
                 boneNames.Count.Should().Be(boneIds.Count);
 
                 for (int i = 0; i < boneIds.Count; i++)
                 {
                     int boneId = boneIds[i];
-                    ((uint)boneId).Should().BeLessThan(blockCount,
+                    boneId.Should().BeLessThan(blockCount,
                         $"bone {i} of '{pair.Value}' must reference a real block");
-                    var boneBlock = header.GetBlockById((uint)boneId);
-                    boneBlock.Should().BeAssignableTo<nifly.NiNode>(
+                    var boneBlock = nif.GetBlock(boneId);
+                    boneBlock.Should().BeAssignableTo<NiflySharp.Blocks.NiNode>(
                         $"bone {i} of '{pair.Value}' must be a NiNode");
-                    ((nifly.NiNode)boneBlock).name?.get().Should().Be(boneNames[i]);
+                    ((NiflySharp.Blocks.NiNode)boneBlock).Name?.String.Should().Be(boneNames[i]);
                 }
 
                 // The rebuilt vertData must carry GPU skin weights — all-zero
                 // weights GPU-skin every vertex to nothing (shape invisible in
                 // game and NifSkope even though the blocks look intact).
-                // GetShapes() yields non-downcast NiShape proxies; go through
-                // GetBlockById for the typed BSTriShape view of the same block.
-                var dynShape = (nifly.BSTriShape)header.GetBlockById(nif.GetBlockID(destShape));
-                using var vertData = dynShape.vertData;
+                var vertData = ((NiflySharp.Blocks.BSTriShape)destShape).VertexDataSSE;
+                vertData.Should().NotBeNull($"'{pair.Value}' is an SSE shape");
                 bool anyWeight = false;
-                int scan = Math.Min(vertData.Count, 200);
+                int scan = Math.Min(vertData!.Count, 200);
                 for (int v = 0; v < scan && !anyWeight; v++)
                 {
-                    using var item = vertData[v];
-                    using var w = item.weights;
+                    var weights = vertData[v].BoneWeights;
                     for (int k = 0; k < 4; k++)
                     {
-                        if (w[k] > 0f) { anyWeight = true; break; }
+                        if ((float)weights[k] > 0f) { anyWeight = true; break; }
                     }
                 }
                 anyWeight.Should().BeTrue(
@@ -198,15 +192,12 @@ public class NifHandlerWigBakeTests
             // bake grafts chains onto existing nodes instead of duplicating.
             int chainNodes = 0;
             var nodeNameCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            for (uint id = 0; id < blockCount; id++)
+            foreach (var anyNode in nif.Blocks.OfType<NiflySharp.Blocks.NiNode>())
             {
-                if (header.GetBlockById(id) is nifly.NiNode anyNode)
-                {
-                    string nodeName = anyNode.name?.get() ?? "";
-                    if (nodeName.StartsWith("BDOr_H_PPW22", StringComparison.OrdinalIgnoreCase)) chainNodes++;
-                    if (nodeName.Length > 0)
-                        nodeNameCounts[nodeName] = nodeNameCounts.TryGetValue(nodeName, out var c) ? c + 1 : 1;
-                }
+                string nodeName = anyNode.Name?.String ?? "";
+                if (nodeName.StartsWith("BDOr_H_PPW22", StringComparison.OrdinalIgnoreCase)) chainNodes++;
+                if (nodeName.Length > 0)
+                    nodeNameCounts[nodeName] = nodeNameCounts.TryGetValue(nodeName, out var c) ? c + 1 : 1;
             }
             chainNodes.Should().BeGreaterThan(100,
                 "the wig's SMP bone-chain NiNodes must be cloned with the scene");
@@ -302,31 +293,7 @@ public class NifHandlerWigBakeTests
         public void LogError(string message, Exception ex) { }
     }
 
-    private static nifly.NiNode? FindNode(nifly.NifFile nif, string name)
-    {
-        var header = nif.GetHeader();
-        uint blockCount = header.GetNumBlocks();
-        for (uint id = 0; id < blockCount; id++)
-        {
-            if (header.GetBlockById(id) is nifly.NiNode node &&
-                name.Equals(node.name?.get(), StringComparison.OrdinalIgnoreCase))
-            {
-                return node;
-            }
-        }
-        return null;
-    }
-
-    private static HashSet<uint> GetChildIds(nifly.NiNode node)
-    {
-        var ids = new HashSet<uint>();
-        var refs = node.childRefs;
-        uint size = refs.GetSize();
-        for (uint i = 0; i < size; i++)
-        {
-            uint id = refs.GetBlockRef(i);
-            if (id != uint.MaxValue) ids.Add(id);
-        }
-        return ids;
-    }
+    private static NiflySharp.Blocks.NiNode? FindNode(NiflySharp.NifFile nif, string name) =>
+        nif.Blocks.OfType<NiflySharp.Blocks.NiNode>()
+            .FirstOrDefault(node => name.Equals(node.Name?.String, StringComparison.OrdinalIgnoreCase));
 }

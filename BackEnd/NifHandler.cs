@@ -1,45 +1,201 @@
-﻿using System.IO;
-using nifly;
+﻿using System.Buffers;
+using System.Collections.Concurrent;
+using System.IO;
+using System.Runtime.ExceptionServices;
+using NiflySharp;
+using NiflySharp.Blocks;
+using NiflySharp.Enums;
+using NiflySharp.Structs;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
 public class NifHandler
 {
-    public static HashSet<string> GetExtraTexturesFromNif(string nifPath)
+    /// <summary>Loads a NIF, or returns null with <paramref name="code"/> non-zero when it is
+    /// missing, unreadable or malformed. Nifly reports a bad header or block with a non-zero
+    /// result but can also throw while linking the parsed blocks, so both count as a failed load,
+    /// as a non-zero result did with the old library. The file is read in one go, which releases
+    /// it before any save back to the same path, into a pooled buffer because Load copies what it
+    /// keeps and a fresh array per NIF is large-object-heap garbage. Texture paths are normalized as
+    /// the old library's load normalized them (<see cref="NifEdit.TrimTexturePaths"/>), so every
+    /// read sees, and every save writes, the paths it always did.</summary>
+    private static NifFile? TryLoad(string path, out int code)
     {
-        var debug = File.Exists(nifPath);
-        HashSet<string> uniqueTextures = new HashSet<string>();
-        using (NifFile nif = new NifFile())
+        byte[]? buffer = null;
+        try
         {
-            nif.Load(nifPath);
-            // Assume 'niFile' is your loaded NIF file object and niFile.Header is the NiHeader.
-            NiHeader header = nif.GetHeader();
-
-            var blockCount = header.GetNumBlocks();
-            for (uint id = 0; id < blockCount; id++)
+            int length;
+            using (var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
-                NiObject block = header.GetBlockById(id);
-                if (block is BSShaderTextureSet textureSet)
+                length = (int)file.Length;
+                buffer = ArrayPool<byte>.Shared.Rent(length);
+                file.ReadExactly(buffer, 0, length);
+            }
+            return TryLoad(new MemoryStream(buffer, 0, length, writable: false), out code);
+        }
+        catch (Exception)
+        {
+            code = 1;
+            return null;
+        }
+        finally
+        {
+            if (buffer != null) ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    private static NifFile? TryLoad(Stream stream, out int code)
+    {
+        try
+        {
+            using (stream)
+            {
+                var nif = new NifFile();
+                code = nif.Load(stream);
+                if (code != 0) return null;
+                NifEdit.TrimTexturePaths(nif);
+                return nif;
+            }
+        }
+        catch (Exception)
+        {
+            code = 1;
+            return null;
+        }
+    }
+
+
+    private static NifFile? TryLoad(string path) => TryLoad(path, out _);
+
+    /// <summary>What the read-only lookups report about one version of a NIF. A patch run asks
+    /// several of them about the same file, and each answer is small next to the parse it would
+    /// repeat. Each part keeps its own failure, so one that throws doesn't fail the others.</summary>
+    private sealed class NifReadSummary
+    {
+        private readonly Part<HashSet<string>> _textureSetPaths;
+        private readonly Part<HashSet<string>> _physicsXmlPaths;
+        private readonly Part<IReadOnlyList<NifShapeTextureInfo>> _shapeDetails;
+
+        public NifReadSummary(NifFile? nif)
+        {
+            _textureSetPaths = new Part<HashSet<string>>(() => ReadTextureSetPaths(nif));
+            _physicsXmlPaths = new Part<HashSet<string>>(() => ReadPhysicsXmlPaths(nif));
+            _shapeDetails = new Part<IReadOnlyList<NifShapeTextureInfo>>(() => ReadShapeTextureDetails(nif));
+        }
+
+        public HashSet<string> TextureSetPaths => _textureSetPaths.Value;
+        public HashSet<string> PhysicsXmlPaths => _physicsXmlPaths.Value;
+        public IReadOnlyList<NifShapeTextureInfo> ShapeDetails => _shapeDetails.Value;
+
+        private sealed class Part<T>
+        {
+            private readonly T? _value;
+            private readonly ExceptionDispatchInfo? _error;
+
+            public Part(Func<T> read)
+            {
+                try { _value = read(); }
+                catch (Exception ex) { _error = ExceptionDispatchInfo.Capture(ex); }
+            }
+
+            public T Value
+            {
+                get
                 {
-                    // Access the texture paths safely
-                    using var texturesArray = textureSet.textures;           // textures is a container (e.g. NiTArray<NiString>)
-                    using var textureItems = texturesArray.items();          // items() gives an enumerable collection of NiString
-                    foreach (NiString tex in textureItems)
-                    {
-                        if (tex != null)
-                        {
-                            string path = tex.get();  // Get the actual string from NiString
-                            if (!string.IsNullOrEmpty(path))
-                            {
-                                uniqueTextures.Add(path);
-                            }
-                        }
-                        // (NiString will be disposed at end of using scope if required)
-                    }
+                    _error?.Throw();
+                    return _value!;
                 }
             }
-            return uniqueTextures;
         }
+    }
+
+    private sealed record CachedRead(long Length, DateTime LastWriteUtc, Lazy<NifReadSummary> Summary);
+
+    private static readonly ConcurrentDictionary<string, CachedRead> ReadCache =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private static long _readLookups;
+    private static long _readParses;
+
+    /// <summary>Lookups served and NIFs parsed since the last <see cref="ClearReadCache"/>.</summary>
+    public static (long Lookups, long Parses) ReadCacheStats =>
+        (Interlocked.Read(ref _readLookups), Interlocked.Read(ref _readParses));
+
+    /// <summary>Forgets the summaries. Called at the end of a patch run, whose NIFs are the only
+    /// ones this cache holds; counters are kept so a harness can report them afterwards.</summary>
+    public static void ClearReadCache() => ReadCache.Clear();
+
+    public static void ResetReadCacheStats()
+    {
+        Interlocked.Exchange(ref _readLookups, 0);
+        Interlocked.Exchange(ref _readParses, 0);
+    }
+
+    /// <summary>The summary of the file as it is now: an entry only answers for the length and
+    /// write time it was read at, because patching edits copied NIFs between lookups. Lazy makes
+    /// parallel lookups of one file share a parse. A file that can't be statted isn't cached.</summary>
+    private static NifReadSummary ReadSummary(string path)
+    {
+        Interlocked.Increment(ref _readLookups);
+        long length;
+        DateTime lastWriteUtc;
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists) return new NifReadSummary(null);
+            length = info.Length;
+            lastWriteUtc = info.LastWriteTimeUtc;
+        }
+        catch (Exception)
+        {
+            return new NifReadSummary(null);
+        }
+
+        CachedRead Fresh() => new(length, lastWriteUtc, new Lazy<NifReadSummary>(() =>
+        {
+            Interlocked.Increment(ref _readParses);
+            return new NifReadSummary(TryLoad(path));
+        }));
+        var entry = ReadCache.AddOrUpdate(path, _ => Fresh(),
+            (_, cached) => cached.Length == length && cached.LastWriteUtc == lastWriteUtc ? cached : Fresh());
+        return entry.Summary.Value;
+    }
+
+    /// <summary>Saves the way the old library's default <c>Save</c> did: nifly's
+    /// <c>NifSaveOptions</c> default to <c>optimize</c> (recompute every shape's bounds and drop
+    /// unreferenced blocks) and <c>sortBlocks</c>. Both optimize steps run here instead of in
+    /// Nifly's save: its bounds can leave vertices outside the sphere
+    /// (<see cref="NifEdit.UpdateBounds"/>), and its unreferenced-block sweep is quadratic
+    /// (<see cref="NifEdit.RemoveUnreferencedBlocks"/>).</summary>
+    private static int Save(NifFile nif, string path)
+    {
+        ReadCache.TryRemove(path, out _);
+        NifEdit.UpdateBounds(nif);
+        NifEdit.RemoveUnreferencedBlocks(nif);
+        return nif.Save(path, new NifFileSaveOptions { RemoveUnreferencedBlocks = false, SortBlocks = true, UpdateBounds = false });
+    }
+
+    public static HashSet<string> GetExtraTexturesFromNif(string nifPath)
+        => new HashSet<string>(ReadSummary(nifPath).TextureSetPaths);
+
+    private static HashSet<string> ReadTextureSetPaths(NifFile? nif)
+    {
+        HashSet<string> uniqueTextures = new HashSet<string>();
+        if (nif == null) return uniqueTextures;
+
+        foreach (var textureSet in nif.Blocks.OfType<BSShaderTextureSet>())
+        {
+            if (textureSet.Textures == null) continue;
+            foreach (var tex in textureSet.Textures)
+            {
+                string? path = tex?.Content;
+                if (!string.IsNullOrEmpty(path))
+                {
+                    uniqueTextures.Add(path);
+                }
+            }
+        }
+        return uniqueTextures;
     }
 
     /// <summary>
@@ -100,32 +256,38 @@ public class NifHandler
     /// configuration, not just the flat path list.
     /// </summary>
     public static IReadOnlyList<NifShapeTextureInfo> GetShapeTextureDetails(string nifPath)
-        => GetShapeTextureDetails(nifPath, null);
+        => ReadSummary(nifPath).ShapeDetails;
 
     /// <summary>As <see cref="GetShapeTextureDetails(string)"/>, for a path the renderer's
     /// resolver produced: a BSA asset it serves from memory has no file at that path, so the
-    /// NIF is loaded through <paramref name="resolver"/>.</summary>
+    /// NIF is read through <paramref name="resolver"/>.</summary>
     public static IReadOnlyList<NifShapeTextureInfo> GetShapeTextureDetails(string nifPath,
         SkyRender.GameAssetResolver? resolver)
     {
+        if (resolver == null) return GetShapeTextureDetails(nifPath);
+        Stream stream;
+        try { stream = resolver.OpenResolvedRead(nifPath); }
+        catch (Exception) { return new List<NifShapeTextureInfo>(); }
+        return ReadShapeTextureDetails(TryLoad(stream, out _));
+    }
+
+    private static IReadOnlyList<NifShapeTextureInfo> ReadShapeTextureDetails(NifFile? nif)
+    {
         var results = new List<NifShapeTextureInfo>();
-        using NifFile? nif = SkyRender.NifFileLoader.TryLoad(nifPath, resolver);
         if (nif == null) return results;
 
-        NiHeader header = nif.GetHeader();
-        using var shapes = nif.GetShapes();
-        foreach (var shape in shapes)
+        foreach (var shape in NifEdit.GetShapes(nif))
         {
-            string name = shape.name?.get() ?? string.Empty;
+            string name = shape.Name?.String ?? string.Empty;
             var slots = new List<NifSlotTexture>();
-            for (uint slot = 0; slot < 9; slot++)
+            for (int slot = 0; slot < 9; slot++)
             {
-                string tex = nif.GetTexturePathByIndex(shape, slot);
-                if (!string.IsNullOrWhiteSpace(tex)) slots.Add(new NifSlotTexture((int)slot, tex));
+                string tex = NifEdit.GetTexturePathByIndex(nif, shape, slot);
+                if (!string.IsNullOrWhiteSpace(tex)) slots.Add(new NifSlotTexture(slot, tex));
             }
-            var (shaderType, flags1) = ReadShaderInfo(header, shape);
-            results.Add(new NifShapeTextureInfo(name, ShapeIsDrawnInGame(header, shape),
-                shaderType, flags1, slots, ReadPartitionSlots(header, shape)));
+            var (shaderType, flags1) = ReadShaderInfo(nif, shape);
+            results.Add(new NifShapeTextureInfo(name, ShapeIsDrawnInGame(nif, shape),
+                shaderType, flags1, slots, ReadPartitionSlots(nif, shape)));
         }
         return results;
     }
@@ -133,19 +295,15 @@ public class NifHandler
     /// <summary>BSDismemberSkinInstance partition IDs of a shape (30 head,
     /// 32 body, 33 hands, …), empty when the shape has no dismember data.
     /// Same recipe as CV.R's NifMeshBuilder.ReadDismemberPartitions.</summary>
-    private static IReadOnlyList<int> ReadPartitionSlots(NiHeader header, NiShape shape)
+    private static IReadOnlyList<int> ReadPartitionSlots(NifFile nif, INiShape shape)
     {
         try
         {
-            var skinRef = shape.SkinInstanceRef();
-            if (skinRef == null || skinRef.IsEmpty()) return Array.Empty<int>();
-            if (header.GetBlockById(skinRef.index) is not BSDismemberSkinInstance dismember)
+            if (nif.GetBlock<BSDismemberSkinInstance>(shape.SkinInstanceRef) is not { } dismember)
                 return Array.Empty<int>();
-            using var partitions = dismember.partitions;
-            if (partitions == null) return Array.Empty<int>();
-            using var items = partitions.items();
-            var ids = new List<int>(items.Count);
-            for (int pi = 0; pi < items.Count; pi++) ids.Add(items[pi].partID);
+            if (dismember.Partitions == null) return Array.Empty<int>();
+            var ids = new List<int>(dismember.Partitions.Count);
+            foreach (var partition in dismember.Partitions) ids.Add((int)partition.BodyPart);
             return ids;
         }
         catch
@@ -156,16 +314,19 @@ public class NifHandler
 
     /// <summary>Reads (bslspShaderType, shaderFlags1) from the shape's
     /// BSLightingShaderProperty; (<see cref="UnknownShaderType"/>, 0) when
-    /// absent or unreadable, so slot-relevance callers fail conservative.</summary>
-    private static (uint ShaderType, uint Flags1) ReadShaderInfo(NiHeader header, NiShape shape)
+    /// absent or unreadable, so slot-relevance callers fail conservative.
+    /// Flags1 is the raw word of the layout the block was read as (Skyrim, or FO4 from
+    /// stream 130), as the old library's single <c>shaderFlags1</c> field held it.</summary>
+    private static (uint ShaderType, uint Flags1) ReadShaderInfo(NifFile nif, INiShape shape)
     {
         try
         {
-            var shaderRef = shape.ShaderPropertyRef();
-            if (shaderRef == null || shaderRef.IsEmpty()) return (UnknownShaderType, 0);
-            if (header.GetBlockById(shaderRef.index) is not BSLightingShaderProperty shader)
+            if (nif.GetBlock<BSLightingShaderProperty>(shape.ShaderPropertyRef) is not { } shader)
                 return (UnknownShaderType, 0);
-            return ((uint)shader.bslspShaderType, shader.shaderFlags1);
+            uint flags1 = shader.Type == NiflySharp.Helpers.ShaderHelper.ShaderGameType.FO4
+                ? (uint)shader.ShaderFlags_F4SPF1
+                : (uint)shader.ShaderFlags_SSPF1;
+            return ((uint)shader.ShaderType_SK_FO4, flags1);
         }
         catch
         {
@@ -197,22 +358,19 @@ public class NifHandler
     /// suppression is one extra warning line while the cost of a wrong suppression is silence about
     /// a real untextured mesh.</para>
     /// </summary>
-    private static bool ShapeIsDrawnInGame(NiHeader header, NiShape shape)
+    private static bool ShapeIsDrawnInGame(NifFile nif, INiShape shape)
     {
         const float invisible = 0.001f;
         try
         {
-            var shaderRef = shape.ShaderPropertyRef();
-            if (shaderRef == null || shaderRef.IsEmpty()) return true;
-            if (header.GetBlockById(shaderRef.index) is not BSLightingShaderProperty shader) return true;
-            if (shader.alpha > invisible) return true;
+            if (nif.GetBlock<BSLightingShaderProperty>(shape.ShaderPropertyRef) is not { } shader) return true;
+            if (shader.Alpha > invisible) return true;
 
-            if (!shape.HasAlphaProperty()) return true;
-            var alphaRef = shape.AlphaPropertyRef();
-            if (alphaRef == null || alphaRef.IsEmpty()) return true;
-            if (header.GetBlockById(alphaRef.index) is not NiAlphaProperty alphaProp) return true;
+            if (!shape.HasAlphaProperty) return true;
+            if (shape.AlphaPropertyRef is null || nif.GetBlock(shape.AlphaPropertyRef) is not { } alphaProp)
+                return true;
 
-            ushort flags = alphaProp.flags;
+            ushort flags = alphaProp.Flags?.Value ?? 0;
             bool alphaBlend = (flags & 1) != 0;          // bit 0
             bool alphaTest = (flags & (1 << 9)) != 0;    // bit 9
             return !(alphaBlend || alphaTest);
@@ -229,27 +387,27 @@ public class NifHandler
     /// must reference the isolated copies of the textures its mod ships, or the private mesh would
     /// keep pulling whatever wins the shared texture path. Matching is by the EXACT stored slot
     /// string (pass a case-insensitive map; the same texture can be spelled differently across
-    /// shapes). Slots are written through <c>NifFile.SetTextureSlot</c> — the only write API nifly
-    /// exposes for texture paths (<c>NiString</c> itself is read-only through the binding). Returns
-    /// the number of slots rewritten (0 = file untouched, no save).
+    /// shapes). Slots are read and written per shape (<see cref="NifEdit.GetTexturePathByIndex"/> /
+    /// <see cref="NifEdit.SetTextureSlot"/>), so a texture set shared by several shapes is
+    /// rewritten once per sharing shape and counted each time, as before. Returns the number of
+    /// slots rewritten (0 = file untouched, no save).
     /// </summary>
     public static int RewriteTexturePaths(string nifPath, IReadOnlyDictionary<string, string> pathMap,
         Action<string>? log = null)
     {
         int rewritten = 0;
-        using NifFile nif = new NifFile();
-        if (nif.Load(nifPath) != 0)
+        var nif = TryLoad(nifPath);
+        if (nif == null)
         {
             log?.Invoke($"RewriteTexturePaths: could not load '{nifPath}'.");
             return 0;
         }
 
-        using var shapes = nif.GetShapes();
-        foreach (var shape in shapes)
+        foreach (var shape in NifEdit.GetShapes(nif))
         {
-            for (uint slot = 0; slot < 9; slot++)
+            for (int slot = 0; slot < 9; slot++)
             {
-                string tex = nif.GetTexturePathByIndex(shape, slot);
+                string tex = NifEdit.GetTexturePathByIndex(nif, shape, slot);
                 if (string.IsNullOrWhiteSpace(tex)) continue;
                 if (!pathMap.TryGetValue(tex, out var newPath) ||
                     string.Equals(tex, newPath, StringComparison.OrdinalIgnoreCase))
@@ -257,14 +415,14 @@ public class NifHandler
                     continue;
                 }
 
-                nif.SetTextureSlot(shape, newPath, slot);
+                NifEdit.SetTextureSlot(nif, shape, newPath, slot);
                 rewritten++;
             }
         }
 
         if (rewritten > 0)
         {
-            int saveResult = nif.Save(nifPath);
+            int saveResult = Save(nif, nifPath);
             if (saveResult != 0)
             {
                 log?.Invoke($"RewriteTexturePaths: save failed ({saveResult}) for '{nifPath}'.");
@@ -283,8 +441,7 @@ public class NifHandler
     /// Matching is by exact shape name (FaceGen shapes are named after their
     /// head part EditorIDs), case-insensitive. Modeled on SynthEBD's
     /// FaceGenPatcher.RemoveShapesByHeadPartType: collect first, then delete
-    /// (DeleteShape re-indexes blocks), with the GetShapes scope held open
-    /// across the deletes and the Save. Returns the number of shapes removed
+    /// (DeleteShape re-indexes blocks). Returns the number of shapes removed
     /// (0 = file left untouched, no save).
     /// </summary>
     public static int RemoveShapesByName(string nifPath, IReadOnlyCollection<string> shapeNames,
@@ -292,9 +449,8 @@ public class NifHandler
     {
         var wanted = shapeNames as ISet<string> ??
                      new HashSet<string>(shapeNames, StringComparer.OrdinalIgnoreCase);
-        using NifFile nif = new NifFile();
-        int loadResult = nif.Load(nifPath);
-        if (loadResult != 0)
+        var nif = TryLoad(nifPath, out int loadResult);
+        if (nif == null)
         {
             log?.Invoke($"RemoveShapesByName: failed to load NIF (code {loadResult}): {nifPath}");
             return 0;
@@ -303,7 +459,7 @@ public class NifHandler
         int removedCount = RemoveShapesByNameCore(nif, wanted, nifPath, log);
         if (removedCount == 0) return 0;
 
-        int saveResult = nif.Save(nifPath);
+        int saveResult = Save(nif, nifPath);
         if (saveResult != 0)
         {
             log?.Invoke($"RemoveShapesByName: save FAILED (code {saveResult}): {nifPath}");
@@ -333,9 +489,8 @@ public class NifHandler
     {
         if (renames.Count == 0) return 0;
 
-        using NifFile nif = new NifFile();
-        int loadResult = nif.Load(nifPath);
-        if (loadResult != 0)
+        var nif = TryLoad(nifPath, out int loadResult);
+        if (nif == null)
         {
             log?.Invoke($"RenameShapesByName: failed to load NIF (code {loadResult}): {nifPath}");
             return 0;
@@ -344,43 +499,40 @@ public class NifHandler
         // Collected before any rename so the "already taken" test sees the file's original
         // names, and so renaming does not disturb the enumeration.
         var present = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var toRename = new List<(NiShape Shape, string OldName, string NewName)>();
+        var toRename = new List<(INiShape Shape, string OldName, string NewName)>();
         int renamed = 0;
-        using (var shapes = nif.GetShapes())
+        foreach (var shape in NifEdit.GetShapes(nif))
         {
-            foreach (var shape in shapes)
+            string? name = shape.Name?.String;
+            if (string.IsNullOrEmpty(name)) continue;
+            present.Add(name);
+            if (renames.TryGetValue(name, out var newName) &&
+                !string.IsNullOrEmpty(newName) &&
+                !string.Equals(name, newName, StringComparison.OrdinalIgnoreCase))
             {
-                string? name = shape.name?.get();
-                if (string.IsNullOrEmpty(name)) continue;
-                present.Add(name);
-                if (renames.TryGetValue(name, out var newName) &&
-                    !string.IsNullOrEmpty(newName) &&
-                    !string.Equals(name, newName, StringComparison.OrdinalIgnoreCase))
-                {
-                    toRename.Add((shape, name, newName));
-                }
+                toRename.Add((shape, name, newName));
             }
-
-            foreach (var (shape, oldName, newName) in toRename)
-            {
-                if (present.Contains(newName))
-                {
-                    log?.Invoke($"RenameShapesByName: '{oldName}' -> '{newName}' skipped in " +
-                                $"{Path.GetFileName(nifPath)} — a shape is already named '{newName}'.");
-                    continue;
-                }
-
-                NifFile.RenameShape(shape, newName);
-                present.Remove(oldName);
-                present.Add(newName);
-                renamed++;
-                log?.Invoke($"RenameShapesByName: '{oldName}' -> '{newName}' in {Path.GetFileName(nifPath)}");
-            }
-
-            if (renamed == 0) return 0;
         }
 
-        int saveResult = nif.Save(nifPath);
+        foreach (var (shape, oldName, newName) in toRename)
+        {
+            if (present.Contains(newName))
+            {
+                log?.Invoke($"RenameShapesByName: '{oldName}' -> '{newName}' skipped in " +
+                            $"{Path.GetFileName(nifPath)} — a shape is already named '{newName}'.");
+                continue;
+            }
+
+            NifEdit.RenameShape(shape, newName);
+            present.Remove(oldName);
+            present.Add(newName);
+            renamed++;
+            log?.Invoke($"RenameShapesByName: '{oldName}' -> '{newName}' in {Path.GetFileName(nifPath)}");
+        }
+
+        if (renamed == 0) return 0;
+
+        int saveResult = Save(nif, nifPath);
         if (saveResult != 0)
         {
             log?.Invoke($"RenameShapesByName: save FAILED (code {saveResult}): {nifPath}");
@@ -396,11 +548,10 @@ public class NifHandler
     private static int RemoveShapesByNameCore(NifFile nif, ISet<string> wanted, string nifPathForLog,
         Action<string>? log)
     {
-        var toRemove = new List<(NiShape Shape, string Name)>();
-        using var shapes = nif.GetShapes();
-        foreach (var shape in shapes)
+        var toRemove = new List<(INiShape Shape, string Name)>();
+        foreach (var shape in NifEdit.GetShapes(nif))
         {
-            string? name = shape.name?.get();
+            string? name = shape.Name?.String;
             if (string.IsNullOrEmpty(name)) continue;
             if (wanted.Contains(name))
             {
@@ -410,7 +561,7 @@ public class NifHandler
 
         foreach (var (shape, name) in toRemove)
         {
-            nif.DeleteShape(shape);
+            NifEdit.DeleteShape(nif, shape);
             log?.Invoke($"RemoveShapesByName: removed shape '{name}' from {Path.GetFileName(nifPathForLog)}");
         }
 
@@ -434,36 +585,30 @@ public class NifHandler
     /// Returns the raw string values exactly as stored in the NIF (caller normalizes/resolves).
     /// </summary>
     public static HashSet<string> GetPhysicsXmlPathsFromNif(string nifPath)
+        => new HashSet<string>(ReadSummary(nifPath).PhysicsXmlPaths, StringComparer.OrdinalIgnoreCase);
+
+    private static HashSet<string> ReadPhysicsXmlPaths(NifFile? nif)
     {
         HashSet<string> xmlPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        using (NifFile nif = new NifFile())
+        if (nif == null) return xmlPaths;
+
+        foreach (var sed in nif.Blocks.OfType<NiStringExtraData>())
         {
-            nif.Load(nifPath);
-            NiHeader header = nif.GetHeader();
+            // Name lives on the NiExtraData base; StringData holds the XML path.
+            string? blockName = sed.Name?.String;
+            string? value = sed.StringData?.String;
+            if (string.IsNullOrWhiteSpace(value)) continue;
 
-            var blockCount = header.GetNumBlocks();
-            for (uint id = 0; id < blockCount; id++)
+            bool isPhysicsMarker = !string.IsNullOrEmpty(blockName) &&
+                blockName.Equals(SmpPhysicsExtraDataName, StringComparison.OrdinalIgnoreCase);
+            bool looksLikeXml = value.EndsWith(".xml", StringComparison.OrdinalIgnoreCase);
+
+            if (isPhysicsMarker || looksLikeXml)
             {
-                NiObject block = header.GetBlockById(id);
-                if (block is NiStringExtraData sed)
-                {
-                    // name lives on the NiExtraData base; stringData holds the XML path.
-                    string? blockName = sed.name?.get();
-                    string? value = sed.stringData?.get();
-                    if (string.IsNullOrWhiteSpace(value)) continue;
-
-                    bool isPhysicsMarker = !string.IsNullOrEmpty(blockName) &&
-                        blockName.Equals(SmpPhysicsExtraDataName, StringComparison.OrdinalIgnoreCase);
-                    bool looksLikeXml = value.EndsWith(".xml", StringComparison.OrdinalIgnoreCase);
-
-                    if (isPhysicsMarker || looksLikeXml)
-                    {
-                        xmlPaths.Add(value.Trim());
-                    }
-                }
+                xmlPaths.Add(value.Trim());
             }
-            return xmlPaths;
         }
+        return xmlPaths;
     }
 
     /// <summary>The FaceGen skin node every baked head shape must live under. The
@@ -519,21 +664,20 @@ public class NifHandler
     public static IReadOnlyList<string> GetRenderShapeNames(string nifPath)
     {
         var names = new List<string>();
-        using NifFile nif = new NifFile();
-        if (nif.Load(nifPath) != 0) return names;
-        using var shapes = nif.GetShapes();
-        foreach (var shape in shapes)
+        var nif = TryLoad(nifPath);
+        if (nif == null) return names;
+        foreach (var shape in NifEdit.GetShapes(nif))
         {
-            string? name = shape.name?.get();
+            string? name = shape.Name?.String;
             if (string.IsNullOrEmpty(name)) continue;
-            if (shape.HasShaderProperty()) names.Add(name);
+            if (shape.HasShaderProperty) names.Add(name);
         }
         return names;
     }
 
     /// <summary>
-    /// Whether any of the named shapes in a NIF carries dismember partition data
-    /// (<c>GetShapePartitions</c> succeeds). Mirrors the partition-template
+    /// Whether any of the named shapes in a NIF carries skin partition data
+    /// (<see cref="NifEdit.GetShapePartitions"/> succeeds). Mirrors the partition-template
     /// harvest at the top of <see cref="BakeWigIntoFaceGen"/>: the bake
     /// transplants the donor hair's BSDismemberSkinInstance partition entry onto
     /// the wig shapes, and without one the baked shapes keep their source
@@ -547,16 +691,13 @@ public class NifHandler
         if (shapeNames.Count == 0) return false;
         var wanted = shapeNames as ISet<string> ??
                      new HashSet<string>(shapeNames, StringComparer.OrdinalIgnoreCase);
-        using NifFile nif = new NifFile();
-        if (nif.Load(nifPath) != 0) return false;
-        using var shapes = nif.GetShapes();
-        foreach (var shape in shapes)
+        var nif = TryLoad(nifPath);
+        if (nif == null) return false;
+        foreach (var shape in NifEdit.GetShapes(nif))
         {
-            string? name = shape.name?.get();
+            string? name = shape.Name?.String;
             if (string.IsNullOrEmpty(name) || !wanted.Contains(name)) continue;
-            using var template = new NiVectorBSDismemberSkinInstancePartitionInfo();
-            using var triParts = new vectorint();
-            if (nif.GetShapePartitions(shape, template, triParts)) return true;
+            if (NifEdit.GetShapePartitions(nif, shape, out _)) return true;
         }
         return false;
     }
@@ -579,30 +720,21 @@ public class NifHandler
 
     /// <summary>The shape's baked <c>hairTintColor</c>, or null when it carries
     /// no BSLightingShaderProperty or is not a HairTint shape.</summary>
-    private static (float R, float G, float B)? TryGetHairTint(NiHeader header, NiShape shape)
+    private static (float R, float G, float B)? TryGetHairTint(NifFile nif, INiShape shape)
     {
-        var shaderRef = shape.ShaderPropertyRef();
-        if (shaderRef == null || shaderRef.IsEmpty()) return null;
-        if (header.GetBlockById(shaderRef.index) is not BSLightingShaderProperty bslsp) return null;
-        if (bslsp.bslspShaderType != HairTintShaderType) return null;
-        var tint = bslsp.hairTintColor;
-        if (tint == null) return null;
-        return (tint.x, tint.y, tint.z);
+        if (nif.GetBlock<BSLightingShaderProperty>(shape.ShaderPropertyRef) is not { } bslsp) return null;
+        if ((uint)bslsp.ShaderType_SK_FO4 != HairTintShaderType) return null;
+        var tint = bslsp.HairTintColor;
+        return (tint.R, tint.G, tint.B);
     }
 
     /// <summary>Writes <paramref name="rgb"/> into the shape's HairTint shader.
     /// No-op (returns false) for shapes that aren't HairTint.</summary>
-    private static bool TrySetHairTint(NiHeader header, NiShape shape, (float R, float G, float B) rgb)
+    private static bool TrySetHairTint(NifFile nif, INiShape shape, (float R, float G, float B) rgb)
     {
-        var shaderRef = shape.ShaderPropertyRef();
-        if (shaderRef == null || shaderRef.IsEmpty()) return false;
-        if (header.GetBlockById(shaderRef.index) is not BSLightingShaderProperty bslsp) return false;
-        if (bslsp.bslspShaderType != HairTintShaderType) return false;
-        using var tint = new Vector3();
-        tint.x = rgb.R;
-        tint.y = rgb.G;
-        tint.z = rgb.B;
-        bslsp.hairTintColor = tint;
+        if (nif.GetBlock<BSLightingShaderProperty>(shape.ShaderPropertyRef) is not { } bslsp) return false;
+        if ((uint)bslsp.ShaderType_SK_FO4 != HairTintShaderType) return false;
+        bslsp.HairTintColor = new Color3 { R = rgb.R, G = rgb.G, B = rgb.B };
         return true;
     }
 
@@ -618,18 +750,16 @@ public class NifHandler
     private static (float R, float G, float B)? HarvestFaceGenHairTint(
         NifFile faceGen, IReadOnlyCollection<string> preferredShapeNames, Action<string>? log = null)
     {
-        NiHeader header = faceGen.GetHeader();
         var preferred = preferredShapeNames as ISet<string> ??
                         new HashSet<string>(preferredShapeNames, StringComparer.OrdinalIgnoreCase);
         (float R, float G, float B)? fallback = null;
         string fallbackName = string.Empty;
 
-        using var shapes = faceGen.GetShapes();
-        foreach (var shape in shapes)
+        foreach (var shape in NifEdit.GetShapes(faceGen))
         {
-            var tint = TryGetHairTint(header, shape);
+            var tint = TryGetHairTint(faceGen, shape);
             if (tint == null || IsNeutralTint(tint.Value)) continue;
-            string name = shape.name?.get() ?? string.Empty;
+            string name = shape.Name?.String ?? string.Empty;
             if (preferred.Contains(name))
             {
                 log?.Invoke($"BakeWigIntoFaceGen: harvested hair tint " +
@@ -678,8 +808,8 @@ public class NifHandler
     public static (float R, float G, float B)? GetFaceGenHairTint(string faceGenNifPath)
     {
         if (string.IsNullOrWhiteSpace(faceGenNifPath) || !File.Exists(faceGenNifPath)) return null;
-        using NifFile nif = new NifFile();
-        if (nif.Load(faceGenNifPath) != 0) return null;
+        var nif = TryLoad(faceGenNifPath);
+        if (nif == null) return null;
         return HarvestFaceGenHairTint(nif, Array.Empty<string>());
     }
 
@@ -700,18 +830,16 @@ public class NifHandler
     /// Companions 00013BB6/0001A68E): every hair shape carries exactly one
     /// partition, partID=131, flags=0x0101; multi-partition head shapes carry
     /// 0x0101 on the FIRST entry and 0x0001 on the rest, so a single-entry
-    /// template takes the start-net-boneset bit. Caller owns disposal (same as
-    /// a harvested template).
+    /// template takes the start-net-boneset bit.
     /// </summary>
-    internal static NiVectorBSDismemberSkinInstancePartitionInfo CreateSyntheticHairPartitionTemplate()
-    {
-        var template = new NiVectorBSDismemberSkinInstancePartitionInfo();
-        using var info = new BSDismemberSkinInstance.PartitionInfo();
-        info.partID = HairDismemberPartitionId;
-        info.flags = (PartitionFlags)HairDismemberPartitionFlags;
-        template.push_back(info);
-        return template;
-    }
+    internal static List<BodyPartList> CreateSyntheticHairPartitionTemplate() =>
+    [
+        new BodyPartList
+        {
+            PartFlag = (BSPartFlag)HairDismemberPartitionFlags,
+            BodyPart = (BSDismemberBodyPartType)HairDismemberPartitionId
+        }
+    ];
 
     /// <summary>
     /// Merges an entire wig NIF scene into a FaceGen NIF (the wig→HeadPart
@@ -770,27 +898,28 @@ public class NifHandler
     /// resolve against the actor's runtime skeleton, not the NIF.</item>
     /// </list>
     ///
-    /// <para><b>nifly/SWIG mechanics relied on here:</b> CloneChildren deep-clones
+    /// <para><b>Library mechanics relied on here:</b> CloneChildren deep-clones
     /// with hierarchy intact and rewrites the SOURCE root's child/extra refs in
     /// place to the new destination ids (that rewrite is the readback used to
-    /// find the clones); skin-instance bone PTRS are not rewritten and need a
-    /// name-based SetShapeBoneIDList remap + targetRef repoint. ReplaceBlock
-    /// transfers C++ ownership (suppress the SWIG proxy finalizer or it
-    /// double-frees). RenameShape is static in the binding. DeleteUnreferencedNodes
-    /// only removes LEAF nodes, so duplicates/unkept subtrees are deleted
-    /// explicitly, highest block id first.</para>
+    /// find the clones). A pointer inside a cloned subtree is rebound only when it
+    /// points at that subtree's top block, so skin-instance bone pointers keep
+    /// their source ids and need a name-based SetShapeBoneIDList remap plus a
+    /// skeleton-root repoint. Blocks are held by object, not by id: RemoveBlock
+    /// renumbers, and Save re-sorts into canonical order. Duplicates and unkept
+    /// subtrees are deleted explicitly; blocks left unreferenced by that are
+    /// dropped at save.</para>
     /// </summary>
     public static int BakeWigIntoFaceGen(WigBakeInstruction ins, Action<string>? log = null)
     {
-        using NifFile faceGen = new NifFile();
-        if (faceGen.Load(ins.FaceGenNifPath) != 0)
+        var faceGen = TryLoad(ins.FaceGenNifPath);
+        if (faceGen == null)
         {
             log?.Invoke($"BakeWigIntoFaceGen: failed to load FaceGen NIF: {ins.FaceGenNifPath}");
             return 0;
         }
 
-        using NifFile wig = new NifFile();
-        if (wig.Load(ins.WigNifPath) != 0)
+        var wig = TryLoad(ins.WigNifPath);
+        if (wig == null)
         {
             log?.Invoke($"BakeWigIntoFaceGen: failed to load wig NIF: {ins.WigNifPath}");
             return 0;
@@ -802,20 +931,17 @@ public class NifHandler
         //     hide hair); the wig's armor shapes use plain NiSkinInstance, which
         //     no working facegen precedent carries. Transplanting the donor
         //     hair's partition entry normalizes the wig shapes to CK shape.
-        NiVectorBSDismemberSkinInstancePartitionInfo? hairPartitionTemplate = null;
+        List<BodyPartList>? hairPartitionTemplate = null;
         foreach (var stripName in ins.ShapeNamesToStrip)
         {
             var donorShape = FindShapeByName(faceGen, stripName);
             if (donorShape == null) continue;
-            var template = new NiVectorBSDismemberSkinInstancePartitionInfo();
-            using var donorTriParts = new vectorint();
-            if (faceGen.GetShapePartitions(donorShape, template, donorTriParts))
+            if (NifEdit.GetShapePartitions(faceGen, donorShape, out var template))
             {
                 hairPartitionTemplate = template;
                 log?.Invoke($"BakeWigIntoFaceGen: harvested dismember partition template from '{stripName}'.");
                 break;
             }
-            template.Dispose();
         }
         if (hairPartitionTemplate == null && ins.SynthesizeHairPartitionIfNoDonor)
         {
@@ -874,11 +1000,10 @@ public class NifHandler
         {
             var keep = ins.OnlyRenderShapes as ISet<string> ??
                        new HashSet<string>(ins.OnlyRenderShapes, StringComparer.OrdinalIgnoreCase);
-            var excluded = new List<(NiShape Shape, string Name)>();
-            using var allShapes = wig.GetShapes();
-            foreach (var shape in allShapes)
+            var excluded = new List<(INiShape Shape, string Name)>();
+            foreach (var shape in NifEdit.GetShapes(wig))
             {
-                string? shapeName = shape.name?.get();
+                string? shapeName = shape.Name?.String;
                 if (!string.IsNullOrEmpty(shapeName) && !keep.Contains(shapeName))
                 {
                     excluded.Add((shape, shapeName));
@@ -886,13 +1011,11 @@ public class NifHandler
             }
             foreach (var (shape, shapeName) in excluded)
             {
-                wig.DeleteShape(shape);
+                NifEdit.DeleteShape(wig, shape);
                 log?.Invoke($"BakeWigIntoFaceGen: excluded render shape '{shapeName}' (OnlyRenderShapes bisect).");
             }
         }
-        bool converted = ConvertRenderShapesToDynamic(wig, hairPartitionTemplate, log);
-        hairPartitionTemplate?.Dispose();
-        if (!converted)
+        if (!ConvertRenderShapesToDynamic(wig, hairPartitionTemplate, log))
         {
             return 0;
         }
@@ -928,34 +1051,28 @@ public class NifHandler
         // A duplicate "NPC Head [Head]"-style node alone dark-faces the NPC
         // (the engine merges facegen nodes onto the skeleton by name).
         var boneUnion = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        using (var keptShapes = wig.GetShapes())
+        foreach (var shape in NifEdit.GetShapes(wig))
         {
-            foreach (var shape in keptShapes)
-            {
-                if (!shape.IsSkinned()) continue;
-                using var boneNames = new vectorstring();
-                wig.GetShapeBoneList(shape, boneNames);
-                foreach (string boneName in boneNames) boneUnion.Add(boneName);
-            }
+            if (!shape.IsSkinned) continue;
+            foreach (string boneName in wig.GetShapeBoneNames(shape)) boneUnion.Add(boneName);
         }
 
-        uint preCloneBlockCount = faceGen.GetHeader().GetNumBlocks();
+        // The FaceGen's own blocks, captured before the clone appends the wig's.
+        var preCloneBlocks = new HashSet<INiObject>(faceGen.Blocks, ReferenceEqualityComparer.Instance);
+        var preCloneNodes = faceGen.Blocks.OfType<NiNode>().ToList();
 
         // 2. Snapshot the wig root's child/extra-data slots BEFORE the clone:
         //    CloneChildren rewrites these refs in place to the new destination
         //    block IDs, which is how the cloned top-level blocks are found again
         //    afterwards — but the SOURCE ids must be captured now (needed to pair
         //    source shapes with their clones for the bone remap).
-        var childSlots = SnapshotRefArray(srcRoot.childRefs);
-        var extraSlots = SnapshotRefArray(srcRoot.extraDataRefs);
+        var childSlots = SnapshotRefArray(srcRoot.Children);
+        var extraSlots = SnapshotRefArray(srcRoot.ExtraDataList);
 
         // 3. Whole-tree merge. Every block referenced (recursively) from the wig
         //    root is cloned into the FaceGen NIF with hierarchy and strings
         //    intact; nothing in the destination references the clones yet.
         faceGen.CloneChildren(srcRoot, wig);
-
-        var destHeader = faceGen.GetHeader();
-        var srcHeader = wig.GetHeader();
 
         // 4. Attach the cloned top-level blocks. Render shapes go under the
         //    FaceGen skin node. Cloned NODES are normalized to the working
@@ -967,89 +1084,81 @@ public class NifHandler
         //    - a subtree none of the kept shapes skin to (collision/constraint
         //      anchors like breasts/clavicles) is dropped entirely;
         //    - everything else (the physics chain roots) attaches to the root.
+        //    Ids are read and attached only here, before anything is removed, so
+        //    they are still valid; every later step holds the blocks themselves.
         int bakedRenderShapes = 0;
-        var clonedShapePairs = new List<(NiShape Src, NiShape Dest, bool IsRender)>();
-        var duplicateNodeIds = new List<uint>();   // deleted alone (children grafted/shared)
-        var unkeptSubtreeRoots = new List<uint>(); // deleted recursively
+        var clonedShapePairs = new List<(INiShape Src, INiShape Dest, bool IsRender)>();
+        var duplicateNodes = new List<INiObject>();      // deleted alone (children grafted/shared)
+        var unkeptSubtreeRoots = new List<INiObject>();  // deleted recursively
         for (int slot = 0; slot < childSlots.Count; slot++)
         {
-            uint srcId = childSlots[slot];
-            if (srcId == uint.MaxValue) continue;
-            uint destId = srcRoot.childRefs.GetBlockRef((uint)slot);
-            if (destId == uint.MaxValue || destId < preCloneBlockCount)
+            int srcId = childSlots[slot];
+            if (srcId == NiRef.NPOS) continue;
+            int destId = srcRoot.Children.GetBlockRef(slot);
+            var destBlock = faceGen.GetBlock(destId);
+            if (destBlock == null || preCloneBlocks.Contains(destBlock))
             {
                 log?.Invoke($"BakeWigIntoFaceGen: WARNING - child slot {slot} was not rewritten to a cloned block (got {destId}); skipping.");
                 continue;
             }
 
-            NiObject srcBlock = srcHeader.GetBlockById(srcId);
-            NiObject destBlock = destHeader.GetBlockById(destId);
+            var srcBlock = wig.GetBlock(srcId);
 
-            if (srcBlock is NiShape srcShape && destBlock is NiShape destShape)
+            if (srcBlock is INiShape srcShape && destBlock is INiShape destShape)
             {
-                bool isRender = srcShape.HasShaderProperty();
+                bool isRender = srcShape.HasShaderProperty;
                 clonedShapePairs.Add((srcShape, destShape, isRender));
                 if (isRender)
                 {
-                    skinNode.childRefs.AddBlockRef(destId);
+                    skinNode.Children.AddBlockRef(destId);
                     bakedRenderShapes++;
                 }
                 else
                 {
-                    unkeptSubtreeRoots.Add(destId); // stray shader-less shape
+                    unkeptSubtreeRoots.Add(destBlock); // stray shader-less shape
                 }
             }
             else if (destBlock is NiNode clonedNode)
             {
                 var subtreeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                CollectSubtreeNodeNames(destHeader, destId, subtreeNames);
+                CollectSubtreeNodeNames(faceGen, clonedNode, subtreeNames);
                 if (!subtreeNames.Overlaps(boneUnion))
                 {
-                    unkeptSubtreeRoots.Add(destId);
-                    log?.Invoke($"BakeWigIntoFaceGen: dropping unneeded node subtree '{clonedNode.name?.get()}' " +
+                    unkeptSubtreeRoots.Add(clonedNode);
+                    log?.Invoke($"BakeWigIntoFaceGen: dropping unneeded node subtree '{clonedNode.Name?.String}' " +
                                 "(no kept shape skins to it).");
                     continue;
                 }
 
-                string? clonedName = clonedNode.name?.get();
+                string? clonedName = clonedNode.Name?.String;
                 NiNode? existing = null;
                 if (!string.IsNullOrEmpty(clonedName))
                 {
-                    for (uint pid = 0; pid < preCloneBlockCount; pid++)
-                    {
-                        if (destHeader.GetBlockById(pid) is NiNode preNode &&
-                            clonedName.Equals(preNode.name?.get(), StringComparison.OrdinalIgnoreCase))
-                        {
-                            existing = preNode;
-                            break;
-                        }
-                    }
+                    existing = preCloneNodes.FirstOrDefault(preNode =>
+                        clonedName.Equals(preNode.Name?.String, StringComparison.OrdinalIgnoreCase));
                 }
 
                 if (existing != null)
                 {
-                    var clonedChildren = clonedNode.childRefs;
-                    uint childCount = clonedChildren.GetSize();
                     int grafted = 0;
-                    for (uint c = 0; c < childCount; c++)
+                    foreach (int childId in clonedNode.Children.Indices.ToList())
                     {
-                        uint childId = clonedChildren.GetBlockRef(c);
-                        if (childId == uint.MaxValue) continue;
-                        existing.childRefs.AddBlockRef(childId);
+                        if (childId == NiRef.NPOS) continue;
+                        existing.Children.AddBlockRef(childId);
                         grafted++;
                     }
-                    duplicateNodeIds.Add(destId);
+                    duplicateNodes.Add(clonedNode);
                     log?.Invoke($"BakeWigIntoFaceGen: grafted {grafted} child(ren) of duplicate node " +
                                 $"'{clonedName}' onto the existing FaceGen node.");
                 }
                 else
                 {
-                    destRoot.childRefs.AddBlockRef(destId);
+                    destRoot.Children.AddBlockRef(destId);
                 }
             }
             else
             {
-                destRoot.childRefs.AddBlockRef(destId);
+                destRoot.Children.AddBlockRef(destId);
             }
         }
 
@@ -1057,11 +1166,11 @@ public class NifHandler
         foreach (var (src, dest, isRender) in clonedShapePairs)
         {
             if (!isRender) continue;
-            string? srcName = src.name?.get();
+            string? srcName = src.Name?.String;
             if (srcName != null && ins.ShapeRenames.TryGetValue(srcName, out var newName) &&
                 !string.IsNullOrEmpty(newName))
             {
-                NifFile.RenameShape(dest, newName);
+                NifEdit.RenameShape(dest, newName);
             }
         }
 
@@ -1074,17 +1183,17 @@ public class NifHandler
             foreach (var (_, dest, isRender) in clonedShapePairs)
             {
                 if (!isRender) continue;
-                var current = TryGetHairTint(destHeader, dest);
+                var current = TryGetHairTint(faceGen, dest);
                 if (current == null) continue; // not a HairTint shape
                 if (ins.HairTintMode == Models.WigHairTintMode.Auto && IsNeutralTint(current.Value))
                 {
                     skipped++;
                     continue;
                 }
-                if (TrySetHairTint(destHeader, dest, bakedHairTint.Value))
+                if (TrySetHairTint(faceGen, dest, bakedHairTint.Value))
                 {
                     tinted++;
-                    log?.Invoke($"BakeWigIntoFaceGen: hair tint '{dest.name?.get()}' " +
+                    log?.Invoke($"BakeWigIntoFaceGen: hair tint '{dest.Name?.String}' " +
                                 $"({current.Value.R:F4}, {current.Value.G:F4}, {current.Value.B:F4}) -> " +
                                 $"({bakedHairTint.Value.R:F4}, {bakedHairTint.Value.G:F4}, {bakedHairTint.Value.B:F4}).");
                 }
@@ -1102,50 +1211,29 @@ public class NifHandler
 
         // 6. Bone remap. The cloned skin instances still carry SOURCE block
         //    indices in their bone ptr lists (and skeleton root). Build a
-        //    name→id map over the cloned NiNodes and rewrite each skinned
+        //    name→node map over the cloned NiNodes and rewrite each skinned
         //    shape's bone ID list in source order.
         // Pre-existing FaceGen nodes WIN name collisions: cloned duplicates of
         // skeleton nodes (NPC Head, NPC Spine2, ...) are deleted after the
         // graft, so skinning must resolve to the surviving originals. Chain
         // bones exist only as clones and resolve there.
-        var clonedNodeIdsByName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        uint postCloneBlockCount = destHeader.GetNumBlocks();
-        for (uint id = 0; id < preCloneBlockCount; id++)
+        var nodesByName = new Dictionary<string, NiNode>(StringComparer.OrdinalIgnoreCase);
+        foreach (var node in preCloneNodes.Concat(faceGen.Blocks.OfType<NiNode>().Where(n => !preCloneBlocks.Contains(n))))
         {
-            if (destHeader.GetBlockById(id) is NiNode node)
-            {
-                string? nodeName = node.name?.get();
-                if (!string.IsNullOrEmpty(nodeName) && !clonedNodeIdsByName.ContainsKey(nodeName))
-                {
-                    clonedNodeIdsByName[nodeName] = (int)id;
-                }
-            }
-        }
-        for (uint id = preCloneBlockCount; id < postCloneBlockCount; id++)
-        {
-            if (destHeader.GetBlockById(id) is NiNode node)
-            {
-                string? nodeName = node.name?.get();
-                if (!string.IsNullOrEmpty(nodeName) && !clonedNodeIdsByName.ContainsKey(nodeName))
-                {
-                    clonedNodeIdsByName[nodeName] = (int)id;
-                }
-            }
+            string? nodeName = node.Name?.String;
+            if (!string.IsNullOrEmpty(nodeName)) nodesByName.TryAdd(nodeName, node);
         }
 
-        uint destRootId = faceGen.GetBlockID(destRoot);
+        faceGen.GetBlockIndex(destRoot, out int destRootId);
         foreach (var (src, dest, _) in clonedShapePairs)
         {
-            if (!src.IsSkinned()) continue;
+            if (!src.IsSkinned) continue;
 
-            using var srcBoneNames = new vectorstring();
-            wig.GetShapeBoneList(src, srcBoneNames);
-
-            var destBoneIds = new vectorint();
-            bool remapOk = true;
-            foreach (string boneName in srcBoneNames)
+            var destBoneIds = new List<int>();
+            foreach (string boneName in wig.GetShapeBoneNames(src))
             {
-                if (clonedNodeIdsByName.TryGetValue(boneName, out int destBoneId))
+                if (nodesByName.TryGetValue(boneName, out var boneNode) &&
+                    faceGen.GetBlockIndex(boneNode, out int destBoneId))
                 {
                     destBoneIds.Add(destBoneId);
                 }
@@ -1154,30 +1242,19 @@ public class NifHandler
                     // No collapse fallback (SynthEBD's would silently kill SMP
                     // weights): a missing bone means the merge failed.
                     log?.Invoke($"BakeWigIntoFaceGen: ERROR - bone '{boneName}' of shape " +
-                                $"'{src.name?.get()}' has no cloned node in the FaceGen NIF; aborting bake.");
-                    remapOk = false;
-                    break;
+                                $"'{src.Name?.String}' has no cloned node in the FaceGen NIF; aborting bake.");
+                    return 0; // nothing saved; the on-disk FaceGen is untouched
                 }
             }
 
-            if (!remapOk)
-            {
-                destBoneIds.Dispose();
-                return 0; // nothing saved; the on-disk FaceGen is untouched
-            }
-
-            using (destBoneIds)
-            {
-                faceGen.SetShapeBoneIDList(dest, destBoneIds);
-            }
+            NifEdit.SetShapeBoneIDList(faceGen, dest, destBoneIds);
 
             // Skeleton root ptr is also a stale source index — repoint at the
             // FaceGen root (matches how the baked head shapes are rigged).
-            var skinRef = dest.SkinInstanceRef();
-            if (skinRef != null && !skinRef.IsEmpty() &&
-                destHeader.GetBlockById(skinRef.index) is NiSkinInstance skinInst)
+            if (faceGen.GetBlock<NiSkinInstance>(dest.SkinInstanceRef) is { } skinInst)
             {
-                skinInst.targetRef.index = destRootId;
+                if (skinInst.SkeletonRoot is { } skeletonRoot) skeletonRoot.Index = destRootId;
+                else skinInst.SkeletonRoot = new NiBlockPtr<NiNode>(destRootId);
             }
         }
 
@@ -1186,41 +1263,36 @@ public class NifHandler
         //    and repoint its value at the rewritten XML.
         for (int slot = 0; slot < extraSlots.Count; slot++)
         {
-            if (extraSlots[slot] == uint.MaxValue) continue;
-            uint destId = srcRoot.extraDataRefs.GetBlockRef((uint)slot);
-            if (destId == uint.MaxValue || destId < preCloneBlockCount) continue;
+            if (extraSlots[slot] == NiRef.NPOS) continue;
+            int destId = srcRoot.ExtraDataList.GetBlockRef(slot);
+            var destBlock = faceGen.GetBlock(destId);
+            if (destBlock == null || preCloneBlocks.Contains(destBlock)) continue;
 
-            destRoot.extraDataRefs.AddBlockRef(destId);
+            destRoot.ExtraDataList ??= new NiBlockRefArray<NiExtraData>();
+            destRoot.ExtraDataList.AddBlockRef(destId);
 
-            if (ins.PhysicsXmlNewDataRelPath != null &&
-                destHeader.GetBlockById(destId) is NiStringExtraData sed)
+            if (ins.PhysicsXmlNewDataRelPath != null && destBlock is NiStringExtraData sed)
             {
-                string? sedName = sed.name?.get();
+                string? sedName = sed.Name?.String;
                 if (sedName != null &&
                     sedName.Equals(SmpPhysicsExtraDataName, StringComparison.OrdinalIgnoreCase))
                 {
-                    sed.stringData = new NiStringRef(ins.PhysicsXmlNewDataRelPath);
+                    if (sed.StringData is { } stringData) stringData.String = ins.PhysicsXmlNewDataRelPath;
+                    else sed.StringData = new NiStringRef(ins.PhysicsXmlNewDataRelPath);
                 }
             }
         }
 
         // Delete the duplicate nodes (children survive via the graft) and the
-        // unkept subtrees — bottom-up, highest block id first, so earlier ids
-        // stay valid across deletions. Leaving them as orphan blocks is NOT
-        // safe: a stray duplicate-named node poisons the engine's name-based
-        // facegen/skeleton merge just like an attached one (G1 bisect).
-        var deleteIds = new List<uint>(duplicateNodeIds);
-        foreach (uint subtreeRoot in unkeptSubtreeRoots)
+        // unkept subtrees. Leaving them as orphan blocks is NOT safe: a stray
+        // duplicate-named node poisons the engine's name-based facegen/skeleton
+        // merge just like an attached one (G1 bisect).
+        var deleteBlocks = new List<INiObject>(duplicateNodes);
+        foreach (var subtreeRoot in unkeptSubtreeRoots)
         {
-            CollectSubtreeBlockIds(destHeader, subtreeRoot, deleteIds);
+            CollectSubtreeBlocks(faceGen, subtreeRoot, deleteBlocks);
         }
-        deleteIds.Sort((x, y) => y.CompareTo(x));
-        int deleted = 0;
-        foreach (uint id in deleteIds.Distinct())
-        {
-            destHeader.DeleteBlock(id);
-            deleted++;
-        }
+        int deleted = NifEdit.DeleteBlocks(faceGen, deleteBlocks);
         if (deleted > 0)
         {
             log?.Invoke($"BakeWigIntoFaceGen: removed {deleted} duplicate/unneeded cloned block(s).");
@@ -1236,7 +1308,7 @@ public class NifHandler
             return 0;
         }
 
-        int saveResult = faceGen.Save(ins.FaceGenNifPath);
+        int saveResult = Save(faceGen, ins.FaceGenNifPath);
         if (saveResult != 0)
         {
             log?.Invoke($"BakeWigIntoFaceGen: save FAILED (code {saveResult}): {ins.FaceGenNifPath}");
@@ -1253,18 +1325,17 @@ public class NifHandler
     /// re-indexes blocks.</summary>
     private static void DropShaderlessShapes(NifFile nif, Action<string>? log)
     {
-        var doomed = new List<(NiShape Shape, string Name)>();
-        using var shapes = nif.GetShapes();
-        foreach (var shape in shapes)
+        var doomed = new List<(INiShape Shape, string Name)>();
+        foreach (var shape in NifEdit.GetShapes(nif))
         {
-            if (!shape.HasShaderProperty())
+            if (!shape.HasShaderProperty)
             {
-                doomed.Add((shape, shape.name?.get() ?? "(unnamed)"));
+                doomed.Add((shape, shape.Name?.String ?? "(unnamed)"));
             }
         }
         foreach (var (shape, name) in doomed)
         {
-            nif.DeleteShape(shape);
+            NifEdit.DeleteShape(nif, shape);
             log?.Invoke($"BakeWigIntoFaceGen: dropped shader-less shape '{name}' " +
                         "(SMP collision/virtual mesh — not facegen geometry).");
         }
@@ -1273,67 +1344,67 @@ public class NifHandler
     /// <summary>
     /// Rebuilds every shader-bearing BSTriShape of an in-memory NIF as a
     /// BSDynamicTriShape (the block type the CK bakes into facegen NIFs and the
-    /// engine's tint reconciliation expects). nifly has no direct promotion for
-    /// already-SSE files — OptimizeFor only converts during LE→SSE migration and
-    /// SetShapeDynamic only flags legacy NiGeometryData — so this rebuilds each
-    /// shape via Create (positions/triangles/UVs/normals), recalculates tangent
-    /// space, and re-links the original shader/alpha/skin blocks by index before
+    /// engine's tint reconciliation expects). Neither nifly converts an
+    /// already-SSE shape in place, so this rebuilds each one via Create
+    /// (positions/triangles/UVs/normals), recalculates tangent space, and
+    /// re-links the original shader/alpha/skin blocks by index before
     /// ReplaceBlock swaps it in under the same block id (keeping all parent
-    /// childRefs valid). The wig has no vertex colors / eye data / second UVs
-    /// (verified on the specimen), so those attributes don't need carrying.
+    /// childRefs valid). Create fills only the static vertex data; the dynamic
+    /// position array is derived from it when the file is saved. The wig has no
+    /// vertex colors / eye data / second UVs (verified on the specimen), so those
+    /// attributes don't need carrying.
     /// </summary>
     private static bool ConvertRenderShapesToDynamic(NifFile nif,
-        NiVectorBSDismemberSkinInstancePartitionInfo? partitionTemplate, Action<string>? log)
+        List<BodyPartList>? partitionTemplate, Action<string>? log)
     {
-        var header = nif.GetHeader();
-        var version = header.GetVersion();
+        var version = nif.Header.Version;
 
-        var toConvert = new List<uint>();
-        for (uint id = 0; id < header.GetNumBlocks(); id++)
-        {
-            if (header.GetBlockById(id) is NiShape s && s.HasShaderProperty() &&
-                header.GetBlockTypeStringById(id) != "BSDynamicTriShape")
-            {
-                toConvert.Add(id);
-            }
-        }
+        var toConvert = NifEdit.GetShapes(nif)
+            .Where(s => s.HasShaderProperty && s is not BSDynamicTriShape)
+            .ToList();
 
-        foreach (uint id in toConvert)
+        foreach (var shape in toConvert)
         {
-            if (header.GetBlockById(id) is not BSTriShape src)
+            nif.GetBlockIndex(shape, out int id);
+            if (shape is not BSTriShape src)
             {
                 log?.Invoke($"BakeWigIntoFaceGen: ERROR - render shape block {id} is " +
-                            $"{header.GetBlockTypeStringById(id)}, not BSTriShape; cannot convert. Aborting.");
+                            $"{nif.Header.GetBlockTypeNameById(id)}, not BSTriShape; cannot convert. Aborting.");
                 return false;
             }
 
-            string name = src.name?.get() ?? string.Empty;
-            using var verts = nif.GetVertsForShape(src);
-            using var uvs = nif.GetUvsForShape(src);
-            using var normals = nif.GetNormalsForShape(src);
-            using var tris = new vectorTriangle();
-            src.GetTriangles(tris);
+            string name = src.Name?.String ?? string.Empty;
+            var verts = src.VertexPositions;
+            var uvs = src.UVs;
+            var normals = src.HasNormals ? src.Normals : null;
+            var tris = new List<Triangle>(src.Triangles ?? new List<Triangle>());
 
             // Capture the per-vertex GPU skin weights/bone indices BEFORE
-            // ReplaceBlock frees the source block. Create() can't know them,
+            // ReplaceBlock drops the source block. Create() can't know them,
             // and an SSE skinned shape whose vertData weights are zero
             // collapses to nothing when GPU-skinned (all renderers draw
             // skinned shapes from this data via the partition).
-            ushort numVerts = src.GetNumVertices();
+            ushort numVerts = src.VertexCount;
             float[][]? vertWeights = null;
             byte[][]? vertWeightBones = null;
-            if (src.IsSkinned())
+            if (src.IsSkinned)
             {
                 vertWeights = new float[numVerts][];
                 vertWeightBones = new byte[numVerts][];
-                using var srcVertData = src.vertData;
                 for (int v = 0; v < numVerts; v++)
                 {
-                    using var item = srcVertData[v];
                     var w = new float[4];
                     var b = new byte[4];
-                    using (var wArr = item.weights) wArr.CopyTo(w);
-                    using (var bArr = item.weightBones) bArr.CopyTo(b);
+                    if (src.VertexDataSSE is { } sse && v < sse.Count)
+                    {
+                        var item = sse[v];
+                        for (int k = 0; k < 4; k++) { w[k] = (float)item.BoneWeights[k]; b[k] = item.BoneIndices[k]; }
+                    }
+                    else if (src.VertexData is { } data && v < data.Count)
+                    {
+                        var item = data[v];
+                        for (int k = 0; k < 4; k++) { w[k] = (float)item.BoneWeights[k]; b[k] = item.BoneIndices[k]; }
+                    }
                     vertWeights[v] = w;
                     vertWeightBones[v] = b;
                 }
@@ -1341,30 +1412,29 @@ public class NifHandler
 
             var dyn = new BSDynamicTriShape();
             dyn.Create(version, verts, tris, uvs, normals);
-            dyn.CalcTangentSpace();
-            dyn.flags = src.flags;
-            dyn.transform = src.transform;
-            dyn.SetBounds(src.GetBounds());
+            // Not dyn.CalcTangentSpace(): Nifly's turns degenerate triangles into NaN tangents.
+            // This rewrites every vertex's tangent data, including what Create's internal call set.
+            NifEdit.CalcTangentSpace(dyn);
+            dyn.Flags_ui = src.Flags_ui;
+            dyn.Flags_us = src.Flags_us;
+            dyn.Translation = src.Translation;
+            dyn.Rotation = src.Rotation;
+            dyn.Scale = src.Scale;
+            dyn.Bounds = src.Bounds;
 
-            var shaderRef = src.ShaderPropertyRef();
-            if (shaderRef != null && !shaderRef.IsEmpty()) dyn.SetShaderPropertyRef(shaderRef.index);
-            var alphaRef = src.AlphaPropertyRef();
-            if (alphaRef != null && !alphaRef.IsEmpty()) dyn.SetAlphaPropertyRef(alphaRef.index);
-            var skinRef = src.SkinInstanceRef();
-            bool skinned = skinRef != null && !skinRef.IsEmpty();
+            if (src.ShaderPropertyRef is { } shaderRef && !shaderRef.IsEmpty())
+                dyn.ShaderPropertyRef = new NiBlockRef<BSShaderProperty>(shaderRef.Index);
+            if (src.AlphaPropertyRef is { } alphaRef && !alphaRef.IsEmpty())
+                dyn.AlphaPropertyRef = new NiBlockRef<NiAlphaProperty>(alphaRef.Index);
+            bool skinned = src.SkinInstanceRef is { } skinRef && !skinRef.IsEmpty();
             if (skinned)
             {
-                dyn.SetSkinned(true);
-                dyn.SetSkinInstanceRef(skinRef!.index);
+                dyn.IsSkinned = true;
+                dyn.SkinInstanceRef = new NiBlockRef<NiObject>(src.SkinInstanceRef.Index);
             }
 
-            header.ReplaceBlock(id, dyn);
-            // ReplaceBlock transfers ownership of the C++ object to the NIF
-            // header (nifly's own conversion calls unique_ptr.release() here).
-            // The SWIG proxy still thinks it owns it, and its finalizer would
-            // double-free the block later — a delayed native heap corruption.
-            System.GC.SuppressFinalize(dyn);
-            NifFile.RenameShape(dyn, name);
+            nif.ReplaceBlock(id, dyn);
+            NifEdit.RenameShape(dyn, name);
 
             if (skinned && vertWeights != null && vertWeightBones != null)
             {
@@ -1373,8 +1443,10 @@ public class NifHandler
                 // the conversion keeps the source name; EditorID renames
                 // happen later in the facegen). Mirrors what nifly's own
                 // LE→SSE headParts conversion does before repartitioning.
-                using var boneIds = new vectoruchar();
-                using var weightsVec = new vectorfloat();
+                // Resolved once: the per-vertex lookup is the same first-by-name shape.
+                var weightTarget = NifEdit.FindShapeForVertWeights(nif, name);
+                var boneIds = new List<byte>(4);
+                var weightsVec = new List<float>(4);
                 for (ushort v = 0; v < numVerts; v++)
                 {
                     boneIds.Clear();
@@ -1388,24 +1460,23 @@ public class NifHandler
                         }
                     }
                     if (weightsVec.Count == 0) continue;
-                    nif.SetShapeVertWeights(name, v, boneIds, weightsVec);
+                    NifEdit.SetShapeVertWeights(weightTarget, v, boneIds, weightsVec);
                 }
 
                 // Normalize the skin instance to the CK-baked shape:
                 // BSDismemberSkinInstance carrying the donor hair's partition
                 // classification, all triangles in that partition
-                // (convertSkinInstance replaces a plain NiSkinInstance C++-side
-                // under the same block id). UpdateSkinPartitions then rebuilds
-                // the partition data — splitting by the 80-bone SSE limit with
-                // each split inheriting the hair partition ID — and refreshes
-                // the partition's embedded copy of the (dynamic-layout,
-                // weighted) vertData, without which the shape renders nothing.
+                // (convertSkinInstance replaces a plain NiSkinInstance under the
+                // same block id). UpdateSkinPartitions then rebuilds the
+                // partition data — splitting by the 80-bone SSE limit with each
+                // split inheriting the hair partition ID — and refreshes the
+                // partition's embedded copy of the (dynamic-layout, weighted)
+                // vertData, without which the shape renders nothing.
                 if (partitionTemplate != null)
                 {
-                    using var allFirstPartition = new vectorint();
-                    for (int t = 0; t < tris.Count; t++) allFirstPartition.Add(0);
-                    nif.SetShapePartitions(dyn, partitionTemplate, allFirstPartition, true);
-                    nif.RemoveEmptyPartitions(dyn);
+                    var allFirstPartition = new int[tris.Count];
+                    NifEdit.SetShapePartitions(nif, dyn, partitionTemplate, allFirstPartition, true);
+                    NifEdit.RemoveEmptyPartitions(nif, dyn);
                 }
                 nif.UpdateSkinPartitions(dyn);
             }
@@ -1417,85 +1488,42 @@ public class NifHandler
     }
 
     /// <summary>Collects all NiNode names in a cloned subtree (root inclusive).</summary>
-    private static void CollectSubtreeNodeNames(NiHeader header, uint nodeId, HashSet<string> names)
+    private static void CollectSubtreeNodeNames(NifFile nif, NiNode node, HashSet<string> names)
     {
-        if (header.GetBlockById(nodeId) is not NiNode node) return;
-        string? nodeName = node.name?.get();
+        string? nodeName = node.Name?.String;
         if (!string.IsNullOrEmpty(nodeName)) names.Add(nodeName);
-        var refs = node.childRefs;
-        uint size = refs.GetSize();
-        for (uint i = 0; i < size; i++)
+        if (node.Children == null) return;
+        foreach (var childRef in node.Children.References)
         {
-            uint childId = refs.GetBlockRef(i);
-            if (childId != uint.MaxValue) CollectSubtreeNodeNames(header, childId, names);
+            if (nif.GetBlock(childRef) is NiNode child) CollectSubtreeNodeNames(nif, child, names);
         }
     }
 
-    /// <summary>Collects the block ids of a subtree (root inclusive) for deletion.</summary>
-    private static void CollectSubtreeBlockIds(NiHeader header, uint blockId, List<uint> ids)
+    /// <summary>Collects the blocks of a subtree (root inclusive) for deletion.</summary>
+    private static void CollectSubtreeBlocks(NifFile nif, INiObject block, List<INiObject> blocks)
     {
-        ids.Add(blockId);
-        if (header.GetBlockById(blockId) is not NiNode node) return;
-        var refs = node.childRefs;
-        uint size = refs.GetSize();
-        for (uint i = 0; i < size; i++)
+        blocks.Add(block);
+        if (block is not NiNode node || node.Children == null) return;
+        foreach (var childRef in node.Children.References)
         {
-            uint childId = refs.GetBlockRef(i);
-            if (childId != uint.MaxValue) CollectSubtreeBlockIds(header, childId, ids);
+            if (nif.GetBlock(childRef) is { } child) CollectSubtreeBlocks(nif, child, blocks);
         }
     }
 
-    /// <summary>Finds a shape by name (case-insensitive). The returned proxy
-    /// stays valid after the enumeration container is disposed (shape blocks
-    /// are owned by the NifFile).</summary>
-    private static NiShape? FindShapeByName(NifFile nif, string name)
-    {
-        using var shapes = nif.GetShapes();
-        foreach (var shape in shapes)
-        {
-            if (name.Equals(shape.name?.get(), StringComparison.OrdinalIgnoreCase)) return shape;
-        }
-        return null;
-    }
+    /// <summary>Finds a shape by name (case-insensitive).</summary>
+    private static INiShape? FindShapeByName(NifFile nif, string name) =>
+        NifEdit.GetShapes(nif).FirstOrDefault(shape =>
+            name.Equals(shape.Name?.String, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Finds a NiNode by name (case-insensitive). Port of the lookup at
     /// the heart of SynthEBD FaceGenPatcher.FindFaceGenSkinNode.</summary>
-    private static NiNode? FindNodeByName(NifFile nif, string nodeName)
-    {
-        var header = nif.GetHeader();
-        uint blockCount = header.GetNumBlocks();
-        for (uint id = 0; id < blockCount; id++)
-        {
-            if (header.GetBlockById(id) is NiNode node)
-            {
-                string? name = node.name?.get();
-                if (name != null && name.Equals(nodeName, StringComparison.OrdinalIgnoreCase))
-                {
-                    return node;
-                }
-            }
-        }
-        return null;
-    }
+    private static NiNode? FindNodeByName(NifFile nif, string nodeName) =>
+        nif.Blocks.OfType<NiNode>().FirstOrDefault(node =>
+            node.Name?.String is { } name && name.Equals(nodeName, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Captures the current ref indices of a block-ref array, slot by
-    /// slot (empty refs come back as uint.MaxValue). Used to pair pre-clone
-    /// source ids with their post-clone destination rewrites.</summary>
-    private static List<uint> SnapshotRefArray(NiBlockRefArrayNiAVObject? refs)
-    {
-        var slots = new List<uint>();
-        if (refs == null) return slots;
-        uint size = refs.GetSize();
-        for (uint i = 0; i < size; i++) slots.Add(refs.GetBlockRef(i));
-        return slots;
-    }
-
-    private static List<uint> SnapshotRefArray(NiBlockRefArrayNiExtraData? refs)
-    {
-        var slots = new List<uint>();
-        if (refs == null) return slots;
-        uint size = refs.GetSize();
-        for (uint i = 0; i < size; i++) slots.Add(refs.GetBlockRef(i));
-        return slots;
-    }
+    /// slot (empty refs come back as <see cref="NiRef.NPOS"/>). Used to pair
+    /// pre-clone source ids with their post-clone destination rewrites.</summary>
+    private static List<int> SnapshotRefArray(NiRefArray? refs) =>
+        refs == null ? new List<int>() : refs.Indices.ToList();
 }

@@ -1,6 +1,7 @@
 using System.IO;
 using FluentAssertions;
-using nifly;
+using NiflySharp;
+using NiflySharp.Blocks;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Tests.TestSupport;
 using Xunit;
@@ -13,11 +14,10 @@ namespace NPC_Plugin_Chooser_2.Tests.Unit;
 /// inside the NIF (named "HDT Skinned Mesh Physics Object") whose value is the path to a .xml; the
 /// detector returns that value so the asset pipeline can copy it.
 ///
-/// Each test builds a real fixture NIF with nifly (BSFadeNode root + the chosen extra-data entries),
-/// saves it to a throwaway temp file, then asserts on what the detector pulls back out. The build
-/// helpers used (<c>NiVersion.getSSE</c>, <c>CreateNamedBSFadeNode</c>, <c>AddStringExtraDataToNode</c>,
-/// <c>Save</c>) are the same nifly surface the production reader runs against, so this exercises the
-/// genuine parse path rather than a stub.
+/// Each test builds a real fixture NIF with Nifly (BSFadeNode root + the chosen extra-data entries),
+/// saves it to a throwaway temp file, then asserts on what the detector pulls back out. The fixture
+/// is written by the same library the production reader parses with, so this exercises the genuine
+/// parse path rather than a stub.
 /// </summary>
 public class NifHandlerPhysicsXmlTests
 {
@@ -30,13 +30,18 @@ public class NifHandlerPhysicsXmlTests
     private static string BuildNif(TempDir tmp, string fileName, params (string Name, string Value)[] extraData)
     {
         var path = tmp.Combine(fileName);
-        var version = NiVersion.getSSE();
-        using var nif = new NifFile();
-        nif.CreateNamedBSFadeNode(version, "Scene Root");
-        var rootId = (int)nif.GetBlockID(nif.GetRootNode());
+        var nif = new NifFile(NiVersion.GetSSE());
+        var root = new BSFadeNode { Name = new NiStringRef("Scene Root") };
+        nif.AddBlock(root);
+        root.ExtraDataList = new NiBlockRefArray<NiExtraData>();
         foreach (var (name, value) in extraData)
         {
-            nif.AddStringExtraDataToNode(rootId, name, value);
+            int id = nif.AddBlock(new NiStringExtraData
+            {
+                Name = new NiStringRef(name),
+                StringData = new NiStringRef(value)
+            });
+            root.ExtraDataList.AddBlockRef(id);
         }
         nif.Save(path).Should().Be(0, "the fixture NIF should save cleanly");
         return path;

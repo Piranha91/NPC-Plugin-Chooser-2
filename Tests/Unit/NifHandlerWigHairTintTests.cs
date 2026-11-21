@@ -278,20 +278,17 @@ public class NifHandlerWigHairTintTests
         string nifPath, Func<string, bool> nameFilter)
     {
         var tints = new List<(float R, float G, float B)>();
-        using var nif = new nifly.NifFile();
+        var nif = new NiflySharp.NifFile();
         nif.Load(nifPath).Should().Be(0);
-        var header = nif.GetHeader();
-        using var shapes = nif.GetShapes();
-        foreach (var shape in shapes)
+        foreach (var shape in nif.GetShapes())
         {
-            string? name = shape.name?.get();
+            string? name = shape.Name?.String;
             if (string.IsNullOrEmpty(name) || !nameFilter(name)) continue;
-            var shaderRef = shape.ShaderPropertyRef();
-            if (shaderRef == null || shaderRef.IsEmpty()) continue;
-            if (header.GetBlockById(shaderRef.index) is not nifly.BSLightingShaderProperty bslsp) continue;
-            if (bslsp.bslspShaderType != 6) continue; // BSLSP_HAIRTINT
-            var tint = bslsp.hairTintColor;
-            if (tint != null) tints.Add((tint.x, tint.y, tint.z));
+            if (nif.GetBlock<NiflySharp.Blocks.BSLightingShaderProperty>(shape.ShaderPropertyRef) is not { } bslsp)
+                continue;
+            if ((uint)bslsp.ShaderType_SK_FO4 != 6) continue; // BSLSP_HAIRTINT
+            var tint = bslsp.HairTintColor;
+            tints.Add((tint.R, tint.G, tint.B));
         }
         return tints;
     }
