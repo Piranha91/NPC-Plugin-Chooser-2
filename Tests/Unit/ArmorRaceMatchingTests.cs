@@ -137,4 +137,59 @@ public class ArmorRaceMatchingTests
         Auxilliary.ArmaNamesRace(arma, null, null).Should().BeFalse();
         Auxilliary.ArmaNamesRace(arma, f.CustomRace.FormKey, f.NordRace.FormKey).Should().BeFalse();
     }
+
+    // ── Recursive armor-race chain (CommonLibSSE-NG TESObjectARMA::IsValidRace) ──
+
+    private static IRaceGetter? ResolveIn(SkyrimMod mod, IFormLinkGetter<IRaceGetter> link)
+        => mod.Races.FirstOrDefault(r => r.FormKey == link.FormKey);
+
+    [Fact]
+    public void GetArmorRaceChain_FollowsArmorRaceRecursively()
+    {
+        // A custom race whose ArmorRace is another custom race that points at
+        // NordRace: the engine walks armorParentRace all the way up.
+        var f = new Fixture();
+        var middle = f.Mod.Races.AddNew();
+        f.CustomRace.ArmorRace.SetTo(middle.FormKey);
+        middle.ArmorRace.SetTo(f.NordRace.FormKey);
+        f.NordRace.ArmorRace.SetTo(f.NordRace.FormKey); // vanilla self-reference ends the walk
+
+        Auxilliary.GetArmorRaceChain(f.CustomRace, l => ResolveIn(f.Mod, l))
+            .Should().Equal(middle.FormKey, f.NordRace.FormKey);
+    }
+
+    [Fact]
+    public void GetArmorRaceChain_StopsOnCyclesAndUnresolvableRaces()
+    {
+        var f = new Fixture();
+        f.CustomRace.ArmorRace.SetTo(f.NordRace.FormKey);
+        f.NordRace.ArmorRace.SetTo(f.CustomRace.FormKey);
+        Auxilliary.GetArmorRaceChain(f.CustomRace, l => ResolveIn(f.Mod, l))
+            .Should().Equal(f.NordRace.FormKey);
+
+        // An unresolvable ArmorRace is still a key the ARMA can name; the walk ends there.
+        var missing = FormKey.Factory("123456:Elsewhere.esp");
+        f.CustomRace.ArmorRace.SetTo(missing);
+        Auxilliary.GetArmorRaceChain(f.CustomRace, l => ResolveIn(f.Mod, l)).Should().Equal(missing);
+
+        Auxilliary.GetArmorRaceChain(null, l => ResolveIn(f.Mod, l)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ArmaNamesRaceInChain_MatchesAnyRaceUpTheChain()
+    {
+        var f = new Fixture();
+        var middle = f.Mod.Races.AddNew();
+        var nordArma = f.Arma(f.NordRace.FormKey);
+        var viaAdditional = f.Arma(f.Mod.Races.AddNew().FormKey, f.NordRace.FormKey);
+        var unrelated = f.Arma(f.Mod.Races.AddNew().FormKey);
+        var chain = new[] { middle.FormKey, f.NordRace.FormKey };
+
+        // One hop (the old rule) misses an ARMA that names only the second hop.
+        Auxilliary.ArmaNamesRace(nordArma, f.CustomRace.FormKey, middle.FormKey).Should().BeFalse();
+
+        Auxilliary.ArmaNamesRaceInChain(nordArma, f.CustomRace.FormKey, chain).Should().BeTrue();
+        Auxilliary.ArmaNamesRaceInChain(viaAdditional, f.CustomRace.FormKey, chain).Should().BeTrue();
+        Auxilliary.ArmaNamesRaceInChain(unrelated, f.CustomRace.FormKey, chain).Should().BeFalse();
+    }
 }

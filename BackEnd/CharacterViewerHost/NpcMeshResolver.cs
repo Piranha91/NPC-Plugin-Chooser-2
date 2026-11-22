@@ -564,7 +564,7 @@ public class NpcMeshResolver
         LogVerbose("CharacterViewer: Resolving NPC " + npcName + " (" + npcFormKey + ")");
 
         FormKey? npcRaceKey = (npcGetter.Race != null && !npcGetter.Race.IsNull) ? npcGetter.Race.FormKey : null;
-        FormKey? armorRaceKey = ResolveArmorRaceKey(npcGetter, linkCache, context);
+        var armorRaceChain = ResolveArmorRaceChain(npcGetter, linkCache, context);
 
         var (armorGetter, armorSource) = ResolveWornArmor(npcGetter, linkCache, context, npcName);
 
@@ -584,11 +584,11 @@ public class NpcMeshResolver
                 var armaGetter = ResolveRecord<IArmorAddonGetter>(armaLink, linkCache, context);
                 if (armaGetter == null) continue;
                 if (armaGetter.BodyTemplate == null) continue;
-                if (!IsArmatureForRace(armaGetter, npcRaceKey, armorRaceKey))
+                if (!IsArmatureForRace(armaGetter, npcRaceKey, armorRaceChain))
                 {
                     LogVerbose("CharacterViewer: Skipping Armature " + armaLink.FormKey +
                         " — race " + (npcRaceKey?.ToString() ?? "(none)") +
-                        " (ArmorRace " + (armorRaceKey?.ToString() ?? "(none)") + ")" +
+                        " (ArmorRace " + (armorRaceChain.Count > 0 ? string.Join(" -> ", armorRaceChain) : "(none)") + ")" +
                         " not in ARMA.Race/AdditionalRaces");
                     continue;
                 }
@@ -711,7 +711,7 @@ public class NpcMeshResolver
         // so hiding the donor's baked hair shapes makes the preview depict the
         // output — and makes is/is-not-a-wig designations visibly change it.
         var wigHideNames = ComputeWigHideHeadShapeNames(npcGetter, modSetting, linkCache, context, npcRaceKey,
-            armorRaceKey, designationScopeKey);
+            armorRaceChain, designationScopeKey);
         if (wigHideNames.Count > 0)
         {
             var union = new HashSet<string>(hideHeadShapeNames, StringComparer.OrdinalIgnoreCase);
@@ -866,7 +866,7 @@ public class NpcMeshResolver
     /// <paramref name="npcGetter"/>'s own key, which is correct for an untemplated NPC.
     /// </param>
     private IReadOnlySet<string> ComputeWigHideHeadShapeNames(INpcGetter npcGetter, ModSetting? modSetting,
-        ILinkCache linkCache, NpcResolutionContext? context, FormKey? npcRaceKey, FormKey? armorRaceKey,
+        ILinkCache linkCache, NpcResolutionContext? context, FormKey? npcRaceKey, IReadOnlyList<FormKey> armorRaceChain,
         FormKey? designationScopeKey = null)
     {
         if (modSetting == null) return EmptyShapeNameSet;
@@ -892,7 +892,7 @@ public class NpcMeshResolver
             wnam,
             link => ResolveRecord<IArmorAddonGetter>(link, linkCache, context),
             arma => _settings.IsWigArmature(modSetting, arma.FormKey, arma.EditorID, scopeKey),
-            arma => IsArmatureForRace(arma, npcRaceKey, armorRaceKey))
+            arma => IsArmatureForRace(arma, npcRaceKey, armorRaceChain))
             .Count();
 
         // The converter declines zero or multiple applicable wig ARMAs — the
@@ -1247,7 +1247,7 @@ public class NpcMeshResolver
         if (wnam?.Armature == null) return result;
 
         FormKey? npcRaceKey = npc.Race.IsNull ? null : npc.Race.FormKey;
-        FormKey? armorRaceKey = ResolveArmorRaceKey(npc, linkCache, context);
+        var armorRaceChain = ResolveArmorRaceChain(npc, linkCache, context);
         var sex = Auxilliary.IsFemale(npc) ? NpcGender.Female : NpcGender.Male;
         var seen = new HashSet<FormKey>();
         foreach (var armaLink in wnam.Armature)
@@ -1257,7 +1257,7 @@ public class NpcMeshResolver
             var arma = ResolveRecord<IArmorAddonGetter>(armaLink, linkCache, context);
             if (arma?.BodyTemplate == null || string.IsNullOrEmpty(arma.EditorID)) continue;
             if ((arma.BodyTemplate.FirstPersonFlags & WigDetector.HairSlots) == 0) continue;
-            if (!IsArmatureForRace(arma, npcRaceKey, armorRaceKey)) continue;
+            if (!IsArmatureForRace(arma, npcRaceKey, armorRaceChain)) continue;
 
             bool isAuto = modSetting.DetectedWigArmatures.Contains(armaLink.FormKey);
             bool isEffective = _settings.IsWigArmature(modSetting, armaLink.FormKey, arma.EditorID, npcFormKey);
@@ -1287,10 +1287,12 @@ public class NpcMeshResolver
     /// gear ("Include headgear") into neutral <see cref="MeshOverride"/>s for
     /// <see cref="VM_CharacterViewer.ApplyMeshOverrides"/>. Walks
     /// <c>NPC.DefaultOutfit → OTFT.Items</c> (ARMO directly; LeveledItem per its
-    /// Use All flag — every entry for use-all gear lists, else deterministically
-    /// the first valid armor — and logged), plus the worn/skin
-    /// armor for head-slot pieces, and emits one override per applicable
-    /// ArmorAddon (filtered by NPC race). Body pieces are <c>Kind=Armor</c> (hide
+    /// Use All flag — every entry for use-all gear lists, else a deterministic
+    /// stand-in for the roll, <see cref="OrderPlainListEntries"/> — and logged),
+    /// keeps one armor per biped slot (<see cref="SelectOutfitArmorsBySlot"/>),
+    /// plus the worn/skin armor for head-slot pieces the outfit leaves free, and
+    /// emits one override per applicable ArmorAddon (filtered by NPC race through
+    /// the ArmorRace chain). Body pieces are <c>Kind=Armor</c> (hide
     /// exactly the slots they fill, so clothing hides the nude body); head pieces
     /// are <c>Kind=Headgear</c> with the hair slot added to <c>HidesSlots</c>.
     /// Non-apparel outfit items (weapons / ammo / quest items) are skipped.
@@ -1443,7 +1445,7 @@ public class NpcMeshResolver
 
         var sex = Auxilliary.IsFemale(npcGetter) ? NpcGender.Female : NpcGender.Male;
         FormKey? npcRaceKey = (npcGetter.Race != null && !npcGetter.Race.IsNull) ? npcGetter.Race.FormKey : null;
-        FormKey? armorRaceKey = ResolveArmorRaceKey(npcGetter, linkCache, context);
+        var armorRaceChain = ResolveArmorRaceChain(npcGetter, linkCache, context);
         string npcName = npcGetter.Name?.String ?? npcGetter.EditorID ?? npcFormKey.ToString();
 
         // Dedup by override Key (slot(s) + ARMA FormKey) so a piece reachable via
@@ -1477,7 +1479,7 @@ public class NpcMeshResolver
                     ? "WigDepict(mode None):" + wigArmor.FormKey
                     : "WigForward(" + forward + "):" + wigArmor.FormKey;
                 AppendArmorMeshOverrides(wigArmor, sourceLabel,
-                    sex, npcRaceKey, armorRaceKey, linkCache, context,
+                    sex, npcRaceKey, armorRaceChain, linkCache, context,
                     includeBody: false, includeHeadgear: false,
                     hairCountsAsHeadgear: true, result, seenOverrideKeys,
                     isAntler ? WigPieceClass.Antler : WigPieceClass.Wig,
@@ -1510,6 +1512,9 @@ public class NpcMeshResolver
         // through the mod's plugins, winner/runtime outfits through the plain
         // load-order winner — matching where the record actually comes from
         // in game.
+        // Biped slots (ARMO BOD2) of the outfit armors drawn below, so a worn-armor
+        // head piece doesn't land on a slot the outfit already fills.
+        int outfitSlotsWorn = 0;
         if (outfitDisplay.OutfitFormKey is { } effectiveOutfitKey)
         {
             var outfitContext = outfitDisplay.UseModScopedResolution ? context : null;
@@ -1545,8 +1550,8 @@ public class NpcMeshResolver
                     wigPlan.SuppressedOutfitItemKeys.Count > 0 &&
                     outfitDisplay.Source == OutfitDisplaySource.AppearanceMod;
 
-                var outfitArmors = new List<(IArmorGetter armor, string source)>();
-                var seenArmorKeys = new HashSet<FormKey>();
+                var outfitArmors = new List<OutfitArmorCandidate>();
+                var seenArmorKeys = new Dictionary<FormKey, int>();
                 foreach (var itemLink in outfit.Items)
                 {
                     if (itemLink == null || itemLink.IsNull) continue;
@@ -1556,9 +1561,23 @@ public class NpcMeshResolver
                         "Outfit:" + effectiveOutfitKey, outfitArmors, seenArmorKeys, depth: 0,
                         pluginSink: outfitPluginSink);
                 }
-                foreach (var (armor, source) in outfitArmors)
+
+                // One armor per biped slot, as the game equips (SelectOutfitArmorsBySlot).
+                var keptIndices = SelectOutfitArmorsBySlot(
+                    outfitArmors.Select(c => ((int)(c.Armor.BodyTemplate?.FirstPersonFlags ?? 0), c.Rolled)).ToList(),
+                    out var slotConflicts);
+                foreach (var (droppedIndex, winnerIndex) in slotConflicts)
                 {
-                    AppendArmorMeshOverrides(armor, source, sex, npcRaceKey, armorRaceKey, linkCache, outfitContext,
+                    LogVerbose("CharacterViewer: outfit armor " + DescribeArmor(outfitArmors[droppedIndex].Armor)
+                        + (outfitArmors[droppedIndex].Rolled ? " (rolled)" : "")
+                        + " not drawn: shares a biped slot with " + DescribeArmor(outfitArmors[winnerIndex].Armor)
+                        + (outfitArmors[winnerIndex].Rolled ? " (rolled)" : " (always carried)"));
+                }
+
+                foreach (var (armor, source, _) in keptIndices.Select(i => outfitArmors[i]))
+                {
+                    outfitSlotsWorn |= (int)(armor.BodyTemplate?.FirstPersonFlags ?? 0);
+                    AppendArmorMeshOverrides(armor, source, sex, npcRaceKey, armorRaceChain, linkCache, outfitContext,
                         includeBody: includeDefaultOutfit, includeHeadgear: includeHeadgear,
                         hairCountsAsHeadgear: true, result, seenOverrideKeys,
                         allowLoadOrderFallback: outfitAssetsOutsideScope,
@@ -1593,10 +1612,29 @@ public class NpcMeshResolver
                 // Antler Remove (source 2): a WornArmor-baked antler ArmorAddon
                 // (slot 42/circlet) would otherwise render here — the patch strips
                 // it from the WNAM duplicate, so suppress it in the preview too.
-                var suppressAntlerArmas = (antlerMode == AntlerHandlingMode.Remove && modSetting != null)
+                IReadOnlySet<FormKey>? suppressAntlerArmas = (antlerMode == AntlerHandlingMode.Remove && modSetting != null)
                     ? modSetting.DetectedAntlerArmatures
                     : null;
-                AppendArmorMeshOverrides(wornArmor, wornSource, sex, npcRaceKey, armorRaceKey, linkCache, context,
+                // The engine fills a slot from the skin only when no equipped armor
+                // occupies it, so a skin head piece on a slot the outfit fills (a
+                // helmet) is not drawn — otherwise two pieces would share the slot.
+                var coveredWornArmas = outfitSlotsWorn == 0 || wornArmor.Armature == null
+                    ? null
+                    : wornArmor.Armature
+                        .Where(l => l != null && !l.IsNull)
+                        .Select(l => ResolveRecord<IArmorAddonGetter>(l, linkCache, context))
+                        .Where(a => a?.BodyTemplate != null
+                                    && ((int)a.BodyTemplate.FirstPersonFlags & outfitSlotsWorn) != 0)
+                        .Select(a => a!.FormKey)
+                        .ToHashSet();
+                if (coveredWornArmas is { Count: > 0 })
+                {
+                    LogVerbose("CharacterViewer: worn-armor piece(s) " + string.Join(", ", coveredWornArmas)
+                        + " not drawn: the outfit covers their slots");
+                    if (suppressAntlerArmas != null) coveredWornArmas.UnionWith(suppressAntlerArmas);
+                    suppressAntlerArmas = coveredWornArmas;
+                }
+                AppendArmorMeshOverrides(wornArmor, wornSource, sex, npcRaceKey, armorRaceChain, linkCache, context,
                     includeBody: false, includeHeadgear: true,
                     hairCountsAsHeadgear: false, result, seenOverrideKeys,
                     suppressArmaKeys: suppressAntlerArmas,
@@ -1784,18 +1822,6 @@ public class NpcMeshResolver
         if (armor != null) plan.Pieces.Add((armor, isAntler, forward));
     }
 
-    /// <summary>
-    /// Resolves one outfit <c>Items</c> entry to apparel armor(s) and appends
-    /// them to <paramref name="armors"/>. ARMO entries are taken directly.
-    /// LeveledItem entries honor the list's Use All flag: a use-all list
-    /// contributes armor from EVERY entry (the engine equips them all — vanilla
-    /// soldier outfits are one use-all gear list with one per-slot sub-list,
-    /// e.g. the Thalmor Elven Light set), while a plain list is a runtime
-    /// random pick that the preview stands in for DETERMINISTICALLY with the
-    /// first entry that yields any armor — never random per render. Either way
-    /// the result is logged. Non-apparel items (weapons / ammo / quest items)
-    /// and unresolvable links are skipped.
-    /// </summary>
     /// <summary>
     /// Indexes the Data-folder BSAs of the plugins that supplied a load-order-owned
     /// outfit, so the renderer's Phase 3 broadcast can actually find their meshes and
@@ -2042,8 +2068,23 @@ public class NpcMeshResolver
         }
     }
 
+    /// <summary>
+    /// Resolves one outfit <c>Items</c> entry to apparel armor(s) and appends
+    /// them to <paramref name="armors"/>, each flagged <c>Rolled</c> when the
+    /// game only SOMETIMES gives it (see <see cref="OutfitArmorCandidate"/>).
+    /// ARMO entries are taken directly. LeveledItem entries honor the list's
+    /// Use All flag: a use-all list contributes armor from EVERY entry (the
+    /// engine adds them all — vanilla soldier outfits are one use-all gear list
+    /// with one per-slot sub-list, e.g. the Thalmor Elven Light set), while a
+    /// plain list is a runtime random pick that the preview stands in for
+    /// DETERMINISTICALLY (<see cref="OrderPlainListEntries"/>) — never random
+    /// per render. Either way the result is logged. Non-apparel items (weapons /
+    /// ammo / quest items) and unresolvable links are skipped. An armor reached
+    /// more than once is listed once, at its first position, and counts as
+    /// guaranteed if ANY path to it is.
+    /// </summary>
     private void CollectOutfitItemArmors(FormKey itemFormKey, ILinkCache linkCache, NpcResolutionContext? context,
-        string source, List<(IArmorGetter armor, string source)> armors, HashSet<FormKey> seen, int depth,
+        string source, List<OutfitArmorCandidate> armors, Dictionary<FormKey, int> seen, int depth,
         HashSet<ModKey>? pluginSink = null)
     {
         if (depth > 10) return; // guard against pathological leveled-list cycles
@@ -2051,28 +2092,23 @@ public class NpcMeshResolver
         var armor = ResolveRecord<IArmorGetter>(itemFormKey.ToLink<IArmorGetter>(), linkCache, context, pluginSink);
         if (armor != null)
         {
-            if (seen.Add(itemFormKey)) armors.Add((armor, source));
+            AddOutfitCandidate(armors, seen, armor, source, rolled: false);
             return;
         }
 
         var lvli = ResolveRecord<ILeveledItemGetter>(itemFormKey.ToLink<ILeveledItemGetter>(), linkCache, context);
         if (lvli != null)
         {
-            var collected = new List<(IArmorGetter armor, string label)>();
-            CollectArmorsFromLeveledItem(lvli, linkCache, context, depth, collected, pluginSink);
+            var collected = new List<(IArmorGetter armor, string label, bool rolled)>();
+            CollectArmorsFromLeveledItem(lvli, linkCache, context, depth, collected, rolled: false, pluginSink);
             if (collected.Count > 0)
             {
-                bool useAll = lvli.Flags.HasFlag(LeveledItem.Flag.UseAll);
-                LogVerbose("CharacterViewer: Outfit LeveledItem " + itemFormKey +
-                    (useAll
-                        ? " -> use-all list: collected " + collected.Count + " armor(s): "
-                          + string.Join(", ", collected.Select(c => c.label))
-                        : " -> chose armor " + collected[0].label
-                          + " (deterministic: first valid armor in entry order)"));
-                foreach (var (collectedArmor, _) in collected)
+                LogVerbose("CharacterViewer: Outfit LeveledItem " + itemFormKey + " -> collected "
+                    + collected.Count + " armor(s): "
+                    + string.Join(", ", collected.Select(c => c.label + (c.rolled ? " (rolled)" : ""))));
+                foreach (var (collectedArmor, _, rolled) in collected)
                 {
-                    if (seen.Add(collectedArmor.FormKey))
-                        armors.Add((collectedArmor, source + " -> LVLI:" + itemFormKey));
+                    AddOutfitCandidate(armors, seen, collectedArmor, source + " -> LVLI:" + itemFormKey, rolled);
                 }
             }
             else
@@ -2085,23 +2121,47 @@ public class NpcMeshResolver
         LogVerbose("CharacterViewer: Outfit item " + itemFormKey + " is not Armor/LeveledItem (non-apparel, skipped)");
     }
 
+    private static void AddOutfitCandidate(List<OutfitArmorCandidate> armors, Dictionary<FormKey, int> seen,
+        IArmorGetter armor, string source, bool rolled)
+    {
+        if (seen.TryGetValue(armor.FormKey, out int index))
+        {
+            // Already listed: a guaranteed path makes it guaranteed.
+            if (!rolled && armors[index].Rolled) armors[index] = armors[index] with { Rolled = false };
+            return;
+        }
+        seen[armor.FormKey] = armors.Count;
+        armors.Add(new OutfitArmorCandidate(armor, source, rolled));
+    }
+
     /// <summary>Collects apparel armors reachable from <paramref name="lvli"/>,
     /// honoring the Use All flag at every level: a use-all list visits EVERY
-    /// entry (the engine equips them all); a plain list stops at the first
-    /// entry (in declared order) that yields at least one armor — the
-    /// deterministic stand-in for the engine's runtime roll. Entries that
-    /// resolve to neither Armor nor LeveledItem are skipped and never count
-    /// as a plain list's "first yielding entry".</summary>
+    /// entry (the engine adds them all); a plain list stops at the first entry,
+    /// in <see cref="OrderPlainListEntries"/> order, that yields at least one
+    /// armor — the deterministic stand-in for the engine's runtime roll. Entries
+    /// that resolve to neither Armor nor LeveledItem are skipped and never count
+    /// as a plain list's pick.
+    /// <para>An armor is collected as <c>rolled</c> when any list on its path is
+    /// a plain list, or has a Chance None (or a Chance None global): the game
+    /// does not always give it.</para></summary>
     private void CollectArmorsFromLeveledItem(
         ILeveledItemGetter lvli, ILinkCache linkCache, NpcResolutionContext? context, int depth,
-        List<(IArmorGetter armor, string label)> collected, HashSet<ModKey>? pluginSink = null)
+        List<(IArmorGetter armor, string label, bool rolled)> collected, bool rolled,
+        HashSet<ModKey>? pluginSink = null)
     {
         if (depth > 10 || lvli.Entries == null) return;
         bool useAll = lvli.Flags.HasFlag(LeveledItem.Flag.UseAll);
+        bool entriesRolled = rolled || !useAll || lvli.ChanceNone.Value > 0 || !lvli.Global.IsNull;
 
-        foreach (var entry in lvli.Entries)
+        var order = useAll
+            ? Enumerable.Range(0, lvli.Entries.Count).ToList()
+            : OrderPlainListEntries(lvli.Entries
+                .Select(e => (e?.Data?.Reference.FormKey ?? FormKey.Null, e?.Data?.Level ?? (short)0))
+                .ToList());
+
+        foreach (int i in order)
         {
-            var refLink = entry?.Data?.Reference;
+            var refLink = lvli.Entries[i]?.Data?.Reference;
             if (refLink == null || refLink.IsNull) continue;
             var fk = refLink.FormKey;
 
@@ -2110,19 +2170,104 @@ public class NpcMeshResolver
             var armor = ResolveRecord<IArmorGetter>(fk.ToLink<IArmorGetter>(), linkCache, context, pluginSink);
             if (armor != null)
             {
-                collected.Add((armor, armor.EditorID ?? fk.ToString()));
+                collected.Add((armor, armor.EditorID ?? fk.ToString(), entriesRolled));
             }
             else
             {
                 var nested = ResolveRecord<ILeveledItemGetter>(fk.ToLink<ILeveledItemGetter>(), linkCache, context);
                 if (nested != null)
                 {
-                    CollectArmorsFromLeveledItem(nested, linkCache, context, depth + 1, collected, pluginSink);
+                    CollectArmorsFromLeveledItem(nested, linkCache, context, depth + 1, collected, entriesRolled, pluginSink);
                 }
             }
 
-            if (!useAll && collected.Count > countBefore) return; // plain list: first yielding entry wins
+            if (!useAll && collected.Count > countBefore)
+            {
+                LogVerbose("CharacterViewer: plain LeveledItem " + (lvli.EditorID ?? lvli.FormKey.ToString())
+                    + " -> entry " + i + " (" + fk + ") stands in for the runtime roll");
+                return; // plain list: one pick
+            }
         }
+    }
+
+    /// <summary>
+    /// The order in which a plain (not Use All) leveled list's entries are tried
+    /// as the preview's deterministic stand-in for the game's random pick; the
+    /// first that yields armor wins. Returns entry indices.
+    /// <para>The game picks ONE entry with uniform randomness among the eligible
+    /// ones, so an item listed twice is twice as likely (UESP, Skyrim:Leveled
+    /// Lists). When every entry has the same level, eligibility doesn't depend on
+    /// the actor's level and the most-listed reference is the game's most likely
+    /// pick: entries are grouped by reference and tried most-listed first, ties in
+    /// entry order. Vanilla's <c>OutfitListSoldierImperial</c> lists the light set
+    /// once and the studded set twice, so the studded set is drawn (in game a
+    /// CWFort04 Imperial soldier was seen in the studded cuirass).</para>
+    /// <para>When levels differ, which entries are eligible depends on the
+    /// actor's level (only the highest level at or below it, unless the list
+    /// calculates from all levels), which the preview does not model, so entries
+    /// are tried in declared order — the behaviour before weighting was added.</para>
+    /// </summary>
+    internal static List<int> OrderPlainListEntries(IReadOnlyList<(FormKey Reference, short Level)> entries)
+    {
+        var indices = Enumerable.Range(0, entries.Count).ToList();
+        if (entries.Count < 2 || entries.Select(e => e.Level).Distinct().Count() > 1) return indices;
+
+        return indices
+            .GroupBy(i => entries[i].Reference)
+            .OrderByDescending(g => g.Count())
+            .ThenBy(g => g.First())
+            .Select(g => g.First())
+            .ToList();
+    }
+
+    private static string DescribeArmor(IArmorGetter armor)
+        => (armor.EditorID ?? "(no EditorID)") + " [" + armor.FormKey + "]";
+
+    /// <summary>One apparel armor the outfit can give: <c>Rolled</c> when a
+    /// leveled roll decides whether the game gives it (plain list, or Chance
+    /// None), false when every spawn carries it.</summary>
+    internal readonly record struct OutfitArmorCandidate(IArmorGetter Armor, string Source, bool Rolled);
+
+    /// <summary>
+    /// Picks which outfit armors are worn when their own biped slots (the ARMO's
+    /// BOD2, which is what the engine's equip conflict uses — not the ArmorAddon's)
+    /// overlap, so two armors are never drawn in one slot. Returns the kept
+    /// candidate indices in their original order, and each dropped one with the
+    /// kept index that took its slot.
+    /// <para>In game an outfit can hand an NPC two armors for one slot (a Use All
+    /// list with a rolled hide helmet and a full helmet) and which one is worn
+    /// varies from spawn to spawn: 18 spawns of <c>CWFort04SoldierCommanderSons</c>
+    /// wore the full Stormcloak helmet 12 times, the hide helmet 3 and the scaled
+    /// helmet 3. The rule here is the closest grounded stand-in: an armor every
+    /// spawn carries (<c>Rolled</c> false; the full helmet, given by the outfit's
+    /// full-face sets) beats a rolled one, as it is the one most often worn. Among
+    /// equals the earlier armor in outfit order wins — a choice of this preview for
+    /// repeatability, not the game's rule (the SkyRender CharacterDemo keeps the
+    /// later one instead). An armor with no slots conflicts with nothing.</para>
+    /// </summary>
+    internal static List<int> SelectOutfitArmorsBySlot(
+        IReadOnlyList<(int SlotMask, bool Rolled)> candidates, out List<(int Dropped, int Winner)> dropped)
+    {
+        dropped = new List<(int, int)>();
+        var kept = new List<int>();
+        var preference = Enumerable.Range(0, candidates.Count)
+            .OrderBy(i => candidates[i].Rolled) // guaranteed first; OrderBy is stable
+            .ToList();
+
+        foreach (int i in preference)
+        {
+            int mask = candidates[i].SlotMask;
+            int winner = mask == 0 ? -1 : kept.FirstOrDefault(k => (candidates[k].SlotMask & mask) != 0, -1);
+            if (winner >= 0)
+            {
+                dropped.Add((i, winner));
+                continue;
+            }
+            kept.Add(i);
+        }
+
+        kept.Sort();
+        return kept;
     }
 
     /// <summary>Emits one <see cref="MeshOverride"/> per applicable ArmorAddon of
@@ -2139,7 +2284,7 @@ public class NpcMeshResolver
     /// be indexed before the render. Passed only alongside
     /// <paramref name="allowLoadOrderFallback"/>; null everywhere else.</param>
     private void AppendArmorMeshOverrides(IArmorGetter armor, string source, NpcGender sex, FormKey? npcRaceKey,
-        FormKey? armorRaceKey,
+        IReadOnlyList<FormKey> armorRaceChain,
         ILinkCache linkCache, NpcResolutionContext? context, bool includeBody, bool includeHeadgear,
         bool hairCountsAsHeadgear, List<MeshOverride> result, HashSet<string> seenKeys,
         WigPieceClass wigPiece = WigPieceClass.None, IReadOnlySet<FormKey>? suppressArmaKeys = null,
@@ -2153,7 +2298,7 @@ public class NpcMeshResolver
             if (suppressArmaKeys != null && suppressArmaKeys.Contains(armaLink.FormKey)) continue;
             var arma = ResolveRecord<IArmorAddonGetter>(armaLink, linkCache, context, pluginSink);
             if (arma?.BodyTemplate == null) continue;
-            if (!IsArmatureForRace(arma, npcRaceKey, armorRaceKey)) continue;
+            if (!IsArmatureForRace(arma, npcRaceKey, armorRaceChain)) continue;
 
             int slots = (int)arma.BodyTemplate.FirstPersonFlags;
             if (slots == 0) continue;
@@ -2638,32 +2783,58 @@ public class NpcMeshResolver
         return (null, "(none)");
     }
 
-    private static bool IsArmatureForRace(IArmorAddonGetter armaGetter, FormKey? npcRaceKey, FormKey? armorRaceKey)
+    private static bool IsArmatureForRace(IArmorAddonGetter armaGetter, FormKey? npcRaceKey, IReadOnlyList<FormKey> armorRaceChain)
     {
         if (npcRaceKey == null) return true;
-        return Auxilliary.ArmaNamesRace(armaGetter, npcRaceKey, armorRaceKey);
+        return Auxilliary.ArmaNamesRaceInChain(armaGetter, npcRaceKey, armorRaceChain);
     }
 
-    /// <summary>The NPC race's ArmorRace (RNAM) — the key the engine actually
-    /// matches armatures against — resolved through the same mod-scoped chain as
-    /// the rest of this class so a mod overriding the race record wins here too.
-    /// Null when the NPC has no race, the race won't resolve, or ArmorRace adds
-    /// nothing; every caller then falls back to the raw race comparison.</summary>
-    private FormKey? ResolveArmorRaceKey(INpcGetter npcGetter, ILinkCache linkCache, NpcResolutionContext? context)
+    /// <summary>The NPC race's ArmorRace (RNAM) chain — the races the engine
+    /// matches armatures against besides the race itself, followed recursively as
+    /// <c>TESObjectARMA::IsValidRace</c> does (<see cref="Auxilliary.GetArmorRaceChain"/>).
+    /// Every hop resolves through the same mod-scoped chain as the rest of this
+    /// class so a mod overriding a race record wins here too. Empty when the NPC
+    /// has no race, the race won't resolve, or ArmorRace adds nothing; every
+    /// caller then falls back to the raw race comparison.</summary>
+    private IReadOnlyList<FormKey> ResolveArmorRaceChain(INpcGetter npcGetter, ILinkCache linkCache, NpcResolutionContext? context)
     {
-        if (npcGetter.Race == null || npcGetter.Race.IsNull) return null;
-        return Auxilliary.GetArmorRaceKey(ResolveRecord<IRaceGetter>(npcGetter.Race, linkCache, context));
+        if (npcGetter.Race == null || npcGetter.Race.IsNull) return Array.Empty<FormKey>();
+        return Auxilliary.GetArmorRaceChain(
+            ResolveRecord<IRaceGetter>(npcGetter.Race, linkCache, context),
+            link => ResolveRecord<IRaceGetter>(link, linkCache, context));
     }
 
     /// <summary>The ARMA's per-sex weight-slider flag — the engine's own signal
-    /// for whether this piece morphs between a _0/_1 world-model pair.</summary>
+    /// for whether this piece morphs between a _0/_1 world-model pair. Read for the
+    /// actor's own sex even when <see cref="SelectWorldModel"/> falls back to the
+    /// male model: the record stores the flag per sex, and which one the engine
+    /// reads in that case is unverified (vanilla <c>StormCloakBootsAA</c>: male
+    /// true, female false).</summary>
     private static bool GetWeightSliderEnabled(IArmorAddonGetter armaGetter, NpcGender sex)
         => sex == NpcGender.Female ? armaGetter.WeightSliderEnabled.Female : armaGetter.WeightSliderEnabled.Male;
 
-    private static string? GetWorldModelPath(IArmorAddonGetter armaGetter, NpcGender sex)
+    /// <summary>The ArmorAddon world model the engine draws for <paramref name="sex"/>:
+    /// the female model (MOD3) for a female actor, falling back to the male model
+    /// (MOD2) when the ARMA has no female one — UESP's ARMA format: "If MOD3 is not
+    /// present, MOD2 is both genders". Vanilla relies on it: <c>StormCloakBootsAA</c>
+    /// carries only <c>BootsM_1.nif</c>, and female Stormcloaks wear those boots in
+    /// game. A male actor never falls back to MOD3. The returned model carries its
+    /// own AlternateTextures (MODS for MOD2, MO3S for MOD3), so a fallback also takes
+    /// the male texture variants with it. Internal for the unit tests.</summary>
+    internal static IModelGetter? SelectWorldModel(IArmorAddonGetter armaGetter, NpcGender sex)
     {
-        if (armaGetter.WorldModel == null) return null;
-        var model = sex == NpcGender.Female ? armaGetter.WorldModel.Female : armaGetter.WorldModel.Male;
+        var models = armaGetter.WorldModel;
+        if (models == null) return null;
+        if (sex != NpcGender.Female) return models.Male;
+        return HasModelFile(models.Female) ? models.Female : models.Male;
+
+        static bool HasModelFile(IModelGetter? model)
+            => model?.File != null && !string.IsNullOrWhiteSpace(model.File.GivenPath);
+    }
+
+    internal static string? GetWorldModelPath(IArmorAddonGetter armaGetter, NpcGender sex)
+    {
+        var model = SelectWorldModel(armaGetter, sex);
         if (model?.File == null) return null;
         string path = model.File.GivenPath;
         if (string.IsNullOrWhiteSpace(path)) return null;
@@ -2726,7 +2897,9 @@ public class NpcMeshResolver
         var result = new List<(string, int, Dictionary<int, string>)>();
         try
         {
-            var model = sex == NpcGender.Female ? armaGetter.WorldModel?.Female : armaGetter.WorldModel?.Male;
+            // Same model the mesh came from, so a female actor drawing the male
+            // model (no MOD3) gets the male variants (MODS) that go with it.
+            var model = SelectWorldModel(armaGetter, sex);
             var alts = model?.AlternateTextures;
             if (alts == null || alts.Count == 0) return result;
 

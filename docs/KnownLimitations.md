@@ -217,6 +217,35 @@ the design is `docs/Recast-Integration-Plan.md`.
   entry.** Recast ranks only entries with the same selector identity, so both apply and file order
   decides. Validate Output reports it as a Warning.
 
+## 7. The outfit preview stands in for leveled rolls with one fixed result (added 2026-10-30)
+
+The game rolls an outfit's leveled lists on every spawn and, when two carried armors share a biped
+slot, which one is worn varies. The preview (`NpcMeshResolver`, outfit walk in
+`ResolveAttireMeshOverrides`) draws one deterministic result instead. Measured in game on
+2026-10-29 (`skyrender-split/_ingame/outfit_20261029-231212`): 18 spawns of
+`CWFort04SoldierCommanderSons` (`GuardSonsOutfit`) wore the full Stormcloak helmet 12 times, the
+hide helmet 3 and the scaled helmet 3; the boots every time.
+
+- **Use All lists** give every entry (unchanged).
+- **Plain lists** (`OrderPlainListEntries`): the game picks one eligible entry uniformly, so a
+  reference listed twice is twice as likely (UESP, Skyrim:Leveled Lists). When all entries share one
+  level the most-listed reference is tried first (ties in entry order); with mixed levels the
+  eligible set depends on the actor's level, which is not modelled, so entries are tried in declared
+  order, the behaviour before 2026-10-30. The first entry that yields armor is the pick.
+- **Rolled vs. always carried.** An armor is *rolled* when any list on its path is a plain list or
+  has a Chance None (or Chance None global).
+- **Slot conflicts** (`SelectOutfitArmorsBySlot`), on the ARMO's own biped slots (BOD2), which is
+  what the engine's equip conflict uses: an always-carried armor beats a rolled one; among equals
+  the earlier armor in outfit order wins. The second rule is a preview choice for repeatability, not
+  the game's (the SkyRender CharacterDemo keeps the later one). An ARMO without BOD2 conflicts with
+  nothing. A worn-armor (WNAM) head piece on a slot the drawn outfit fills is not drawn, as the
+  engine only fills a slot from the skin when no armor occupies it.
+- **Not modelled:** the actor's level, the CalculateFromAllLevels / CalculateForEachItemInCount
+  flags, entry counts, and Chance None itself (a rolled armor is still drawn when nothing else
+  wants its slot).
+
+A fix would have to decide whether to offer a user-visible re-roll (a UI change; not made).
+
 ---
 
 ## Resolved
