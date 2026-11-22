@@ -136,7 +136,7 @@ public class UpdateHandler
         // If the settings version is the same or newer, no action is needed.
         if (settingsVersion >= currentVersion)
         {
-            //return;
+            return;
         }
 
         splashReporter?.UpdateStep($"Updating settings from version {settingsVersion} to {currentVersion}");
