@@ -66,6 +66,13 @@ Pieces:
   stable EditorIDs); floats with a small tolerance (the reference round-trips through ESL compaction); assets
   by **content hash** (SkyPatcher FaceGen, whose path embeds an allocated FormID, is matched by content);
   SkyPatcher `.ini` directives semantically (output-plugin pointers compared by presence, not FormID).
+  **Face tints are also checked against their source file, read at test time** (`FaceTintSourceOracle`):
+  a tint is forwarded byte for byte, so the donor's file in the selected mod (or, for the Base Game
+  selection, in the game's own archive) decides its content. A delivered tint that differs from its
+  source fails; one that equals its source supersedes a stored reference copy that has gone stale, and
+  the test output names it. This is what keeps a game update from failing the suite: the Base Game
+  tint in the June reference stopped matching when the game's texture archive was re-issued on
+  2026-08-28. Whether a tint is delivered at all is still the reference comparison's job.
 - **Machine-specific config** lives in `Tests/TestData/EnvironmentMap.local.json` (gitignored; copy from the
   committed `EnvironmentMap.example.json`). The small reference plugins/tokens/`sel.txt`/`.ini` are committed
   under `Tests/TestData/GoldenReference`; the reference **assets** (meshes/textures) are read from the

@@ -47,9 +47,10 @@ internal static class TintRewriteTolerance
 
     /// <summary>
     /// SkyPatcher combos (content-hash multiset): pairs every unmatched reference FaceGen NIF with
-    /// an unmatched fresh one via the rewrite-and-rehash check. Only if EVERY unmatched file on
-    /// both sides pairs up are the "(facegen content ...)" rows cleared — a partial pairing means
-    /// something else drifted and the combo still fails. Returns the number of pairs verified.
+    /// an unmatched fresh one via the rewrite-and-rehash check. Only if EVERY unmatched NIF on
+    /// both sides pairs up are those NIFs' "(facegen content ...)" rows cleared — a partial pairing
+    /// means something else drifted and the combo still fails. Rows for other content (face tints)
+    /// are left for the caller. Returns the number of pairs verified.
     /// </summary>
     public static int ApplySkyPatcher(string freshRoot, string refRoot,
         List<string> missingFromFresh, List<string> extraInFresh)
@@ -61,6 +62,7 @@ internal static class TintRewriteTolerance
         var freshUnmatched = UnmatchedFaceGenNifs(freshRoot, refRoot);
 
         var pairedRefs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var pairedFresh = new List<string>();
         foreach (var freshPath in freshUnmatched)
         {
             var selfTint = SelfTintFor(freshPath);
@@ -69,11 +71,20 @@ internal static class TintRewriteTolerance
                 RewrittenReferenceMatchesFresh(refPath, freshPath, selfTint));
             if (match == null) return 0; // an unpaired fresh file: not (only) the tint fix — keep the failure
             pairedRefs.Add(match);
+            pairedFresh.Add(freshPath);
         }
         if (pairedRefs.Count != refUnmatched.Count) return 0; // reference files the fresh run no longer produces
 
-        missingFromFresh.RemoveAll(IsContentRow);
-        extraInFresh.RemoveAll(IsContentRow);
+        // Clear only the rows that belong to the verified NIF pairs. This used to clear EVERY
+        // "(facegen content ...)" row, which also discarded mismatched face TINTS (.dds share the
+        // content multiset): a stale Base Game tint sat unreported in all six SkyPatcher combos.
+        // Rows carry the first 12 hex digits of the content hash (AssetComparer).
+        var refHashes = pairedRefs.Select(p => Hash(p)[..12]).ToHashSet(StringComparer.Ordinal);
+        var freshHashes = pairedFresh.Select(p => Hash(p)[..12]).ToHashSet(StringComparer.Ordinal);
+        bool IsRowOf(string row, HashSet<string> hashes) =>
+            IsContentRow(row) && hashes.Any(h => row.StartsWith($"(facegen content {h},", StringComparison.Ordinal));
+        missingFromFresh.RemoveAll(row => IsRowOf(row, refHashes));
+        extraInFresh.RemoveAll(row => IsRowOf(row, freshHashes));
         return pairedRefs.Count;
     }
 

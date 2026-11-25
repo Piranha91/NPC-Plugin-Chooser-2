@@ -163,6 +163,66 @@ public class PatcherGoldenOutputTests : IClassFixture<GoldenEnvFixture>
                                           $"tint rewrite; verified + tolerated {tinted} re-pointed NIF(s).");
                 }
 
+                // --- Face tints against their SOURCE files, read now (FaceTintSourceOracle). A tint
+                // is forwarded verbatim, so the source decides its content: a delivered tint that
+                // differs from its source fails, and one that equals its source supersedes a stored
+                // reference copy that no longer does (a game or mod update moved the source). ---
+                IReadOnlyDictionary<FormKey, FormKey>? freshSurrogates = null;
+                IReadOnlyDictionary<FormKey, FormKey>? refSurrogates = null;
+                if (combo.UseSkyPatcher)
+                {
+                    var freshIniPath = Path.Combine(outDir, SkyPatcherIniComparer.DefaultIniRelativePath);
+                    var refIniPath = Path.Combine(refDir, SkyPatcherIniComparer.DefaultIniRelativePath);
+                    freshSurrogates = File.Exists(freshIniPath)
+                        ? SkyPatcherIniComparer.SurrogateByTarget(freshIniPath)
+                        : new Dictionary<FormKey, FormKey>();
+                    if (File.Exists(refIniPath)) refSurrogates = SkyPatcherIniComparer.SurrogateByTarget(refIniPath);
+                }
+
+                var tintVerdicts = FaceTintSourceOracle.Check(
+                    config, _fixture.Env!.Provider.DataFolderPath.Path, outDir, freshSurrogates);
+                var superseded = new List<string>();
+                foreach (var v in tintVerdicts)
+                {
+                    if (v.Outcome == FaceTintSourceOracle.Outcome.Mismatch)
+                    {
+                        failures.Add($"FACE TINT vs SOURCE: {v.Target} ({v.Mod}, face of {v.Donor}): delivered " +
+                                     $"'{v.FreshRel}' differs from its source [{v.Detail}] " +
+                                     $"(fresh {v.FreshHash![..12]}, source {v.SourceHash![..12]}).");
+                        continue;
+                    }
+                    if (v.Outcome != FaceTintSourceOracle.Outcome.Verified) continue;
+
+                    if (!combo.UseSkyPatcher)
+                    {
+                        if (assets.HashMismatches.RemoveAll(row =>
+                                row.StartsWith(v.FreshRel + "  ->", StringComparison.OrdinalIgnoreCase)) > 0)
+                            superseded.Add($"{v.FreshRel} = {v.Detail}");
+                    }
+                    else if (refSurrogates != null && refSurrogates.TryGetValue(v.Target, out var refSurrogate))
+                    {
+                        // FaceGen is matched by content here, so a stale reference tint shows as one
+                        // hash missing (the reference's) and one extra (the fresh, verified one).
+                        var refTint = Path.Combine(assetRefDir, FaceTintSourceOracle.TintRelPath(refSurrogate)
+                            .Replace('/', Path.DirectorySeparatorChar));
+                        if (!File.Exists(refTint)) continue;
+                        var refHash = FaceTintSourceOracle.HashFile(refTint);
+                        if (refHash == v.FreshHash) continue;
+
+                        int gone = assetMissing.RemoveAll(row => row.StartsWith($"(facegen content {refHash[..12]}, x1 ", StringComparison.Ordinal))
+                                 + assetExtra.RemoveAll(row => row.StartsWith($"(facegen content {v.FreshHash![..12]}, x1 ", StringComparison.Ordinal));
+                        if (gone > 0) superseded.Add($"{v.FreshRel} = {v.Detail}");
+                    }
+                }
+
+                int tintsVerified = tintVerdicts.Count(v => v.Outcome == FaceTintSourceOracle.Outcome.Verified);
+                _output.WriteLine($"NOTE: '{combo.FolderName}' face tints verified against their source files: " +
+                                  $"{tintsVerified} of {tintVerdicts.Count(v => v.Outcome != FaceTintSourceOracle.Outcome.NotDelivered)} delivered.");
+                foreach (var s in superseded)
+                    _output.WriteLine($"NOTE: stored reference copy is stale and was superseded by the source: {s}");
+                foreach (var v in tintVerdicts.Where(v => v.Outcome == FaceTintSourceOracle.Outcome.SourceUnresolved))
+                    _output.WriteLine($"NOTE: no single source for {v.Target} ({v.Mod}, face of {v.Donor}): {v.Detail}; left to the reference comparison.");
+
                 if (assetMissing.Count > 0 || assets.HashMismatches.Count > 0
                     || (!stale && assetExtra.Count > 0))
                 {
