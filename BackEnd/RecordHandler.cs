@@ -1631,6 +1631,9 @@ public class RecordHandler
         bool currentRecordHasBeenMergedIn = false;
         // "Appearance records only": the mod overrides this record, and its type is not in the set.
         bool overrideLeftOut = false;
+        // An NPC the walk reached (in practice through a Template link) that is not one of the mod's
+        // own new records: walked through, never copied and never bridged. See below.
+        bool npcWalkedThrough = false;
         IMajorRecordGetter? traversedModRecord = null;
         // Source-side EditorID of the record this link resolved to, captured before any
         // duplication mutates it (the duplicate gets a plugin-name suffix). Used for the
@@ -1657,6 +1660,23 @@ public class RecordHandler
                         // no need to add it to mergedInRecords because its AssetLinks have already been processed during the previous iteration
                         remappedSubLinks.TryAdd(formLinkGetter.FormKey, _currentDuplicateInMappings[formLinkGetter.FormKey]);
                         return true;
+                    }
+
+                    // An NPC is never duplicated here. A private copy of an NPC is a new actor
+                    // with no FaceGen of its own, and the link that reached it is repointed at the
+                    // copy: an NPC whose Template (with the Traits flag) reached the mod's override
+                    // of its template then rendered the copy's missing face, black, in game (N12:
+                    // Captain Hargar -> a copy of High Poly NPC Overhaul's Blackblood Marauder).
+                    // The patcher handles NPC records itself (the Include All scan skips them for
+                    // the same reason). The descent below still walks the MOD's version, so records
+                    // the mod overrides under the NPC (the head parts and race a flattened template
+                    // hands over) are still copied for whoever links them.
+                    if (traversedModRecord is INpcGetter)
+                    {
+                        npcWalkedThrough = true;
+                        if (NpcDiagnosticLogger.IsActive)
+                            NpcDiagnosticLogger.Log($"  NPC walked through, not copied: {formLinkGetter.FormKey} ({modKey}) EditorID='{traversedModRecord.EditorID}'.");
+                        break;
                     }
 
                     if (appearanceTypes != null &&
@@ -1721,6 +1741,14 @@ public class RecordHandler
             }
         }
 
+        // The same rule for an NPC the mod does not carry: walked through, never bridged. A mod's
+        // OWN new NPC (its FormKey belongs to one of the mod's plugins) is left as it was.
+        if (traversedModRecord is INpcGetter &&
+            !relevantContextKeys.Contains(formLinkGetter.FormKey.ModKey))
+        {
+            npcWalkedThrough = true;
+        }
+
         if (traversedModRecord != null)
         {
             // While descending into this record's links, it is the sub-records' provenance parent
@@ -1752,6 +1780,15 @@ public class RecordHandler
             }
             // Done descending — this record is no longer the provenance parent.
             provenanceChain?.RemoveAt(provenanceChain.Count - 1);
+
+            // Copies made under a walked-through NPC stay registered for remapping (a flattened
+            // template's head parts land on the patched NPC itself), but the NPC is not bridged
+            // and reports nothing upward: no ancestor is copied on its account. Whatever below it
+            // ends up referenced by nothing is removed by the orphan sweep before the save.
+            if (npcWalkedThrough)
+            {
+                parentRecordShouldBeMergedIn = false;
+            }
 
             if (parentRecordShouldBeMergedIn &&
                 !currentRecordHasBeenMergedIn &&
