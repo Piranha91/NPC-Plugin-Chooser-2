@@ -2320,6 +2320,21 @@ public class Patcher : OptionalUIModule
                     // records nothing uses.
                     PruneAndLogOrphanedDuplicates();
 
+                    // Include As New's private copies of load-order races: give each the armor race
+                    // its original is matched against, and put armature race lists back to the
+                    // originals. After the sweep (a pruned copy needs nothing) and after every remap
+                    // of the run (a remap would point these links at the copies again).
+                    var (wearableRaces, restoredArmatures) =
+                        _recordHandler.KeepPrivateRaceCopiesWearable(_environmentStateProvider.OutputMod);
+                    if (wearableRaces > 0 || restoredArmatures > 0)
+                    {
+                        AppendLog(
+                            $"Include As New: {wearableRaces} private race cop{(wearableRaces == 1 ? "y" : "ies")} " +
+                            "given the armor race of the race it stands in for; " +
+                            $"{restoredArmatures} armature race list(s) put back to the original race.",
+                            false, true);
+                    }
+
                     // Opt-in asset-provenance report (AssetProvenance.csv): why each file was copied
                     // and which NPCs/mods/records pulled it in. No-op unless enabled (Settings
                     // checkbox or the LogAssetProvenance.txt dev trigger).

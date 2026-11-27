@@ -160,6 +160,14 @@ public class RecordHandler
     {
         public FormKey SourceFormKey { get; init; }
         public string? SourceEditorId { get; init; }
+
+        /// <summary>
+        /// True for an Include-As-New copy of a record that EXISTS in the load order: an override
+        /// the mod carries, duplicated as new, or a bridge parent. The original stays in the game
+        /// beside the copy, which is what makes the copy a stand-in rather than the only instance.
+        /// False for a record the mod itself defines (merge-in), whose copy is all the game sees.
+        /// </summary>
+        public bool IsPrivateCopyOfLoadOrderRecord { get; init; }
     }
 
     // Output FormKey -> the source record it was duplicated from. Persists across
@@ -176,11 +184,107 @@ public class RecordHandler
     /// <summary>Notes that <paramref name="outputFormKey"/> in the output plugin was
     /// duplicated from <paramref name="sourceFormKey"/>. Output FormKeys are unique,
     /// so the first (root) source seen is retained.</summary>
-    public void RecordMergedRecordOrigin(FormKey sourceFormKey, FormKey outputFormKey, string? sourceEditorId)
+    public void RecordMergedRecordOrigin(FormKey sourceFormKey, FormKey outputFormKey, string? sourceEditorId,
+        bool privateCopyOfLoadOrderRecord = false)
     {
         if (outputFormKey.IsNull || sourceFormKey.IsNull) return;
         _mergedRecordOrigins.TryAdd(outputFormKey,
-            new MergedRecordOrigin { SourceFormKey = sourceFormKey, SourceEditorId = sourceEditorId });
+            new MergedRecordOrigin
+            {
+                SourceFormKey = sourceFormKey, SourceEditorId = sourceEditorId,
+                IsPrivateCopyOfLoadOrderRecord = privateCopyOfLoadOrderRecord,
+            });
+    }
+
+    /// <summary>
+    /// Keeps the private RACE copies that Include As New makes wearable. Run once, after every
+    /// NPC and every link remap of the run, before the save. Returns (race copies given an armor
+    /// race, armatures whose race list was put back).
+    ///
+    /// <para>Include As New copies races that exist in the load order (an overridden race, or a
+    /// bridge parent: High Poly NPC Overhaul's hair-colour edits make every playable race one)
+    /// and points the NPC at the copy. Two things then went wrong in the game (in-game bench,
+    /// 2026-11-25):</para>
+    /// <list type="number">
+    /// <item><b>Floating heads.</b> The copy had no armor race, so armatures were matched against
+    /// the copy. Vanilla body and clothing armatures name the ORIGINAL race; nothing matched.
+    /// So a copy now names as its armor race what its original is matched against: the
+    /// original's own armor race, else the original. It never names another private copy (the
+    /// remap would otherwise turn a vampire-variant copy's armor race into the copy of the plain
+    /// race, or a race's self-reference into the copy itself).</item>
+    /// <item><b>Bald.</b> With an armor race set, the game matches armatures against it INSTEAD
+    /// of the actor's own race (measured in game 2026-11-24). The same remap that pointed the NPC
+    /// at the copy had rewritten the race lists of the armatures brought along (the mod's wig
+    /// armatures) to name the copy, so they would match nobody. Under Recast Only the NPC even
+    /// keeps its original race in the game, and such an armature never matched there. So no
+    /// armature in the output is left naming a private race copy: it names the original again.</item>
+    /// </list>
+    /// <para>A race the mod itself DEFINES is not touched: its copy is the only instance the game
+    /// has, and armatures must name that copy.</para>
+    /// </summary>
+    public (int Races, int Armatures) KeepPrivateRaceCopiesWearable(ISkyrimMod outputMod)
+    {
+        // copy -> the load-order race it stands in for
+        var standsInFor = new Dictionary<FormKey, FormKey>();
+        foreach (var race in outputMod.Races)
+        {
+            if (_mergedRecordOrigins.TryGetValue(race.FormKey, out var origin) &&
+                origin.IsPrivateCopyOfLoadOrderRecord)
+            {
+                standsInFor[race.FormKey] = origin.SourceFormKey;
+            }
+        }
+        if (standsInFor.Count == 0) return (0, 0);
+
+        FormKey Original(FormKey key)
+        {
+            // A copy of a copy cannot arise; the bound only keeps a malformed map from looping.
+            for (int i = 0; i < 8 && standsInFor.TryGetValue(key, out var original); i++) key = original;
+            return key;
+        }
+
+        int races = 0;
+        foreach (var race in outputMod.Races)
+        {
+            if (!standsInFor.TryGetValue(race.FormKey, out var original)) continue;
+            var wanted = race.ArmorRace.IsNull ? original : Original(race.ArmorRace.FormKey);
+            if (race.ArmorRace.IsNull || race.ArmorRace.FormKey != wanted)
+            {
+                race.ArmorRace.SetTo(wanted);
+                races++;
+            }
+        }
+
+        int armatures = 0;
+        foreach (var arma in outputMod.ArmorAddons)
+        {
+            bool changed = false;
+            if (!arma.Race.IsNull && standsInFor.ContainsKey(arma.Race.FormKey))
+            {
+                arma.Race.SetTo(Original(arma.Race.FormKey));
+                changed = true;
+            }
+
+            for (int i = 0; i < arma.AdditionalRaces.Count; i++)
+            {
+                var key = arma.AdditionalRaces[i].FormKey;
+                if (!standsInFor.ContainsKey(key)) continue;
+                arma.AdditionalRaces[i] = Original(key).ToLink<IRaceGetter>();
+                changed = true;
+            }
+
+            if (!changed) continue;
+            armatures++;
+            // Putting an original back can leave it listed twice (the mod may name both).
+            var seen = new HashSet<FormKey>();
+            for (int i = 0; i < arma.AdditionalRaces.Count;)
+            {
+                if (seen.Add(arma.AdditionalRaces[i].FormKey)) i++;
+                else arma.AdditionalRaces.RemoveAt(i);
+            }
+        }
+
+        return (races, armatures);
     }
 
     /// <summary>Looks up where an output record was merged in from, if it was a
@@ -1227,7 +1331,8 @@ public class RecordHandler
                             // Unlike RecordProvenanceDiag above this map is not opt-in: the "missing
                             // master" diagnostics read it, and so does the FaceGen shape rename that
                             // keeps a renamed head part paired with its baked geometry.
-                            RecordMergedRecordOrigin(record.FormKey, duplicate.FormKey, record.EditorID);
+                            RecordMergedRecordOrigin(record.FormKey, duplicate.FormKey, record.EditorID,
+                                privateCopyOfLoadOrderRecord: true);
                             duplicate.EditorID = (duplicate.EditorID ?? "NoEditorID") + "_" + modKey.FileName;
                             _currentDuplicateInMappings.Add(record.FormKey, duplicate.FormKey);
                             remappedOverrideMap.Add(record.FormKey, duplicate.FormKey);
@@ -1480,7 +1585,8 @@ public class RecordHandler
                     }
 
                     var duplicate = modContext.DuplicateIntoAsNewRecord(outputMod);
-                    RecordMergedRecordOrigin(formLinkGetter.FormKey, duplicate.FormKey, traversedModRecord.EditorID);
+                    RecordMergedRecordOrigin(formLinkGetter.FormKey, duplicate.FormKey, traversedModRecord.EditorID,
+                        privateCopyOfLoadOrderRecord: true);
                     if (provenanceChain != null)
                     {
                         RecordProvenanceDiag.RecordMergedAsNew(formLinkGetter.FormKey, traversedModRecord.EditorID,
@@ -1577,7 +1683,8 @@ public class RecordHandler
                 }
                 else if (Auxilliary.TryDuplicateGenericRecordAsNew(traversedModRecord, outputMod, out var duplicate, out string exceptionString))
                 {
-                    RecordMergedRecordOrigin(formLinkGetter.FormKey, duplicate.FormKey, traversedModRecord.EditorID);
+                    RecordMergedRecordOrigin(formLinkGetter.FormKey, duplicate.FormKey, traversedModRecord.EditorID,
+                        privateCopyOfLoadOrderRecord: true);
                     if (provenanceChain != null)
                     {
                         RecordProvenanceDiag.RecordBridgeParent(formLinkGetter.FormKey, sourceEditorId,
