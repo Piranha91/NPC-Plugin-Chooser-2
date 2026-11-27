@@ -63,6 +63,10 @@ public sealed class NpcChooserHarness : IDisposable
     public Patcher Patcher => Container.Resolve<Patcher>();
     public Validator Validator => Container.Resolve<Validator>();
 
+    /// <summary>Exposed so a headless build of an MO2 profile can tell the provider where the
+    /// virtual Data folder's plugins really are (<see cref="PluginProvider.VirtualDataPluginPaths"/>).</summary>
+    public PluginProvider PluginProvider => Container.Resolve<PluginProvider>();
+
     /// <summary>Exposed so an integration test can stub the converter's NIF-reading seams before a
     /// run — a synthetic fixture cannot supply parseable meshes.</summary>
     public HeadPartWigConverter HeadPartWigConverter => Container.Resolve<HeadPartWigConverter>();

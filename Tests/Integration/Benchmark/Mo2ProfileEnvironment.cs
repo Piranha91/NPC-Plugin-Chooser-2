@@ -34,6 +34,15 @@ internal sealed class Mo2ProfileEnvironment
     public required IReadOnlyList<(ModKey Key, string ResolvedPath)> ResolvedPlugins { get; init; }
     /// <summary>Active profile plugins no folder supplied (the VFS would not have shown them either).</summary>
     public required IReadOnlyList<ModKey> UnresolvedPlugins { get; init; }
+    /// <summary>
+    /// Every plugin file the VFS would show in Data from <c>overwrite</c> and the enabled mods,
+    /// active or not, each at its winning (highest-priority) path. The real Data folder is not
+    /// listed: the app looks there by itself. Hand this to
+    /// <see cref="PluginProvider.VirtualDataPluginPaths"/> so a headless build finds another
+    /// mod's plugin where a build launched through MO2 would.
+    /// </summary>
+    public required IReadOnlyDictionary<ModKey, string> VirtualDataPlugins { get; init; }
+
 
     internal required Func<IEnumerable<IModListingGetter<ISkyrimModGetter>>, IEnumerable<IModListingGetter<ISkyrimModGetter>>> Transform { get; init; }
     internal required string OutputPluginName { get; init; }
@@ -124,6 +133,17 @@ internal sealed class Mo2ProfileEnvironment
             else resolved.Add((key, path));
         }
 
+        // searchOrder is highest priority first, so the first folder to supply a file name wins.
+        var virtualPlugins = new Dictionary<ModKey, string>();
+        foreach (var dir in searchOrder.Where(d => !string.Equals(d, dataFolder, StringComparison.OrdinalIgnoreCase)))
+        {
+            foreach (var file in Directory.EnumerateFiles(dir))
+            {
+                if (ModKey.TryFromFileName(Path.GetFileName(file)) is { } fileKey)
+                    virtualPlugins.TryAdd(fileKey, file);
+            }
+        }
+
         var outputKey = ModKey.FromFileName(Path.GetFileNameWithoutExtension(outputPluginName) + ".esp");
         IEnumerable<IModListingGetter<ISkyrimModGetter>> Transform(
             IEnumerable<IModListingGetter<ISkyrimModGetter>> _)
@@ -164,6 +184,7 @@ internal sealed class Mo2ProfileEnvironment
                 EnabledModFolders = enabledMods,
                 ResolvedPlugins = resolved,
                 UnresolvedPlugins = unresolved,
+                VirtualDataPlugins = virtualPlugins,
                 Transform = Transform,
                 OutputPluginName = outputPluginName,
             };

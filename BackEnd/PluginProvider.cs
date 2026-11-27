@@ -45,6 +45,16 @@ namespace NPC_Plugin_Chooser_2.BackEnd
         }
 
         /// <summary>
+        /// Test seam, never set by the app. Launched through a mod manager, the game Data folder
+        /// is a virtual one that shows every enabled mod's plugins, so the Data-folder lookup in
+        /// <see cref="ResolveModKeyToPath"/> finds a plugin that lives in another mod's folder
+        /// (a follower's own plugin, the original of a record an appearance mod overrides).
+        /// A headless build has only the real Data folder; a test supplies here where each such
+        /// plugin really is, and the lookup consults it just before the Data folder.
+        /// </summary>
+        internal IReadOnlyDictionary<ModKey, string>? VirtualDataPluginPaths { get; set; }
+
+        /// <summary>
         /// Normalizes a file path to be used as a cache key (case-insensitive).
         /// </summary>
         private static string NormalizePath(string path)
@@ -68,6 +78,13 @@ namespace NPC_Plugin_Chooser_2.BackEnd
                         return candidatePath;
                     }
                 }
+            }
+
+            if (VirtualDataPluginPaths != null &&
+                VirtualDataPluginPaths.TryGetValue(modKey, out var virtualPath) &&
+                File.Exists(virtualPath))
+            {
+                return virtualPath;
             }
 
             if (_environmentStateProvider.DataFolderPath.Exists)
