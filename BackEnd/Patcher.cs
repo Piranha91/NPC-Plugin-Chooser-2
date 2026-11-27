@@ -1423,16 +1423,37 @@ public class Patcher : OptionalUIModule
                                                             ct));
                                                 }
 
-                                                List<MajorRecord> deltaPatchedRecords = new();
+                                                // Every record this step writes for the NPC, patched or
+                                                // copied whole. ALL of them go to merge-in below: a
+                                                // whole copy points at the mod's new records just as a
+                                                // patched one does, and a pointer left into the
+                                                // appearance plugin (not in the load order) makes
+                                                // Mutagen refuse to write the output at all.
+                                                List<IMajorRecordGetter> writtenOverrideRecords = new();
                                                 foreach (var ctx in dependencyContexts)
                                                 {
                                                     bool wasDeltaPatched = false;
-                                                    if (_recordHandler.TryGetRecordFromMod(ctx.Record.FormKey,
-                                                            ctx.Record.Type,
-                                                            ctx.Record.FormKey.ModKey,
-                                                            currentModFolderPaths,
-                                                            RecordHandler.RecordLookupFallBack.None,
-                                                            out var baseRecord) && baseRecord != null)
+                                                    // The original comes from the load order's loaded
+                                                    // plugin, not from a file path (see
+                                                    // RecordHandler.TryGetOriginalFromLoadOrder).
+                                                    var originalLookup = _recordHandler.TryGetOriginalFromLoadOrder(
+                                                        ctx.Record.FormKey, ctx.Record.Type, out var baseRecord);
+
+                                                    if (originalLookup == RecordHandler.OriginalLookup.PluginUnavailable)
+                                                    {
+                                                        // No original, no patching: without it there is no
+                                                        // telling which of the mod's values are edits.
+                                                        AppendLog(
+                                                            $"      ERROR: Cannot patch {Auxilliary.GetLogString(ctx.Record, _settings.LocalizationLanguage)} " +
+                                                            $"for {npcIdentifier}: its original is in {ctx.Record.FormKey.ModKey.FileName}, " +
+                                                            "which is not in the load order. This override is skipped.",
+                                                            isError: true, forceLog: true);
+                                                        continue;
+                                                    }
+
+                                                    // NotInPlugin: an injected record. It has no original,
+                                                    // so it is copied whole by the branch further down.
+                                                    if (originalLookup == RecordHandler.OriginalLookup.Found && baseRecord != null)
                                                     {
                                                         if (!_recordHandler.TryGetRecordFromMod(ctx.Record.FormKey,
                                                                 ctx.Record.Type, ctx.ModKey,
@@ -1447,7 +1468,15 @@ public class Patcher : OptionalUIModule
                                                             _recordDeltaPatcher.GetPropertyDiffs(overrideRecord,
                                                                 baseRecord, overrideRecord, ctx.ModKey);
 
-                                                        if (recordDifs is not null && recordDifs.Any())
+                                                        if (recordDifs is null || !recordDifs.Any())
+                                                        {
+                                                            // The mod's copy says nothing its original does
+                                                            // not. Writing it would only undo whatever the
+                                                            // load order's winner changed, so nothing is
+                                                            // written and the winner stands.
+                                                            continue;
+                                                        }
+
                                                         {
                                                             IMajorRecordGetter? winningGetter = null;
                                                             var loquiType = Auxilliary.GetRecordGetterType(ctx.Record);
@@ -1476,7 +1505,8 @@ public class Patcher : OptionalUIModule
                                                                     _recordDeltaPatcher.ApplyPropertyDiffs(
                                                                         winningRecord,
                                                                         recordDifs, winningRecord, ctx.ModKey);
-                                                                    deltaPatchedRecords.Add(winningRecord);
+                                                                    writtenOverrideRecords.Add(winningRecord);
+                                                                    wasDeltaPatched = true;
                                                                     RegisterRecordOwnership(npcFormKey, winningRecord, npcContributions);
                                                                     RecordProvenanceDiag.RecordOverrideWritten(
                                                                         ctx.Record.FormKey, ctx.Record.EditorID,
@@ -1504,7 +1534,8 @@ public class Patcher : OptionalUIModule
                                                     {
                                                         try
                                                         {
-                                                            ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod);
+                                                            var copiedRecord = ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod);
+                                                            writtenOverrideRecords.Add(copiedRecord);
                                                             RegisterRecordOwnership(npcFormKey, ctx.Record, npcContributions);
                                                             RecordProvenanceDiag.RecordOverrideWritten(
                                                                 ctx.Record.FormKey, ctx.Record.EditorID,
@@ -1544,7 +1575,7 @@ public class Patcher : OptionalUIModule
                                                         .ToHashSet();
                                                     var additionalMergedRecords =
                                                         _recordHandler.DuplicateFromOnlyReferencedGetters(
-                                                            _environmentStateProvider.OutputMod, deltaPatchedRecords,
+                                                            _environmentStateProvider.OutputMod, writtenOverrideRecords,
                                                             importSourceModKeys, appearanceModKey.Value, true,
                                                             appearanceModSetting.HandleInjectedRecords,
                                                             currentModFolderPaths,

@@ -1616,8 +1616,50 @@ public class RecordHandler
         return parentRecordShouldBeMergedIn;
     }
     #endregion
-    
+
     #region Misc Functions
+
+    /// <summary>What <see cref="TryGetOriginalFromLoadOrder"/> found.</summary>
+    public enum OriginalLookup
+    {
+        /// <summary>The plugin the FormKey belongs to holds the record: that is the original.</summary>
+        Found,
+        /// <summary>That plugin is loaded but holds no such record: the record is INJECTED into its
+        /// ID space by the mod that carries it, and has no original.</summary>
+        NotInPlugin,
+        /// <summary>That plugin is not in the load order (or could not be read), so nothing can be
+        /// said about the original.</summary>
+        PluginUnavailable,
+    }
+
+    /// <summary>
+    /// The ORIGINAL of a record an appearance mod overrides: the version in the plugin the FormKey
+    /// belongs to. It is read from the load order's already-loaded plugin, as the override walk
+    /// does (<see cref="CollectOverriddenDependencyRecords"/>), and NOT by resolving a file path.
+    /// <para>The path route (<see cref="TryGetRecordFromMod"/>) searches the appearance mod's own
+    /// folders and then the game Data folder. An original in another mod's folder (a follower's
+    /// outfit, defined by the follower's plugin) is there only when the Data folder is a mod
+    /// manager's virtual one; anywhere else the lookup missed and the override was copied whole
+    /// instead of patched. Pre-run screening has already established that an override's plugin's
+    /// masters are in the load order, so the loaded plugin is the dependable source.</para>
+    /// </summary>
+    public OriginalLookup TryGetOriginalFromLoadOrder(FormKey formKey, Type type, out dynamic? original)
+    {
+        original = null;
+        var listing = _environmentStateProvider.LoadOrder?.TryGetValue(formKey.ModKey);
+        if (listing == null || listing.Mod == null)
+        {
+            return OriginalLookup.PluginUnavailable;
+        }
+
+        var group = listing.Mod.TryGetTopLevelGroup(type);
+        if (group != null && group.ContainsKey(formKey))
+        {
+            original = group[formKey];
+            return OriginalLookup.Found;
+        }
+        return OriginalLookup.NotInPlugin;
+    }
 
     public bool TryGetRecordFromMod(FormKey formKey, Type type, ModKey modKey, HashSet<string> fallBackModFolderNames,  RecordLookupFallBack fallbackMode,
         out dynamic? record)

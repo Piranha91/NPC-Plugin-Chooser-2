@@ -96,6 +96,35 @@ public class RecordDeltaPatcherDiffTests
     }
 
     [Fact]
+    public void GetPropertyDiffs_RecordHeader_IsNeverADifference()
+    {
+        // The header says how a record's bytes are laid out and who last saved it. Applied as a
+        // difference, FormVersion stamped a version-39 record as 44 while its model data stayed in
+        // the version-39 layout, and the game never finished loading (in-game bench, 2026-11-25).
+        var patcher = MakePatcher();
+        var modA = MutagenFixtures.NewMod("A.esp");
+        var modB = MutagenFixtures.NewMod("B.esp");
+        var a = MutagenFixtures.NewNpc(modA, editorId: "Hero");
+        var b = MutagenFixtures.NewNpc(modB, editorId: "Hero");
+        a.FormVersion = 44; a.Version2 = 0; a.VersionControl = 0;
+        b.FormVersion = 39; b.Version2 = 3; b.VersionControl = 943891;
+        a.Height = 1.25f;
+        b.Height = 0.5f;
+
+        var (ctx, mk) = Ctx(a, modA);
+        var diffs = patcher.GetPropertyDiffs(a, b, ctx, mk);
+
+        DiffFor(diffs, nameof(Npc.FormVersion)).Should().BeNull();
+        DiffFor(diffs, nameof(Npc.Version2)).Should().BeNull();
+        DiffFor(diffs, nameof(Npc.VersionControl)).Should().BeNull();
+        DiffFor(diffs, nameof(Npc.Height)).Should().NotBeNull("real content next to the header is still reported");
+
+        patcher.ApplyPropertyDiffs(b, diffs, ctx, mk);
+        b.FormVersion.Should().Be((ushort)39, "the destination keeps its own header");
+        b.Height.Should().Be(1.25f);
+    }
+
+    [Fact]
     public void GetPropertyDiffs_NullSource_ThrowsArgumentNullException()
     {
         var patcher = MakePatcher();

@@ -36,6 +36,12 @@ public class SourceOracleTests : IClassFixture<GoldenEnvFixture>
         _output = output;
     }
 
+    /// <summary>A flattened key naming a member of the record header itself (not of a nested object).</summary>
+    private static bool IsRecordHeaderKey(string key) =>
+        key.EndsWith(".Records[0].FormVersion", StringComparison.Ordinal) ||
+        key.EndsWith(".Records[0].Version2", StringComparison.Ordinal) ||
+        key.EndsWith(".Records[0].VersionControl", StringComparison.Ordinal);
+
     [Theory]
     [InlineData(5, false)] // Create / Include          -> wholesale forward
     [InlineData(2, true)]  // CreateAndPatch / Include   -> delta patch
@@ -115,7 +121,12 @@ public class SourceOracleTests : IClassFixture<GoldenEnvFixture>
                         string baseV = baseFlat.GetValueOrDefault(key, "<absent>");
                         string winV = winFlat.GetValueOrDefault(key, "<absent>");
                         // delta: RS Children changed this element vs base => take source; else keep winning.
-                        expected = srcV != baseV ? srcV : winV;
+                        // The record HEADER is the exception: it says how the record's bytes are laid
+                        // out and who last saved it, so it always stays the winner's. This oracle used
+                        // to expect the source's (ChildTorso01AA was then stamped form version 44 over
+                        // version-40 data); the in-game bench of 2026-11-25 showed what that does when
+                        // the model data's layout differs between the two versions.
+                        expected = IsRecordHeaderKey(key) ? winV : srcV != baseV ? srcV : winV;
                     }
 
                     if (outV != expected)
