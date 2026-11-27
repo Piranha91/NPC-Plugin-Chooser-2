@@ -892,6 +892,18 @@
                                                 </ToolTip>
                                             </Button.ToolTip>
                                         </Button>
+
+                                        <!-- Appearance records only - modifies whichever override mode is active
+                                             (walking or Include All), so it shows whenever this row does. -->
+                                        <StackPanel Orientation="Horizontal" Margin="10,0,0,0">
+                                            <TextBlock Text="Appearance records only"
+                                                       VerticalAlignment="Center"
+                                                       ToolTip="Keep only this mod's overrides of records that decide how an NPC looks (armor and armatures, textures, head parts, hair colors, races, outfits). Other overrides the search passes through are left out."/>
+                                            <CheckBox IsChecked="{Binding AppearanceOverridesOnly, Mode=TwoWay}"
+                                                      VerticalAlignment="Center"
+                                                      Margin="5,0,0,0"
+                                                      ToolTip="Keep only this mod's overrides of records that decide how an NPC looks (armor and armatures, textures, head parts, hair colors, races, outfits). Other overrides the search passes through are left out."/>
+                                        </StackPanel>
                                     </StackPanel>
 
                                      <Button Grid.Row="9" Grid.Column="0"

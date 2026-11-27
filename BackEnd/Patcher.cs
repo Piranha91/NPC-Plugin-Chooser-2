@@ -1167,6 +1167,18 @@ public class Patcher : OptionalUIModule
                                 List<IFormLinkGetter> discoveryRootLinks =
                                     NpcRootFieldCatalog.GetRootLinks(appearanceNpcRecord, discoveryRootFields);
 
+                                // "Appearance records only" (per mod, off by default): null when off, so
+                                // every override handler below behaves as it did before the option
+                                // existed. When on, the record types the mod's ticked roots point at,
+                                // extended along the declared appearance links (AppearanceRecordTypeCatalog;
+                                // cached per set of roots). It modifies whichever override mode is active:
+                                // the walk still visits what it visits today and collects only these
+                                // types; "Include All" keeps only these types.
+                                IReadOnlySet<Type>? appearanceOnlyTypes =
+                                    appearanceModSetting?.AppearanceOverridesOnly == true
+                                        ? AppearanceRecordTypeCatalog.Resolve(discoveryRootFields)
+                                        : null;
+
                                 // Null unless the user opted into own-copy template handling AND the
                                 // donor's chain resolved — see ResolveAppearanceTerminusRecord.
                                 //
@@ -1406,7 +1418,7 @@ public class Patcher : OptionalUIModule
                                                             appearanceModSetting.CorrespondingModKeys,
                                                             searchedOverrideFormKeysForGroup,
                                                             currentModFolderPaths,
-                                                            ct));
+                                                            ct, appearanceOnlyTypes));
                                                 }
                                                 else
                                                 {
@@ -1420,7 +1432,7 @@ public class Patcher : OptionalUIModule
                                                             searchedOverrideFormKeysForGroup,
                                                             currentModFolderPaths,
                                                             maxNestedIntervalDepth,
-                                                            ct));
+                                                            ct, appearanceOnlyTypes));
                                                 }
 
                                                 // Every record this step writes for the NPC, patched or
@@ -1686,7 +1698,7 @@ public class Patcher : OptionalUIModule
                                                         currentModFolderPaths,
                                                         ref overrideExceptionStrings,
                                                         searchedOverrideFormKeysForGroup,
-                                                        ct);
+                                                        ct, appearanceOnlyTypes);
 
                                                     // Bulk import copies overrides but does not bridge
                                                     // unoverridden parents (e.g. a vanilla Outfit above an
@@ -1704,7 +1716,7 @@ public class Patcher : OptionalUIModule
                                                                 currentModFolderPaths,
                                                                 ref overrideExceptionStrings,
                                                                 searchedOverrideFormKeysForGroup,
-                                                                ct));
+                                                                ct, appearanceOnlyTypes));
                                                     }
                                                 }
                                                 else
@@ -1727,7 +1739,7 @@ public class Patcher : OptionalUIModule
                                                         currentModFolderPaths,
                                                         ref overrideExceptionStrings,
                                                         searchedOverrideFormKeysForGroup,
-                                                        ct);
+                                                        ct, appearanceOnlyTypes);
                                                 }
 
                                                 if (overrideExceptionStrings.Any())
@@ -1881,7 +1893,7 @@ public class Patcher : OptionalUIModule
                                                             appearanceModSetting.CorrespondingModKeys,
                                                             searchedOverrideFormKeysForGroup,
                                                             currentModFolderPaths,
-                                                            ct));
+                                                            ct, appearanceOnlyTypes));
                                                 }
                                                 else
                                                 {
@@ -1895,7 +1907,7 @@ public class Patcher : OptionalUIModule
                                                             searchedOverrideFormKeysForGroup,
                                                             currentModFolderPaths,
                                                             maxNestedIntervalDepth,
-                                                            ct));
+                                                            ct, appearanceOnlyTypes));
                                                 }
 
                                                 foreach (var ctx in dependencyContexts)
@@ -2054,7 +2066,7 @@ public class Patcher : OptionalUIModule
                                                         currentModFolderPaths,
                                                         ref overrideExceptionStrings,
                                                         searchedOverrideFormKeysForGroup,
-                                                        ct);
+                                                        ct, appearanceOnlyTypes);
 
                                                     // Bulk import copies overrides but does not bridge
                                                     // unoverridden parents (e.g. a vanilla Outfit above an
@@ -2072,7 +2084,7 @@ public class Patcher : OptionalUIModule
                                                                 currentModFolderPaths,
                                                                 ref overrideExceptionStrings,
                                                                 searchedOverrideFormKeysForGroup,
-                                                                ct));
+                                                                ct, appearanceOnlyTypes));
                                                     }
                                                 }
                                                 else
@@ -2095,7 +2107,7 @@ public class Patcher : OptionalUIModule
                                                         currentModFolderPaths,
                                                         ref overrideExceptionStrings,
                                                         searchedOverrideFormKeysForGroup,
-                                                        ct);
+                                                        ct, appearanceOnlyTypes);
                                                 }
 
                                                 if (overrideExceptionStrings.Any())

@@ -117,6 +117,16 @@ public class ModSetting
 
     public int MaxNestedIntervalDepth { get; set; } = 2;
     public bool IncludeAllOverrides { get; set; } = false;
+
+    /// <summary>
+    /// "Appearance records only": modifies whichever override mode is active (Include or Include
+    /// As New, walking or "Include All"). When on, only this mod's overrides of appearance record
+    /// types are kept: the walk still passes through every record it passes through today, but
+    /// collects only those types, and "Include All" keeps only those types. The types are
+    /// <c>AppearanceRecordTypeCatalog.Resolve</c> of the mod's Override Roots. Off (the default,
+    /// and what a settings file written before the option existed loads as) changes nothing.
+    /// </summary>
+    public bool AppearanceOverridesOnly { get; set; } = false;
     public HashSet<ModKey> PluginsWithOverrideRecords { get; set; } = new();
     public bool IncludeOutfits { get; set; } = false;
     public bool CopyAssets { get; set; } = true;

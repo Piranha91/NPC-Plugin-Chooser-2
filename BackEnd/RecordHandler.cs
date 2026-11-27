@@ -1152,9 +1152,13 @@ public class RecordHandler
     /// appearance-descended links (skin, head texture, race, hair color, head parts, outfit) so
     /// non-appearance overrides (packages, factions, items, AI data) are never pulled into the
     /// output plugin as masters.
+    /// <para><paramref name="appearanceTypes"/> is the mod's "Appearance records only" option
+    /// (<see cref="AppearanceRecordTypeCatalog"/>): when given, the walk visits exactly the records
+    /// it visits without it, and only overrides of those record types are collected. Null (the
+    /// option is off) collects every override, as before the option existed.</para>
     /// </summary>
     public HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>>
-        DeepGetOverriddenDependencyRecords(IEnumerable<IFormLinkGetter> containedFormLinks, List<ModKey> relevantContextKeys, HashSet<FormKey> searchedFormKeys, HashSet<string> fallBackModFolderNames, int maxNestedIntervalDepth, CancellationToken ct)
+        DeepGetOverriddenDependencyRecords(IEnumerable<IFormLinkGetter> containedFormLinks, List<ModKey> relevantContextKeys, HashSet<FormKey> searchedFormKeys, HashSet<string> fallBackModFolderNames, int maxNestedIntervalDepth, CancellationToken ct, IReadOnlySet<Type>? appearanceTypes = null)
     {
         using var _ = ContextualPerformanceTracer.Trace("RecordHandler.DeepGetOverriddenDependencyRecords");
         foreach (var modKey in relevantContextKeys)
@@ -1170,7 +1174,7 @@ public class RecordHandler
         foreach (var link in containedFormLinks)
         {
             ct.ThrowIfCancellationRequested();
-            CollectOverriddenDependencyRecords(link, relevantContextKeys, dependencyContexts, maxNestedIntervalDepth, 0, searchedFormKeys, provenanceChain, ct);
+            CollectOverriddenDependencyRecordsCore(link, relevantContextKeys, dependencyContexts, maxNestedIntervalDepth, 0, searchedFormKeys, provenanceChain, ct, appearanceTypes);
         }
 
         if (NpcDiagnosticLogger.IsActive)
@@ -1193,10 +1197,13 @@ public class RecordHandler
     /// <param name="searchedFormKeys">FormKeys that have already been processed (will be updated).</param>
     /// <param name="fallBackModFolderNames">Fallback folder paths for plugin loading.</param>
     /// <param name="ct">Cancellation token.</param>
+    /// <param name="appearanceTypes">The mod's "Appearance records only" option
+    /// (<see cref="AppearanceRecordTypeCatalog"/>): when given, only overrides of those record
+    /// types are returned. Null (the option is off) returns every override.</param>
     /// <returns>A HashSet of all override record contexts found in the specified plugins.</returns>
     public HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>>
-        GetAllOverriddenDependencyRecords(List<ModKey> relevantContextKeys, HashSet<FormKey> searchedFormKeys, 
-            HashSet<string> fallBackModFolderNames, CancellationToken ct)
+        GetAllOverriddenDependencyRecords(List<ModKey> relevantContextKeys, HashSet<FormKey> searchedFormKeys,
+            HashSet<string> fallBackModFolderNames, CancellationToken ct, IReadOnlySet<Type>? appearanceTypes = null)
     {
         using var _ = ContextualPerformanceTracer.Trace("RecordHandler.GetAllOverriddenDependencyRecords");
         
@@ -1243,7 +1250,13 @@ public class RecordHandler
                 {
                     // This is an override record (originates from outside the mod's plugins)
                     searchedFormKeys.Add(record.FormKey);
-    
+
+                    // "Appearance records only": an override of any other record type is left out.
+                    if (appearanceTypes != null && !AppearanceRecordTypeCatalog.Contains(appearanceTypes, record))
+                    {
+                        continue;
+                    }
+
                     try
                     {
                         var context = linkCache.ResolveContext(record.FormKey, record.Registration.GetterType);
@@ -1266,12 +1279,15 @@ public class RecordHandler
     /// <summary>
     /// Duplicates ALL override records from the specified plugins as new records.
     /// This is a simpler but less targeted approach compared to DuplicateInOverrideRecords.
+    /// <para><paramref name="appearanceTypes"/> is the mod's "Appearance records only" option
+    /// (<see cref="AppearanceRecordTypeCatalog"/>): when given, only overrides of those record
+    /// types are duplicated. Null (the option is off) duplicates every override.</para>
     /// </summary>
     public HashSet<IMajorRecord>
-        DuplicateAllOverrideRecordsAsNew(IMajorRecord rootRecord, List<ModKey> relevantContextKeys, 
+        DuplicateAllOverrideRecordsAsNew(IMajorRecord rootRecord, List<ModKey> relevantContextKeys,
             ModKey rootContextKey, ModKey npcSourceModKey, bool handleInjectedRecords,
-            HashSet<string> fallBackModFolderNames, ref List<string> exceptionStrings, 
-            HashSet<FormKey> searchedFormKeys, CancellationToken ct)
+            HashSet<string> fallBackModFolderNames, ref List<string> exceptionStrings,
+            HashSet<FormKey> searchedFormKeys, CancellationToken ct, IReadOnlySet<Type>? appearanceTypes = null)
     {
         using var _ = ContextualPerformanceTracer.Trace("RecordHandler.DuplicateAllOverrideRecordsAsNew");
         HashSet<IMajorRecord> mergedInRecords = new();
@@ -1318,7 +1334,13 @@ public class RecordHandler
                         remappedOverrideMap.TryAdd(record.FormKey, _currentDuplicateInMappings[record.FormKey]);
                         continue;
                     }
-                    
+
+                    // "Appearance records only": an override of any other record type is left out.
+                    if (appearanceTypes != null && !AppearanceRecordTypeCatalog.Contains(appearanceTypes, record))
+                    {
+                        continue;
+                    }
+
                     try
                     {
                         var context = linkCache.ResolveContext(record.FormKey, record.Registration.GetterType);
@@ -1367,8 +1389,22 @@ public class RecordHandler
         return mergedInRecords;
     }
     
+    // The walk with no "Appearance records only" filter. Kept under its own name and signature
+    // because RecordHandlerDeepChainTests invokes it by reflection with positional arguments.
     private void CollectOverriddenDependencyRecords(IFormLinkGetter formLinkGetter, List<ModKey> relevantContextKeys,
         HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> collectedRecords, int maxNestedIntervalDepth, int currentDepth, HashSet<FormKey> searchedFormKeys, List<RecordProvenanceDiag.Node>? provenanceChain, CancellationToken ct)
+    {
+        CollectOverriddenDependencyRecordsCore(formLinkGetter, relevantContextKeys, collectedRecords,
+            maxNestedIntervalDepth, currentDepth, searchedFormKeys, provenanceChain, ct, appearanceTypes: null);
+    }
+
+    /// <summary>
+    /// <paramref name="appearanceTypes"/> non-null is the mod's "Appearance records only" option:
+    /// every record is visited exactly as without it (same links, same depth counter, the mod's
+    /// version of each record), and an override is COLLECTED only when its record type is in the set.
+    /// </summary>
+    private void CollectOverriddenDependencyRecordsCore(IFormLinkGetter formLinkGetter, List<ModKey> relevantContextKeys,
+        HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> collectedRecords, int maxNestedIntervalDepth, int currentDepth, HashSet<FormKey> searchedFormKeys, List<RecordProvenanceDiag.Node>? provenanceChain, CancellationToken ct, IReadOnlySet<Type>? appearanceTypes)
     {
         ct.ThrowIfCancellationRequested();
         if (formLinkGetter.IsNull)
@@ -1380,8 +1416,8 @@ public class RecordHandler
         {
             ContinueOnFreshStack(() =>
             {
-                CollectOverriddenDependencyRecords(formLinkGetter, relevantContextKeys, collectedRecords,
-                    maxNestedIntervalDepth, currentDepth, searchedFormKeys, provenanceChain, ct);
+                CollectOverriddenDependencyRecordsCore(formLinkGetter, relevantContextKeys, collectedRecords,
+                    maxNestedIntervalDepth, currentDepth, searchedFormKeys, provenanceChain, ct, appearanceTypes);
                 return true;
             });
             return;
@@ -1407,7 +1443,10 @@ public class RecordHandler
             {
                 var context = scopedCache.ResolveContext(formLinkGetter);
                 currentDepth = 0; // reset the interval search
-                if (!relevantContextKeys.Contains(formLinkGetter.FormKey.ModKey)) // this is an override rather than a new record
+                if (!relevantContextKeys.Contains(formLinkGetter.FormKey.ModKey) // this is an override rather than a new record
+                    // "Appearance records only": an override of another record type is walked
+                    // through below, in the mod's version, exactly as if it had been collected.
+                    && (appearanceTypes == null || AppearanceRecordTypeCatalog.Contains(appearanceTypes, modRecord)))
                 {
                     collectedRecords.Add(context);
                     RecordProvenanceDiag.RecordOverrideDiscoveryChain(formLinkGetter.FormKey, modRecord.EditorID, provenanceChain);
@@ -1448,7 +1487,7 @@ public class RecordHandler
             var sublinks = modRecord.EnumerateFormLinks();
             foreach (var subLink in sublinks.Where(x => !searchedFormKeys.Contains(x.FormKey)).ToArray())
             {
-                CollectOverriddenDependencyRecords(subLink, relevantContextKeys, collectedRecords, maxNestedIntervalDepth, currentDepth, searchedFormKeys, provenanceChain, ct);
+                CollectOverriddenDependencyRecordsCore(subLink, relevantContextKeys, collectedRecords, maxNestedIntervalDepth, currentDepth, searchedFormKeys, provenanceChain, ct, appearanceTypes);
             }
             provenanceChain?.RemoveAt(provenanceChain.Count - 1);
         }
@@ -1486,9 +1525,14 @@ public class RecordHandler
     /// the RECIPIENT's outfit when discovery walks the donor (Include Outfits off), or extra roots
     /// alongside an 'Include All' bulk import. <paramref name="rootRecord"/> still gets its links
     /// remapped against everything duplicated here.
+    /// <para><paramref name="appearanceTypes"/> is the mod's "Appearance records only" option
+    /// (<see cref="AppearanceRecordTypeCatalog"/>): when given, the walk visits exactly the records
+    /// it visits without it, and only overrides of those record types are duplicated (see
+    /// <see cref="TraverseAndDuplicateInOverrideRecordsCore"/> for what bridges them). Null (the
+    /// option is off) duplicates every override, as before the option existed.</para>
     /// </summary>
     public HashSet<IMajorRecord>
-        DuplicateInOverrideRecordsFromLinks(IReadOnlyCollection<IFormLinkGetter> rootLinks, IMajorRecord rootRecord, List<ModKey> relevantContextKeys, ModKey rootContextKey, ModKey npcSourceModKey, bool handleInjectedRecords, int maxNestedIntervalDepth, HashSet<string> fallBackModFolderNames, ref List<string> exceptionStrings, HashSet<FormKey> searchedFormKeys, CancellationToken ct)
+        DuplicateInOverrideRecordsFromLinks(IReadOnlyCollection<IFormLinkGetter> rootLinks, IMajorRecord rootRecord, List<ModKey> relevantContextKeys, ModKey rootContextKey, ModKey npcSourceModKey, bool handleInjectedRecords, int maxNestedIntervalDepth, HashSet<string> fallBackModFolderNames, ref List<string> exceptionStrings, HashSet<FormKey> searchedFormKeys, CancellationToken ct, IReadOnlySet<Type>? appearanceTypes = null)
     {
         using var _ = ContextualPerformanceTracer.Trace("RecordHandler.DuplicateInOverrideRecords");
         HashSet<IMajorRecord> mergedInRecords = new();
@@ -1506,7 +1550,7 @@ public class RecordHandler
         foreach (var link in containedFormLinks)
         {
             ct.ThrowIfCancellationRequested();
-            TraverseAndDuplicateInOverrideRecords(link, relevantContextKeys, _environmentStateProvider.OutputMod, remappedOverrideMap, mergedInRecords, maxNestedIntervalDepth, 0, ref exceptionStrings, searchedFormKeys, provenanceChain, ct);
+            TraverseAndDuplicateInOverrideRecordsCore(link, relevantContextKeys, _environmentStateProvider.OutputMod, remappedOverrideMap, mergedInRecords, maxNestedIntervalDepth, 0, ref exceptionStrings, searchedFormKeys, provenanceChain, ct, appearanceTypes);
         }
         
         foreach (var newRecord in mergedInRecords.And(rootRecord).ToArray())
@@ -1526,10 +1570,39 @@ public class RecordHandler
         return mergedInRecords;
     }
 
+    // The walk with no "Appearance records only" filter. Kept under its own name and signature
+    // because RecordHandlerBridgeParentTests and RecordHandlerDeepChainTests invoke it by
+    // reflection with positional arguments.
     private bool TraverseAndDuplicateInOverrideRecords(IFormLinkGetter formLinkGetter, List<ModKey> relevantContextKeys,
         ISkyrimMod outputMod,
         Dictionary<FormKey, FormKey> remappedSubLinks, HashSet<IMajorRecord> mergedInRecords,
         int maxNestedIntervalDepth, int currentDepth, ref List<string> exceptionStrings, HashSet<FormKey> searchedFormKeys, List<RecordProvenanceDiag.Node>? provenanceChain, CancellationToken ct)
+    {
+        return TraverseAndDuplicateInOverrideRecordsCore(formLinkGetter, relevantContextKeys, outputMod,
+            remappedSubLinks, mergedInRecords, maxNestedIntervalDepth, currentDepth, ref exceptionStrings,
+            searchedFormKeys, provenanceChain, ct, appearanceTypes: null);
+    }
+
+    /// <summary>
+    /// <paramref name="appearanceTypes"/> non-null is the mod's "Appearance records only" option.
+    /// Every record is visited exactly as without it (same links, same depth counter, the mod's
+    /// version of each record); what changes is what is copied:
+    /// <list type="bullet">
+    /// <item>an override whose record type is in the set is duplicated, as always;</item>
+    /// <item>an override of any other type is LEFT OUT: walked through in the mod's version, not
+    /// duplicated;</item>
+    /// <item>when something below a left-out override was duplicated, the record still has to be
+    /// bridged or nothing reaches the copy. The bridge is a copy of the LOAD ORDER's version of
+    /// it, as for any record the mod does not carry, never the mod's version: the mod's edit to
+    /// that record is exactly what the option leaves out. If the load order's version does not
+    /// point at anything that was copied (the link is one the mod added), there is nothing to
+    /// bridge and no copy is made.</item>
+    /// </list>
+    /// </summary>
+    private bool TraverseAndDuplicateInOverrideRecordsCore(IFormLinkGetter formLinkGetter, List<ModKey> relevantContextKeys,
+        ISkyrimMod outputMod,
+        Dictionary<FormKey, FormKey> remappedSubLinks, HashSet<IMajorRecord> mergedInRecords,
+        int maxNestedIntervalDepth, int currentDepth, ref List<string> exceptionStrings, HashSet<FormKey> searchedFormKeys, List<RecordProvenanceDiag.Node>? provenanceChain, CancellationToken ct, IReadOnlySet<Type>? appearanceTypes)
     {
         ct.ThrowIfCancellationRequested();
         if (formLinkGetter.IsNull)
@@ -1542,9 +1615,9 @@ public class RecordHandler
             // A ref parameter can't be captured, so the hop works on a local and copies it back.
             var hopExceptionStrings = exceptionStrings;
             bool hopResult = ContinueOnFreshStack(() =>
-                TraverseAndDuplicateInOverrideRecords(formLinkGetter, relevantContextKeys, outputMod,
+                TraverseAndDuplicateInOverrideRecordsCore(formLinkGetter, relevantContextKeys, outputMod,
                     remappedSubLinks, mergedInRecords, maxNestedIntervalDepth, currentDepth,
-                    ref hopExceptionStrings, searchedFormKeys, provenanceChain, ct));
+                    ref hopExceptionStrings, searchedFormKeys, provenanceChain, ct, appearanceTypes));
             exceptionStrings = hopExceptionStrings;
             return hopResult;
         }
@@ -1556,6 +1629,8 @@ public class RecordHandler
 
         bool parentRecordShouldBeMergedIn = false;
         bool currentRecordHasBeenMergedIn = false;
+        // "Appearance records only": the mod overrides this record, and its type is not in the set.
+        bool overrideLeftOut = false;
         IMajorRecordGetter? traversedModRecord = null;
         // Source-side EditorID of the record this link resolved to, captured before any
         // duplication mutates it (the duplicate gets a plugin-name suffix). Used for the
@@ -1582,6 +1657,17 @@ public class RecordHandler
                         // no need to add it to mergedInRecords because its AssetLinks have already been processed during the previous iteration
                         remappedSubLinks.TryAdd(formLinkGetter.FormKey, _currentDuplicateInMappings[formLinkGetter.FormKey]);
                         return true;
+                    }
+
+                    if (appearanceTypes != null &&
+                        !AppearanceRecordTypeCatalog.Contains(appearanceTypes, traversedModRecord))
+                    {
+                        // Left out: not duplicated. traversedModRecord stays the MOD's version, so
+                        // the descent below follows the same links it follows with the option off.
+                        overrideLeftOut = true;
+                        if (NpcDiagnosticLogger.IsActive)
+                            NpcDiagnosticLogger.Log($"  Override left out (appearance records only): {formLinkGetter.FormKey} ({modKey}) [{traversedModRecord.Registration.Name}] EditorID='{traversedModRecord.EditorID}'.");
+                        break;
                     }
 
                     var duplicate = modContext.DuplicateIntoAsNewRecord(outputMod);
@@ -1658,7 +1744,7 @@ public class RecordHandler
                     continue;
                 }
 
-                bool subRecordsAreOverrides = TraverseAndDuplicateInOverrideRecords(subLink, relevantContextKeys, outputMod, remappedSubLinks, mergedInRecords, maxNestedIntervalDepth, currentDepth, ref exceptionStrings, searchedFormKeys, provenanceChain, ct);
+                bool subRecordsAreOverrides = TraverseAndDuplicateInOverrideRecordsCore(subLink, relevantContextKeys, outputMod, remappedSubLinks, mergedInRecords, maxNestedIntervalDepth, currentDepth, ref exceptionStrings, searchedFormKeys, provenanceChain, ct, appearanceTypes);
                 if (subRecordsAreOverrides)
                 {
                     parentRecordShouldBeMergedIn = true; // merge in this record (even if it's not itself contained in the source mod) because this record's subrecords have been merged in.
@@ -1677,7 +1763,44 @@ public class RecordHandler
                 // like a direct override duplicate — the outfit-directive delivery looks the
                 // chain HEAD up there (Patcher.DeliverIncludeAsNewOutfitDirectives), and a later
                 // NPC in the batch must reuse this copy instead of minting another.
-                if (_currentDuplicateInMappings.TryGetValue(formLinkGetter.FormKey, out var existingBridge))
+                //
+                // "Appearance records only": when this record is an override the option left out,
+                // traversedModRecord is still the MOD's version (the descent walked it). The
+                // bridge must not carry the mod's edit, so it is made from the load order's
+                // version instead, exactly what a record the mod does not carry is bridged from.
+                string? leftOutBridgeProblem = null;
+                if (overrideLeftOut && !_currentDuplicateInMappings.ContainsKey(formLinkGetter.FormKey))
+                {
+                    var loadOrderVersion = TryResolveInOriginPlugin(formLinkGetter);
+                    if (loadOrderVersion == null)
+                    {
+                        leftOutBridgeProblem = "the load order holds no version of it";
+                    }
+                    else if (!loadOrderVersion.EnumerateFormLinks().Any(l => remappedSubLinks.ContainsKey(l.FormKey)))
+                    {
+                        // The copy below was reached through a link only the mod's version has.
+                        // A copy of the load order's version would point at nothing that was
+                        // copied: a private duplicate of an unchanged record, bridging nothing.
+                        leftOutBridgeProblem = "the load order's version points at none of the copied records";
+                    }
+                    else
+                    {
+                        traversedModRecord = loadOrderVersion;
+                        sourceEditorId = loadOrderVersion.EditorID;
+                    }
+                }
+
+                if (leftOutBridgeProblem != null)
+                {
+                    // Same outcome as a bridge that cannot be built (below): nothing under this
+                    // record is deliverable through it, so no ancestor is bridged for it.
+                    parentRecordShouldBeMergedIn = false;
+                    if (NpcDiagnosticLogger.IsActive)
+                        NpcDiagnosticLogger.Log($"  Left-out override {formLinkGetter.FormKey} " +
+                            $"({Auxilliary.GetLogString(traversedModRecord, _settings.LocalizationLanguage)}) " +
+                            $"is not bridged (appearance records only): {leftOutBridgeProblem}.");
+                }
+                else if (_currentDuplicateInMappings.TryGetValue(formLinkGetter.FormKey, out var existingBridge))
                 {
                     remappedSubLinks.TryAdd(formLinkGetter.FormKey, existingBridge);
                 }
@@ -1721,6 +1844,39 @@ public class RecordHandler
         }
 
         return parentRecordShouldBeMergedIn;
+    }
+
+    /// <summary>
+    /// The version of a record held by the plugin its FormKey belongs to, read from the load
+    /// order: the same lookup the two walks above make for a record the mod does not carry
+    /// (their "otherwise, traverse the parent record" step). Null when that plugin is not in the
+    /// load order or holds no such record (an injected record).
+    /// </summary>
+    private IMajorRecordGetter? TryResolveInOriginPlugin(IFormLinkGetter formLinkGetter)
+    {
+        var parentmod = formLinkGetter.FormKey.ModKey;
+        lock (GetModLinkCacheLock(parentmod))
+        {
+            if (!_modLinkCaches.ContainsKey(parentmod))
+            {
+                var parentListing = _environmentStateProvider.LoadOrder?.TryGetValue(parentmod);
+                if (parentListing != null && parentListing.Mod != null)
+                {
+                    _modLinkCachePlugins[parentListing.ModKey] = parentListing.Mod;
+                    _modLinkCacheSourcePaths[parentListing.ModKey] = NormalizePath(
+                        Path.Combine(_environmentStateProvider.DataFolderPath, parentmod.ToString()));
+                    _modLinkCaches[parentListing.ModKey] = new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(parentListing.Mod, new LinkCachePreferences());
+                }
+            }
+        }
+
+        IMajorRecordGetter? original = null;
+        if (_modLinkCaches.TryGetValue(parentmod, out var parentCache) && parentCache != null &&
+            parentCache.TryResolve(formLinkGetter, out original))
+        {
+            return original;
+        }
+        return null;
     }
     #endregion
 
