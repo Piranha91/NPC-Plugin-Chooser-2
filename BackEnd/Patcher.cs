@@ -2240,6 +2240,23 @@ public class Patcher : OptionalUIModule
                                     ApplySkyPatcherDirectives(npcFormKey, winningNpcOverride, patchNpc,
                                         includeOutfit || (wigForward?.OutfitForwarded ?? false));
 
+                                    // Include Outfit on an NPC its template dresses: the directive
+                                    // replaces the template's clothing in game. Wanted (the option is
+                                    // opt-in), so nothing is withheld; the end-of-run report says what
+                                    // the option did. A null outfit writes no directive and replaces
+                                    // nothing.
+                                    if (includeOutfit && !patchNpc.DefaultOutfit.IsNull &&
+                                        _settings.OutfitDirectiveReplacesTemplatedInventory(winningNpcOverride))
+                                    {
+                                        NpcWarningReporter.Record(NpcWarningKind.TemplatedOutfitReplaced,
+                                            npcIdentifier,
+                                            detail: $"clothing template {winningNpcOverride.Template.FormKey}",
+                                            technicalDetail:
+                                            $"template {winningNpcOverride.Template.FormKey}; " +
+                                            $"outfitDefault={patchNpc.DefaultOutfit.FormKey}",
+                                            modName: selectedModDisplayName);
+                                    }
+
                                     if (recordOverrideHandlingMode == RecordOverrideHandlingMode.IncludeAsNew)
                                     {
                                         DeliverIncludeAsNewOutfitDirectives(npcFormKey, winningNpcOverride,

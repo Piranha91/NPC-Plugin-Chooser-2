@@ -546,6 +546,27 @@ public class WigHandlingModeResolutionTests
         settings.GetEffectiveWigModeForNpc(ModWithWig(), npc).Should().Be(WigHandlingMode.ForwardToOutfit);
     }
 
+    [Fact]
+    public void SkyPatcherMode_AnOutfitDirectiveReplacesWhatTheTemplateGives()
+    {
+        // The mirror image of the inert field: the same NPC, dressed by its template, DOES change
+        // clothes when the outfit arrives by directive (a masked cultist appeared in plain robes on
+        // the in-game bench, 2026-11-25). Wanted when Include Outfit is on; the user is told.
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var templated = TemplatedNpc(mod, NpcConfiguration.TemplateFlag.Inventory);
+        var plain = MutagenFixtures.NewNpc(mod, "Plain");
+
+        var skyPatcher = NewSettings(PatchingMode.CreateAndPatch, skyPatcher: true,
+            globalDefault: WigHandlingMode.ForwardToOutfit);
+        skyPatcher.OutfitDirectiveReplacesTemplatedInventory(templated).Should().BeTrue();
+        skyPatcher.OutfitDirectiveReplacesTemplatedInventory(plain).Should().BeFalse("nothing templated to replace");
+        skyPatcher.OutfitDirectiveReplacesTemplatedInventory(null).Should().BeFalse();
+
+        var records = NewSettings(PatchingMode.CreateAndPatch, globalDefault: WigHandlingMode.ForwardToOutfit);
+        records.OutfitDirectiveReplacesTemplatedInventory(templated).Should()
+            .BeFalse("in record mode the written outfit is never worn; that is the inert-outfit report");
+    }
+
     [Theory]
     [InlineData(WigHandlingMode.ForwardToSkin)]
     [InlineData(WigHandlingMode.ConvertToHeadParts)]

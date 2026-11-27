@@ -41,6 +41,15 @@ public enum NpcWarningKind
     /// wig-based mods retire the hair baked into a FaceGen head — are exempt for the same reason.</summary>
     TexturelessShapes,
 
+    /// <summary>"Include Outfit" delivered an outfit, by SkyPatcher directive, to an NPC that is
+    /// normally dressed by its Inventory template. The directive sets the outfit on the actor and
+    /// the template's is no longer worn: a masked Dragonborn cultist appeared in the mod's plain
+    /// robes (in-game bench, 2026-11-25). Deliberate (Include Outfit is opt-in: user decision of
+    /// 2026-11-26), so the selection is valid and is patched; this only tells the user what the
+    /// option did. The record-mode counterpart, where the written outfit is never worn, is the
+    /// Patcher's inert-outfit report.</summary>
+    TemplatedOutfitReplaced,
+
     // NOTE (user standard, 2026-08-02): a kind belongs in this enum — i.e. in the colored,
     // grouped WARNING report — only when the user would NOTICE the issue in game (dark face,
     // missing meshes/textures, CTD-class null references, wrong outfits). Findings that are real
@@ -175,6 +184,15 @@ public static class NpcWarningReporter
             "an appearance mod that relies on textures from a separate mod — if so, add the folder " +
             "of the mod that provides the textures to the appearance mod's entry in the Mods menu:",
 
+        NpcWarningKind.TemplatedOutfitReplaced =>
+            "'Include Outfit' is turned on for the appearance mods selected for the following " +
+            "NPCs, and each of these NPCs normally gets its clothing from a template NPC instead " +
+            "of from its own record. The outfit delivered for 'Include Outfit' replaces the " +
+            "clothing the template gives these NPCs in game, so anything the template supplied " +
+            "(a mask, a uniform, armor) is no longer worn. The appearance of these NPCs was " +
+            "patched normally. To keep the templated clothing, turn off 'Include Outfit' for " +
+            "the appearance mod:",
+
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
     };
 
@@ -220,6 +238,13 @@ public static class NpcWarningReporter
             "Every texture slot of each listed shape failed to resolve in the selected mod's " +
             "folders and archives, the game Data folder, and the vanilla archives. Paths are " +
             "Data-relative.",
+
+        NpcWarningKind.TemplatedOutfitReplaced =>
+            "The NPC's winning record in the load order has a Template and the Inventory " +
+            "template flag, so the engine dresses the NPC from the template and ignores the " +
+            "record's own DefaultOutfit. A SkyPatcher outfitDefault directive sets the outfit " +
+            "on the actor base at run time and is honoured regardless of that flag. Each entry " +
+            "names the template and the outfit the directive sets.",
 
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
     };

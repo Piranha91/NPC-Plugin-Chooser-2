@@ -294,6 +294,28 @@ public class Settings
         !SkyPatcherDirectivesAvailable
         && (UsesRecast || OutfitFieldIsInertByTemplate(writtenRecord));
 
+    /// <summary>
+    /// True when an outfit delivered for this NPC REPLACES what its Inventory template gives it:
+    /// the NPC is dressed by a template, and the outfit arrives by SkyPatcher directive, which sets
+    /// it on the actor regardless of the template flag. The mirror image of
+    /// <see cref="OutfitFieldIsInert"/>, where the same NPC's outfit is written to a record field
+    /// the engine never reads. Deliberate when Include Outfit is on (it is opt-in); callers use
+    /// this to tell the user what the option did, not to block it.
+    /// </summary>
+    /// <param name="liveRecord">The NPC as the game has it: the winning override in the load
+    /// order, whatever the patching mode, because a directive acts on the live actor.</param>
+    public bool OutfitDirectiveReplacesTemplatedInventory(INpcGetter? liveRecord) =>
+        SkyPatcherDirectivesAvailable && OutfitFieldIsInertByTemplate(liveRecord);
+
+    /// <summary>
+    /// True when the engine dresses <paramref name="record"/> from a template: it names a Template
+    /// and carries the Inventory template flag. The record test alone, whatever the output mode;
+    /// <see cref="OutfitFieldIsInert"/> and <see cref="OutfitDirectiveReplacesTemplatedInventory"/>
+    /// say what that means for an outfit this app delivers. Read by the NPC list, which marks a
+    /// template-dressed NPC whose selection includes an outfit.
+    /// </summary>
+    public static bool NpcIsDressedByTemplate(INpcGetter? record) => OutfitFieldIsInertByTemplate(record);
+
     private static bool OutfitFieldIsInertByTemplate(INpcGetter? writtenRecord) =>
         writtenRecord != null
         && writtenRecord.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Inventory)
