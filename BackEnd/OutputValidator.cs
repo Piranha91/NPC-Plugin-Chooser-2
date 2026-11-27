@@ -396,6 +396,18 @@ public class OutputValidator
 
         log.AppendLine($"NPC {displayName} [{npcFk}] -> '{selectedModName}' (donor {donorFk}, winner {winningModKey.FileName})");
 
+        // An entry the patcher wrote for this NPC because it takes its face from a patched NPC
+        // (Patcher.MirrorAppearanceOntoInheritingNpcs). It names the TEMPLATE's surrogate on purpose,
+        // so none of the checks below apply: they would grade that surrogate against the selection
+        // made on this NPC, and the "not patched" note would say the load order decides a face this
+        // app's output in fact delivers. Asked first for that reason. The surrogate itself is graded
+        // on the template's own rows.
+        if (FindInheritedEntrySource(npcFk, recipientRecord, linkCache, npc2IniMap, recastIndex) is { } inheritedFrom)
+        {
+            NoteInheritedEntry(npcFk, inheritedFrom, displayName, selectedModName, lastRun, linkCache, result, log);
+            return;
+        }
+
         // Did the last run take responsibility for this NPC at all? Everything below grades the
         // output against the selection, which only means something once the answer is yes.
         if (lastRun != null && !CheckLastRunCoverage(npcFk, displayName, selectedModName, lastRun, result, log))
@@ -1190,6 +1202,128 @@ public class OutputValidator
             Details = chainText,
         });
         log.AppendLine($"  TEMPLATE -> {templateName} [{templateRecord.FormKey}] (hasSelection={hasSelection}); warned");
+    }
+
+    /// <summary>The surrogate this app's own deployed config names for <paramref name="npcFk"/>: the
+    /// <c>copyVisualStyle</c> of its SkyPatcher line, or the <c>face</c> of its Recast block. Null
+    /// when the backend in use has no entry for it.</summary>
+    private FormKey? OwnEntrySurrogate(
+        FormKey npcFk,
+        Dictionary<string, Npc2SkyPatcherLine>? npc2IniMap,
+        RecastIndex recastIndex)
+    {
+        if (npc2IniMap != null)
+        {
+            return npc2IniMap.TryGetValue(FormKeyToSkyPatcherKey(npcFk), out var line) && line.HasSurrogate
+                ? line.Surrogate
+                : null;
+        }
+
+        if (_settings.UsesRecast)
+        {
+            return recastIndex.Npc2File?.Faces.LastOrDefault(f => npcFk.Equals(f.Target.FormKey))?.Source.FormKey;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Recognises an entry the patcher wrote for an NPC that takes its face from a patched NPC
+    /// (<c>Patcher.MirrorAppearanceOntoInheritingNpcs</c>): the NPC is Traits-templated and its entry
+    /// names the same surrogate as the entry of an NPC on its template chain. An NPC patched itself
+    /// always has a surrogate of its own, so the shared surrogate is what tells the two apart, with
+    /// or without a run ledger. Returns that chain member, or null.
+    /// </summary>
+    private FormKey? FindInheritedEntrySource(
+        FormKey npcFk,
+        INpcGetter? record,
+        ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
+        Dictionary<string, Npc2SkyPatcherLine>? npc2IniMap,
+        RecastIndex recastIndex)
+    {
+        if (!Auxilliary.IsValidTemplatedNpc(record)) return null;
+        if (OwnEntrySurrogate(npcFk, npc2IniMap, recastIndex) is not { } surrogate) return null;
+
+        var visited = new HashSet<FormKey> { npcFk };
+        INpcGetter? current = record;
+        for (int depth = 0; depth < 25 && current != null && Auxilliary.IsValidTemplatedNpc(current); depth++)
+        {
+            var next = current.Template.FormKey;
+            if (!visited.Add(next)) return null;
+            if (OwnEntrySurrogate(next, npc2IniMap, recastIndex) is { } templateSurrogate &&
+                templateSurrogate.Equals(surrogate))
+            {
+                return next;
+            }
+
+            current = linkCache.ResolveAllContexts<INpc, INpcGetter>(next).FirstOrDefault()?.Record;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The one row for a selected NPC whose entry in this app's output is its template's
+    /// (<see cref="FindInheritedEntrySource"/>). The face it shows is the one selected for
+    /// <paramref name="templateFk"/>, delivered by this app's output rather than left to the load
+    /// order. Info when the last run recorded why the NPC's own selection was not applied (the user
+    /// was shown it); without that record, a Warning when the template's selection is a different
+    /// mod and nothing when it is the same one, as for every other Traits-templated NPC.
+    /// </summary>
+    private void NoteInheritedEntry(
+        FormKey npcFk,
+        FormKey templateFk,
+        string displayName,
+        string selectedModName,
+        NpcToken? lastRun,
+        ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
+        ValidationRunResult result,
+        StringBuilder log)
+    {
+        var templateRecord = linkCache.ResolveAllContexts<INpc, INpcGetter>(templateFk).FirstOrDefault()?.Record;
+        string templateName = templateRecord != null ? DescribeNpc(templateRecord) : templateFk.ToString();
+
+        bool templateHasSelection = _settings.SelectedAppearanceMods.TryGetValue(templateFk, out var templateSelection)
+                                    && !string.IsNullOrEmpty(templateSelection.ModName);
+        bool sameMod = templateHasSelection &&
+                       string.Equals(templateSelection.ModName, selectedModName, StringComparison.OrdinalIgnoreCase);
+
+        string? skipReason = null;
+        if (lastRun != null && !lastRun.ProcessedNpcs.ContainsKey(npcFk))
+        {
+            lastRun.SkippedNpcs.TryGetValue(npcFk, out skipReason);
+        }
+
+        log.AppendLine($"  INHERITED ENTRY from {templateName} [{templateFk}] " +
+                       $"(templateSelection={(templateHasSelection ? templateSelection.ModName : "none")}, " +
+                       $"sameMod={sameMod}, skipRecorded={skipReason != null})");
+
+        if (skipReason == null && sameMod)
+        {
+            // The template carries the same choice, so the user gets what they picked. Nothing to say.
+            return;
+        }
+
+        string whose = templateHasSelection
+            ? $"'{templateName}', which is set to '{templateSelection.ModName}'"
+            : $"'{templateName}'";
+
+        result.Issues.Add(new ValidationIssue
+        {
+            Severity = skipReason != null ? ValidationSeverity.Info : ValidationSeverity.Warning,
+            Check = ValidationCheckKind.Template,
+            NpcDisplayName = displayName,
+            NpcFormKey = npcFk.ToString(),
+            SelectedMod = selectedModName,
+            Issue = skipReason != null
+                ? $"Not patched with '{selectedModName}'. This NPC takes its appearance from another NPC (the Traits template flag): " +
+                  $"{whose}. The last run gave it that NPC's appearance, so that is what it shows in game."
+                : $"You selected '{selectedModName}' for this NPC, but it takes its appearance from another NPC (the Traits template flag): " +
+                  $"{whose}. This app's output gives it that NPC's appearance, so that is what it shows in game. " +
+                  $"To change it, select '{selectedModName}' for '{templateName}' as well.",
+            WinningSource = $"{templateName} [{templateFk}]",
+            Details = skipReason ?? $"The entry for this NPC names the same surrogate as the entry for {templateFk}.",
+        });
     }
 
     /// <summary>What <see cref="RedirectSurrogateToTemplate"/> decided about a SkyPatcher surrogate.</summary>

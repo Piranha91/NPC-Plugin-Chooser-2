@@ -144,6 +144,11 @@ public class Patcher : OptionalUIModule
     // the copy-time check in CopyAppearanceData and by BuildDanglingMasterDiagnostics.
     private HashSet<ModKey> _allowedMasterKeys = new();
 
+    // The load order's winning NPC records that carry a Template and the Traits flag, read once per
+    // run for MirrorAppearanceOntoInheritingNpcs: a split run asks once per output plugin, and the
+    // load order does not change between them. Dropped at the first iteration of every run.
+    private List<INpcGetter>? _traitsTemplatedNpcsOfRun;
+
     // RecastOnly cannot deliver keywords (Recast has no keyword support and there is no ini).
     // Collected per iteration so the run log names each affected mod once.
     private readonly HashSet<string> _recastOnlyDroppedKeywordMods = new(StringComparer.OrdinalIgnoreCase);
@@ -620,7 +625,13 @@ public class Patcher : OptionalUIModule
         }
     }
 
-    public async Task RunPatchingLogic(List<KeyValuePair<FormKey, ScreeningResult>> selectionsToProcess, bool showFinalMessage, bool isFirstIteration, CancellationToken ct)
+    /// <param name="selectionsOfWholeRun">
+    /// Split output only: every selection the run patches, across ALL its output plugins. Lets
+    /// <see cref="MirrorAppearanceOntoInheritingNpcs"/> leave an NPC alone that another output plugin
+    /// of the same run patches itself. Null when this call is the whole run.
+    /// </param>
+    public async Task RunPatchingLogic(List<KeyValuePair<FormKey, ScreeningResult>> selectionsToProcess, bool showFinalMessage, bool isFirstIteration, CancellationToken ct,
+        IReadOnlySet<FormKey>? selectionsOfWholeRun = null)
     {
         ResetLog();
         UpdateProgress(0, 1, "Initializing...");
@@ -666,6 +677,7 @@ public class Patcher : OptionalUIModule
             {
                 _assetHandler.Initialize(); // asset handler should only be reinitialized once regardless of how many output plugins there are.
                 GenerateKeywords();
+                _traitsTemplatedNpcsOfRun = null;
                 _patchedRecordOwners.Clear();
                 _patchedRecordTypes.Clear();
                 _npcAppearanceSources.Clear();
@@ -2323,6 +2335,12 @@ public class Patcher : OptionalUIModule
                         await _assetHandler.ResolveRuntimeDependenciesAsync(_currentRunOutputAssetPath);
                     LogRuntimeDependencySummary(runtimeDependencies);
 
+                    // Runtime back ends: NPCs that take their face from an NPC patched above get an
+                    // entry of their own, naming that NPC's surrogate (see the method). After every
+                    // NPC has its entry and before the configs are written; it adds no record and no
+                    // file, so the sweep below sees the same references with or without it.
+                    MirrorAppearanceOntoInheritingNpcs(selectionsToProcess, selectionsOfWholeRun);
+
                     // Any record minted under a new FormKey that nothing references is dead cargo:
                     // copies are removed, anything this run authored is reported (neutral note, not
                     // a warning) — see PruneAndLogOrphanedDuplicates. Must run after every NPC (and
@@ -3477,6 +3495,142 @@ public class Patcher : OptionalUIModule
         if (includeOutfit)
         {
             _skyPatcherInterface.SetOutfit(npcFormKey, patchNpc.DefaultOutfit.FormKey);
+        }
+    }
+
+    /// <summary>
+    /// Runtime back ends only (bench finding N11, measured in game 2026-11-26): gives every NPC that
+    /// takes its face from an NPC patched in this run the same appearance entry.
+    ///
+    /// <para><b>Why.</b> SkyPatcher and Recast change only the NPC an entry names; neither follows a
+    /// template link (see <see cref="ApplySkyPatcherDirectives"/> and
+    /// docs/Recast-Integration-Plan.md §1). An NPC whose winning record has a Template and the
+    /// Traits flag still gets the patched template's face MESH, because the game reads the same
+    /// file for it, but not the record-level appearance the entry delivered to the template (skin,
+    /// head-part list). Legate Rikke's battle double <c>0D0573:Skyrim.esm</c> showed her converted
+    /// wig through its helmet, and was bald without the helmet when the wig stayed on the skin.
+    /// Under plugin records the game's own inheritance carries all of it.</para>
+    ///
+    /// <para><b>What.</b> One pass over the load order's winning NPC records. An NPC qualifies when
+    /// its Traits chain is followable to a concrete NPC (<see cref="Auxilliary.TryResolveAppearanceTerminus"/>;
+    /// a chain through a leveled list is left out, the game picks that face at run time) and a
+    /// member of that chain received an appearance entry in this run. It is given the entry of the
+    /// NEAREST such member, which is the NPC it inherits from in game once that member's own entry
+    /// has stopped it inheriting. SkyPatcher: the template's trait directives plus
+    /// <c>removeTemplateFlags=traits</c> (<see cref="SkyPatcherInterface.MirrorAppearance"/>). Recast:
+    /// a block with the template's <c>face</c>; in Hybrid also the template's <c>race=</c>. The entry
+    /// names the template's surrogate, so no record and no face file is added.</para>
+    ///
+    /// <para><b>Who is left alone.</b> An NPC with an appearance entry of its own (a selection that
+    /// was patched itself), and in a split run an NPC that another output plugin patches
+    /// (<paramref name="selectionsOfWholeRun"/>): two entries for one NPC in two files would contest
+    /// each other. Whether the NPC is selected does not matter otherwise, and neither does the
+    /// template handling mode: a selection rejected because it inherits is covered here.</para>
+    /// </summary>
+    private void MirrorAppearanceOntoInheritingNpcs(
+        IReadOnlyCollection<KeyValuePair<FormKey, ScreeningResult>> selectionsOfThisOutput,
+        IReadOnlySet<FormKey>? selectionsOfWholeRun)
+    {
+        if (!_settings.UsesSurrogates) return;
+
+        bool throughSkyPatcher = _settings.UsesSkyPatcherAppearance;
+
+        // The NPCs patched themselves. Taken before anything is mirrored, so an entry written below
+        // never passes for one: every member of a chain is pointed at the patched NPC directly.
+        var patched = (throughSkyPatcher
+            ? _skyPatcherInterface.EnumerateAppearanceTargets()
+            : _recastInterface.EnumerateTargets()).ToHashSet();
+        if (patched.Count == 0) return;
+
+        var linkCache = _environmentStateProvider.LinkCache;
+        var loadOrder = _environmentStateProvider.LoadOrder;
+        if (linkCache == null || loadOrder == null) return;
+
+        var patchedInAnotherOutput = new HashSet<FormKey>();
+        if (selectionsOfWholeRun != null)
+        {
+            patchedInAnotherOutput.UnionWith(selectionsOfWholeRun);
+            patchedInAnotherOutput.ExceptWith(selectionsOfThisOutput.Select(kv => kv.Key));
+        }
+
+        INpcGetter? ResolveNpc(FormKey key) => linkCache.TryResolve<INpcGetter>(key, out var npc) ? npc : null;
+        bool IsLeveledNpc(FormKey key) => linkCache.TryResolve<ILeveledNpcGetter>(key, out _);
+        string Identify(INpcGetter npc) => $"{npc.Name?.String ?? npc.EditorID ?? npc.FormKey.ToString()} ({npc.FormKey})";
+
+        _traitsTemplatedNpcsOfRun ??= loadOrder.PriorityOrder.Npc().WinningOverrides()
+            .Where(n => Auxilliary.IsValidTemplatedNpc(n))
+            .ToList();
+
+        var mirroredLines = new List<string>();
+        foreach (var npc in _traitsTemplatedNpcsOfRun)
+        {
+            if (patched.Contains(npc.FormKey) || patchedInAnotherOutput.Contains(npc.FormKey)) continue;
+
+            // The app's own walker decides whether the chain is one to act on: followable, no cycle,
+            // no leveled list. Resolved also means the hop loop below ends at a concrete NPC.
+            if (Auxilliary.TryResolveAppearanceTerminus(npc, ResolveNpc, out _, IsLeveledNpc) !=
+                FaceGenChainStatus.Resolved)
+            {
+                continue;
+            }
+
+            FormKey? source = null;
+            INpcGetter? current = npc;
+            while (current != null && Auxilliary.IsValidTemplatedNpc(current))
+            {
+                var next = current.Template.FormKey;
+                if (patched.Contains(next))
+                {
+                    source = next;
+                    break;
+                }
+
+                // Patched by another output plugin of this run: that is where the NPCs inheriting
+                // from it are covered, with that plugin's surrogate.
+                if (patchedInAnotherOutput.Contains(next)) break;
+
+                current = ResolveNpc(next);
+            }
+
+            if (source is not { } templateKey) continue;
+
+            if (throughSkyPatcher)
+            {
+                if (!_skyPatcherInterface.MirrorAppearance(templateKey, npc.FormKey)) continue;
+            }
+            else
+            {
+                if (!_recastInterface.TryGetFace(templateKey, out var face)) continue;
+
+                _recastInterface.AddFace(npc.FormKey, face,
+                    $"{Identify(npc)}: takes the appearance of {DescribeFormKey(templateKey)} ({templateKey}) through its template");
+                if (_settings.SkyPatcherDirectivesAvailable)
+                {
+                    _skyPatcherInterface.MirrorRace(templateKey, npc.FormKey);
+                }
+            }
+
+            // Once the entry stops the NPC taking its traits from the template, its OWN record's race,
+            // sex and voice count. They normally equal the template's (a double is a copy of it); say
+            // so in the list where they do not, since the entry repeats only what the template's sets.
+            var templateRecord = ResolveNpc(templateKey);
+            bool ownTraitsDiffer = templateRecord != null &&
+                                   (!npc.Race.FormKey.Equals(templateRecord.Race.FormKey) ||
+                                    Auxilliary.GetGender(npc) != Auxilliary.GetGender(templateRecord) ||
+                                    !npc.Voice.FormKey.Equals(templateRecord.Voice.FormKey));
+            mirroredLines.Add($"  - {Identify(npc)} takes the appearance of {DescribeFormKey(templateKey)} ({templateKey})" +
+                              (ownTraitsDiffer ? " [its own record's race, sex or voice differs from the template's record]" : string.Empty));
+        }
+
+        if (mirroredLines.Count == 0) return;
+
+        AppendLog($"Templated NPCs: {mirroredLines.Count} NPC(s) that take their appearance from a patched NPC " +
+                  "(the Traits template flag) were given that NPC's appearance through " +
+                  $"{(throughSkyPatcher ? "SkyPatcher" : "Recast")}, which does not follow template links itself.",
+            false, true);
+        foreach (var line in mirroredLines)
+        {
+            AppendLog(line, false);
         }
     }
 

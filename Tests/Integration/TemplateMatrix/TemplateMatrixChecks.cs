@@ -28,7 +28,7 @@ internal static class TemplateMatrixChecks
             EvaluateFaceGen(cell, checks);
             EvaluateOrphanTerminus(fx, cell, checks);
             EvaluateRecords(cell, checks);
-            if (cell.Cell.UseSkyPatcher) EvaluateSkyPatcher(cell, checks);
+            if (cell.Cell.UseSkyPatcher) EvaluateSkyPatcher(fx, cell, checks);
         }
 
         EvaluateControls(cells, checks);
@@ -345,8 +345,25 @@ internal static class TemplateMatrixChecks
 
     // ------------------------------------------------------------------ SkyPatcher (§3c)
 
-    private static void EvaluateSkyPatcher(CellResult cell, List<MatrixCheck> checks)
+    private static void EvaluateSkyPatcher(TemplateFixture fx, CellResult cell, List<MatrixCheck> checks)
     {
+        // #3, #4 and #6 take their face from the terminus (#5), which is patched. Where they are not
+        // patched themselves (screened out under inherit) the patcher gives them the terminus's
+        // appearance: a line of their own naming ITS surrogate, because SkyPatcher follows no
+        // template link. #9's terminus is not patched, so #9 gets none; and a specimen that is
+        // patched itself never has a line that is not its own.
+        var terminus = fx.Npc(SpecimenRole.Terminus);
+        foreach (var role in TemplateMatrixSettingsBuilder.SpecimenRoles)
+        {
+            var o = cell[role];
+            bool expectInherited = IsScreenedOutAsTemplated(cell.Cell, role) && role != SpecimenRole.TemplatedOrphan;
+            Add(checks, SkyPatcher, cell,
+                role + (expectInherited ? " is given the terminus's appearance" : " has no line that is not its own"),
+                expectInherited ? o.InheritedEntryFrom == terminus : o.InheritedEntryFrom == null,
+                $"the .ini line for it names the surrogate of {o.InheritedEntryFrom?.ToString() ?? "no other NPC"}" +
+                $" (own line: {o.SurrogateFormKey?.ToString() ?? "none"}).");
+        }
+
         foreach (var role in TemplateMatrixSettingsBuilder.SpecimenRoles)
         {
             var o = cell[role];

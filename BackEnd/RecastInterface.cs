@@ -74,6 +74,22 @@ public class RecastInterface : OptionalUIModule
 
     public bool HasEntries => _entries.Count > 0;
 
+    /// <summary>The NPCs a face is queued for.</summary>
+    public IEnumerable<FormKey> EnumerateTargets() => _entries.Keys;
+
+    /// <summary>The surrogate queued as <paramref name="target"/>'s face, when it has one.</summary>
+    public bool TryGetFace(FormKey target, out FormKey surrogate)
+    {
+        if (_entries.TryGetValue(target, out var entry))
+        {
+            surrogate = entry.Face;
+            return true;
+        }
+
+        surrogate = FormKey.Null;
+        return false;
+    }
+
     /// <summary>
     /// The surrogates every queued block names. A surrogate is reached only through the TOML, never
     /// through a plugin link, so the post-run orphan sweep needs this to keep it.

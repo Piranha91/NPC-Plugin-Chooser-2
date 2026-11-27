@@ -50,6 +50,15 @@ internal sealed class SpecimenObservation
     /// <summary>SkyPatcher only: whether the .ini carries a line for this target at all.</summary>
     public bool HasIniLine { get; set; }
 
+    /// <summary>
+    /// SkyPatcher only: the patched NPC whose surrogate this specimen's line names, when the specimen
+    /// was NOT patched itself. The patcher writes such a line for an NPC that takes its face from a
+    /// patched NPC (<c>Patcher.MirrorAppearanceOntoInheritingNpcs</c>). The surrogate is the other
+    /// NPC's, so it is not this specimen's record: <see cref="RecordPresent"/>,
+    /// <see cref="SurrogateFormKey"/> and the "own" FaceGen fields stay empty for it.
+    /// </summary>
+    public FormKey? InheritedEntryFrom { get; set; }
+
     // ---- FaceGen on disk ----
     /// <summary>The path the engine reads for THIS NPC: its own FormID path (record modes) or its
     /// surrogate's (SkyPatcher).</summary>
@@ -184,14 +193,25 @@ internal static class TemplateMatrixRunner
                 if (cell.UseSkyPatcher)
                 {
                     obs.HasIniLine = surrogateByTarget.ContainsKey(target);
+                    recordKey = FormKey.Null;
                     if (surrogateByTarget.TryGetValue(target, out var surrogate))
                     {
-                        obs.SurrogateFormKey = surrogate;
-                        recordKey = surrogate;
-                    }
-                    else
-                    {
-                        recordKey = FormKey.Null;
+                        // A specimen that was not patched itself can still have a line: the one that
+                        // gives it the appearance of the patched NPC it inherits its face from. That
+                        // line names the OTHER NPC's surrogate, which is not this specimen's record.
+                        var owner = surrogateByTarget
+                            .Where(kv => kv.Value == surrogate && kv.Key != target && processed.Contains(kv.Key))
+                            .Select(kv => (FormKey?)kv.Key)
+                            .FirstOrDefault();
+                        if (!obs.Processed && owner != null)
+                        {
+                            obs.InheritedEntryFrom = owner;
+                        }
+                        else
+                        {
+                            obs.SurrogateFormKey = surrogate;
+                            recordKey = surrogate;
+                        }
                     }
                 }
                 else

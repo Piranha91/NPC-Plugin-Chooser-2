@@ -268,6 +268,113 @@ public class SkyPatcherInterface : OptionalUIModule
             .Select(a => a.FormKeyRef!.Value);
     }
 
+    private const string VisualStyleKey = "copyVisualStyle";
+    private const string RaceKey = "race";
+    private const string ClearTraitsAction = "removeTemplateFlags=traits";
+
+    private static bool IsVisualStyle(SkyPatcherAction action) =>
+        action.FormKeyRef.HasValue && action.Text == VisualStyleKey;
+
+    private static bool IsRace(SkyPatcherAction action) =>
+        action.FormKeyRef.HasValue && action.Text == RaceKey;
+
+    /// <summary>
+    /// The directives that deliver what an NPC takes from its template through the Traits template
+    /// flag: the face (<c>copyVisualStyle</c>), skin, height, weight, race and sex, and the directive
+    /// that switches the inheritance itself off. Outfits and keywords are not traits.
+    /// </summary>
+    private static bool IsTraitAction(SkyPatcherAction action) =>
+        action.FormKeyRef.HasValue
+            ? action.Text is VisualStyleKey or "skin" or RaceKey
+            : action.Text.StartsWith("height=", StringComparison.Ordinal)
+              || action.Text.StartsWith("weight=", StringComparison.Ordinal)
+              || action.Text is "setFlags=female" or "removeFlags=female" or ClearTraitsAction;
+
+    /// <summary>The NPCs whose line carries an appearance (a <c>copyVisualStyle</c> directive).</summary>
+    public IEnumerable<FormKey> EnumerateAppearanceTargets() =>
+        _outputs.Values.Where(c => c.Actions.Any(IsVisualStyle)).Select(c => c.NpcFormKey);
+
+    /// <summary>
+    /// Gives <paramref name="inheritingNpc"/> the appearance <paramref name="templateNpc"/>'s line
+    /// delivers: the template's trait directives (see <see cref="IsTraitAction"/>) with the same
+    /// values, so the same surrogate and skin, plus <c>removeTemplateFlags=traits</c>. For an NPC
+    /// that takes its face from <paramref name="templateNpc"/> through its Traits template: SkyPatcher
+    /// changes only the NPC a line names and follows no template link, so without a line of its own
+    /// such an NPC shows the template's face mesh with its unpatched record data (bench finding N11).
+    ///
+    /// <para>The outfit, sleep outfit and keyword directives of the template's line are NOT repeated:
+    /// the inheriting NPC keeps its own inventory. Directives already queued for it that are not
+    /// traits (a republished outfit) stay.</para>
+    /// </summary>
+    /// <returns>False, with nothing changed, when the template has no appearance line or the
+    /// inheriting NPC already has an appearance line of its own.</returns>
+    public bool MirrorAppearance(FormKey templateNpc, FormKey inheritingNpc)
+    {
+        if (templateNpc.IsNull || inheritingNpc.IsNull || templateNpc.Equals(inheritingNpc))
+        {
+            return false;
+        }
+
+        if (!_outputs.TryGetValue(templateNpc, out var source) || !source.Actions.Any(IsVisualStyle))
+        {
+            return false;
+        }
+
+        _outputs.TryGetValue(inheritingNpc, out var target);
+        if (target != null && target.Actions.Any(IsVisualStyle))
+        {
+            return false;
+        }
+
+        var mirrored = source.Actions.Where(a => IsTraitAction(a) && a.Text != ClearTraitsAction).ToList();
+        mirrored.Add(new SkyPatcherAction(ClearTraitsAction));
+
+        if (target == null)
+        {
+            target = new NpcContainer(inheritingNpc);
+            _outputs[inheritingNpc] = target;
+        }
+
+        target.Actions.RemoveAll(IsTraitAction);
+        target.Actions.AddRange(mirrored);
+        return true;
+    }
+
+    /// <summary>
+    /// Recast Hybrid's share of <see cref="MirrorAppearance"/>: the face travels through Recast, so
+    /// only the <c>race</c> directive of <paramref name="templateNpc"/>'s line is repeated for
+    /// <paramref name="inheritingNpc"/>, when the template's line has one.
+    /// </summary>
+    /// <returns>True when a race directive was queued.</returns>
+    public bool MirrorRace(FormKey templateNpc, FormKey inheritingNpc)
+    {
+        if (templateNpc.IsNull || inheritingNpc.IsNull || templateNpc.Equals(inheritingNpc))
+        {
+            return false;
+        }
+
+        if (!_outputs.TryGetValue(templateNpc, out var source))
+        {
+            return false;
+        }
+
+        var race = source.Actions.Where(IsRace).ToList();
+        if (race.Count == 0)
+        {
+            return false;
+        }
+
+        if (!_outputs.TryGetValue(inheritingNpc, out var target) || target == null)
+        {
+            target = new NpcContainer(inheritingNpc);
+            _outputs[inheritingNpc] = target;
+        }
+
+        target.Actions.RemoveAll(IsRace);
+        target.Actions.AddRange(race);
+        return true;
+    }
+
     /// <summary>
     /// Adds an <c>outfitDefault</c> directive for an NPC that has NO surrogate entry —
     /// i.e. a record-mode run, where nothing calls <see cref="AddNpc"/>.

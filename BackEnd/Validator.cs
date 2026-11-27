@@ -578,6 +578,12 @@ public class Validator : OptionalUIModule
     /// <see cref="TemplateHandlingMode.GiveEachNpcOwnCopy"/>, which clears the Traits flag and gives
     /// the NPC its own face.</para>
     ///
+    /// <para>What the rejected NPC does get, when the terminus (or a nearer chain member) is patched
+    /// in the same run, is that NPC's appearance in full: the patcher writes it an entry naming the
+    /// same surrogate (<c>Patcher.MirrorAppearanceOntoInheritingNpcs</c>). That delivers the
+    /// TEMPLATE's selection, as the game's own inheritance does under plugin records; the selection
+    /// made on the inheriting NPC itself stays undeliverable in this mode.</para>
+    ///
     /// <para>Only a chain that resolves to a concrete NPC is rejected. A levelled terminus is normal —
     /// the game picks an actor at runtime and there is no fixed face to redirect — and an unfollowable
     /// chain is handled by the FaceGen ladder. Record mode is unaffected: there the patched record
