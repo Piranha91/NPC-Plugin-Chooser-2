@@ -38,7 +38,7 @@ using Application = System.Windows.Application;
 
 namespace NPC_Plugin_Chooser_2.View_Models;
 
-public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
+public partial class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
 {
     // Shared diagnostic stopwatch — restarted whenever the user picks a new
     // NPC. Other VMs (notably VM_NpcsMenuMugshot) read it to stamp
@@ -442,7 +442,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
         PluginProvider pluginProvider,
         RecordHandler recordHandler,
         Lazy<VM_Settings> lazyVmSettings,
-        Lazy<NpcMugshotPrewarmer> lazyPrewarmer)
+        Lazy<NpcMugshotPrewarmer> lazyPrewarmer,
+        WigForwarder wigForwarder,
+        WigHeadgearChoiceCoordinator wigHeadgearChoices)
     {
         _lazyVmSettings = lazyVmSettings;
         // Lazy: the prewarmer reaches the offscreen renderer, whose creation is pinned
@@ -859,6 +861,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
         // closure roots this VM via ThemeManager for the life of the process).
         _themeChangedHandler = _ => RefreshAllSelectionIndicators();
         ThemeManager.ThemeChanged += _themeChangedHandler;
+
+        // The hatched "valid, with a note" indicators (VM_NpcSelectionBar.SelectionIndicators.cs).
+        InitSelectionIndicators(wigForwarder, wigHeadgearChoices);
 
         // Listen for the request to share an appearance
         MessageBus.Current.Listen<ShareAppearanceRequest>()
@@ -2826,15 +2831,13 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
                 npcVM.SelectedModHasData = false;
             }
 
-            // Compute selection indicator brush
+            // Compute selection indicator brush: none without a selection, else red (not in the
+            // load order), purple (the mod has no data), green (valid), or green with hatches
+            // (valid, with a note). See VM_NpcSelectionBar.SelectionIndicators.cs.
             if (string.IsNullOrEmpty(selectedModName))
-                npcVM.SelectionIndicatorBrush = null;
-            else if (!npcVM.IsInLoadOrder)
-                npcVM.SelectionIndicatorBrush = NpcIndicatorRedBrush;
-            else if (!npcVM.SelectedModHasData)
-                npcVM.SelectionIndicatorBrush = NpcIndicatorPurpleBrush;
+                ClearSelectionIndicator(npcVM);
             else
-                npcVM.SelectionIndicatorBrush = NpcIndicatorGreenBrush;
+                ApplySelectionIndicator(npcVM, new IndicatorPass { SingleRow = true });
             if (SelectedNpc == npcVM && CurrentNpcAppearanceMods != null)
             {
                 foreach (var modVM in CurrentNpcAppearanceMods)
@@ -2848,17 +2851,13 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
 
     private void RefreshAllSelectionIndicators()
     {
+        var pass = new IndicatorPass();
         foreach (var npcVM in AllNpcs)
         {
             if (string.IsNullOrEmpty(npcVM.SelectedAppearanceModName))
                 continue;
 
-            if (!npcVM.IsInLoadOrder)
-                npcVM.SelectionIndicatorBrush = NpcIndicatorRedBrush;
-            else if (!npcVM.SelectedModHasData)
-                npcVM.SelectionIndicatorBrush = NpcIndicatorPurpleBrush;
-            else
-                npcVM.SelectionIndicatorBrush = NpcIndicatorGreenBrush;
+            ApplySelectionIndicator(npcVM, pass);
         }
     }
 
@@ -3001,6 +3000,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
     
     public async Task InitializeAsync(VM_SplashScreen? splashReporter)
     {
+        // The list is rebuilt, possibly on a rebuilt environment: wig answers read from the old
+        // records are dropped and asked again as the rows are re-created.
+        ResetWigConflictAnswers();
+
         // 1. UI-thread cleanup (unchanged)
         await Application.Current.Dispatcher.InvokeAsync(() =>
         {
@@ -3142,6 +3145,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
                 {
                     bool winHasTemplate = Auxilliary.IsValidTemplatedNpc(winOverride);
                     vm.WinningOverrideHasTemplate = winHasTemplate;
+                    // Dressed by a template (Inventory flag), which is not the same as the Traits
+                    // template above: read by the selection indicator's 'Include Outfit' note.
+                    vm.WinningOverrideDressedByTemplate = Settings.NpcIsDressedByTemplate(winOverride);
                     if (winHasTemplate)
                     {
                         var templateFk = winOverride.Template.FormKey;
@@ -3313,6 +3319,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
             AllNpcs.AddRange(npcViewModelMap.Values);
             
             // Update group display string and selection indicator for each NPC on initial load
+            var initialIndicatorPass = new IndicatorPass();
             foreach (var npcVM in AllNpcs)
             {
                 _settings.NpcGroupAssignments.TryGetValue(npcVM.NpcFormKey, out var groups);
@@ -3330,12 +3337,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
                             (modSetting.CorrespondingFolderPaths.Any() || modSetting.IsAutoGenerated);
                     }
 
-                    if (!npcVM.IsInLoadOrder)
-                        npcVM.SelectionIndicatorBrush = NpcIndicatorRedBrush;
-                    else if (!npcVM.SelectedModHasData)
-                        npcVM.SelectionIndicatorBrush = NpcIndicatorPurpleBrush;
-                    else
-                        npcVM.SelectionIndicatorBrush = NpcIndicatorGreenBrush;
+                    ApplySelectionIndicator(npcVM, initialIndicatorPass);
                 }
             }
 
@@ -6434,6 +6436,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable, ISearchFilterHost
             _settings.NpcOutfitOverrides[npcFormKey] = newOverride;
             Debug.WriteLine($"Set outfit override for NPC {npcFormKey} to {newOverride}.");
         }
+
+        // Whether an outfit is included decides the row's 'Include Outfit' note.
+        RefreshSelectionIndicator(npcFormKey);
     }
     
 

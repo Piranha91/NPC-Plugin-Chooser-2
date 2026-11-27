@@ -130,6 +130,9 @@ public class VM_MainWindow : ReactiveObject, IDisposable
             .Subscribe(_ =>
             {
                 if (CurrentViewModel != _npcsViewModel) CurrentViewModel = _npcsViewModel;
+                // The list's "valid, with a note" indicators depend on settings edited on the
+                // other tabs (Include Outfit, wig handling, output mode); bring them up to date.
+                _npcsViewModel.RefreshSelectionIndicators();
                 if (_npcsNeedsMugshotPriorityRefresh)
                 {
                     _npcsNeedsMugshotPriorityRefresh = false;

@@ -505,6 +505,27 @@
                                                      <Setter Property="BorderThickness" Value="3,0,0,0"/>
                                                      <Setter Property="Padding" Value="6,0,0,0"/>
                                                  </MultiDataTrigger>
+                                                 <!-- "Valid, with a note": the bar is the green one with diagonal hatches in a
+                                                      second colour (orange: Include Outfit on a template-dressed NPC; red: wig
+                                                      and headgear on the same slot). Twice as wide so the hatches can be read,
+                                                      with the padding reduced by as much, so the name stays where it was. Also
+                                                      drawn in "Text Color" style, where a hatched brush cannot colour the text. -->
+                                                 <MultiDataTrigger>
+                                                     <MultiDataTrigger.Conditions>
+                                                         <Condition Binding="{Binding DataContext.NpcSelectionIndicator, RelativeSource={RelativeSource AncestorType=ListBox}}" Value="Bar"/>
+                                                         <Condition Binding="{Binding SelectionIndicatorIsHatched}" Value="True"/>
+                                                     </MultiDataTrigger.Conditions>
+                                                     <Setter Property="BorderThickness" Value="6,0,0,0"/>
+                                                     <Setter Property="Padding" Value="3,0,0,0"/>
+                                                 </MultiDataTrigger>
+                                                 <MultiDataTrigger>
+                                                     <MultiDataTrigger.Conditions>
+                                                         <Condition Binding="{Binding DataContext.NpcSelectionIndicator, RelativeSource={RelativeSource AncestorType=ListBox}}" Value="Text Color"/>
+                                                         <Condition Binding="{Binding SelectionIndicatorIsHatched}" Value="True"/>
+                                                     </MultiDataTrigger.Conditions>
+                                                     <Setter Property="BorderThickness" Value="6,0,0,0"/>
+                                                     <Setter Property="Padding" Value="3,0,0,0"/>
+                                                 </MultiDataTrigger>
                                                  <!-- Template tree: an ancestor shown only for context (it didn't match the search) -->
                                                  <DataTrigger Binding="{Binding IsTreeContextRow}" Value="True">
                                                      <Setter Property="Opacity" Value="0.5"/>
@@ -520,6 +541,19 @@
                                                    <TextBlock Text="{Binding NpcFormKeyString}" />
                                                    <TextBlock Text="{Binding FormIdString}" />
                                                    <TextBlock Text="{Binding NpcGroupsDisplay}" />
+                                                   <!-- What the hatched indicator means; absent for a row without a note. -->
+                                                   <TextBlock Text="{Binding SelectionIndicatorNote}" TextWrapping="Wrap"
+                                                              MaxWidth="460" HorizontalAlignment="Left" Margin="0,6,0,0">
+                                                       <TextBlock.Style>
+                                                           <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                                               <Style.Triggers>
+                                                                   <DataTrigger Binding="{Binding SelectionIndicatorNote, Converter={StaticResource IsNotNullConverter}}" Value="False">
+                                                                       <Setter Property="Visibility" Value="Collapsed"/>
+                                                                   </DataTrigger>
+                                                               </Style.Triggers>
+                                                           </Style>
+                                                       </TextBlock.Style>
+                                                   </TextBlock>
                                               </StackPanel>
                                          </ToolTip>
                                      </Border.ToolTip>
@@ -574,6 +608,14 @@
                                                           IsEnabled="{Binding RenderHeadgearEnabled}"
                                                           ToolTip="Render this NPC wearing its headgear (e.g. a hood or helmet, which hides hair). Uncheck to see the NPC without headgear. Only applies when 'Override Global Setting' is checked."/>
                                             </MenuItem>
+                                            <!-- Only for an NPC with a kept converted-wig hair colour (shown by the
+                                                 half-green wig badge on its mugshot tiles): removes it, so the NPC
+                                                 follows its mod. The tiles' right-click menu has the same item. -->
+                                            <MenuItem Header="Clear kept wig hair color"
+                                                      Command="{Binding Path=DataContext.ClearKeptWigHairTintCommand, Source={StaticResource DataContextProxy}}"
+                                                      CommandParameter="{Binding}"
+                                                      ToolTip="{Binding KeptWigHairTintTooltip}"
+                                                      Visibility="{Binding HasKeptWigHairTint, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                             <Separator/>
                                             <MenuItem Header="Add Face from Favorites"
                                                       Command="{Binding Path=DataContext.AddFavoriteFaceToNpcCommand, Source={StaticResource DataContextProxy}}"
@@ -716,7 +758,7 @@
                                                                  <Condition Binding="{Binding DataContext.NpcSelectionIndicator, RelativeSource={RelativeSource AncestorType=ListBox}}" Value="Text Color"/>
                                                                  <Condition Binding="{Binding SelectionIndicatorBrush, Converter={StaticResource IsNotNullConverter}}" Value="True"/>
                                                              </MultiDataTrigger.Conditions>
-                                                             <Setter Property="Foreground" Value="{Binding SelectionIndicatorBrush}"/>
+                                                             <Setter Property="Foreground" Value="{Binding SelectionIndicatorTextBrush}"/>
                                                          </MultiDataTrigger>
                                                      </Style.Triggers>
                                                  </Style>
@@ -1006,11 +1048,26 @@
                                          <Grid Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
                                                Height="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
                                                Visibility="{Binding HasWigNotice, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                               ToolTip="{Binding WigNoticeText}">
+                                               ToolTip="{Binding WigBadgeTooltip}">
+                                             <!-- One wig icon per tile, in one of three states: the plain icon
+                                                  (this Viewbox), the half-green "hair colour kept" badge, or the
+                                                  "No Wig" icon. The tooltip (the wig notice, plus the kept line
+                                                  when there is one) is the same element's in every state. -->
                                              <Viewbox Stretch="Uniform"
                                                       HorizontalAlignment="Center"
-                                                      VerticalAlignment="Center"
-                                                      Visibility="{Binding WigNotPersisted, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Invert}">
+                                                      VerticalAlignment="Center">
+                                                 <Viewbox.Style>
+                                                     <Style TargetType="Viewbox">
+                                                         <Style.Triggers>
+                                                             <DataTrigger Binding="{Binding WigNotPersisted}" Value="True">
+                                                                 <Setter Property="Visibility" Value="Collapsed"/>
+                                                             </DataTrigger>
+                                                             <DataTrigger Binding="{Binding ShowKeptWigHairTintBadge}" Value="True">
+                                                                 <Setter Property="Visibility" Value="Collapsed"/>
+                                                             </DataTrigger>
+                                                         </Style.Triggers>
+                                                     </Style>
+                                                 </Viewbox.Style>
                                                  <!-- White glow: the icon is thin dark line art, and in
                                                       the second row slot it lands on the mugshot's hair
                                                       region, which is often just as dark — without a
@@ -1025,6 +1082,20 @@
                                                  </Viewbox.Effect>
                                                  <Image Source="/NPC Plugin Chooser 2;component/Resources/Has Wig.png" />
                                              </Viewbox>
+
+                                             <!-- Kept converted-wig hair colour: the same wig icon with its right
+                                                  half green, in place of the plain one while the NPC being patched
+                                                  has its own hair colour setting, kept from the 3D preview ("Keep
+                                                  for this NPC"). It fills the same square and draws the whole icon
+                                                  file, so the wig is exactly where and as large as the plain icon's;
+                                                  the same white glow lifts it off the mugshot. Cleared from the
+                                                  tile's or the NPC row's right-click menu. -->
+                                             <local:WigTintKeptBadge Visibility="{Binding ShowKeptWigHairTintBadge, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                 <local:WigTintKeptBadge.Effect>
+                                                     <DropShadowEffect Color="White" ShadowDepth="0"
+                                                                       BlurRadius="6" Opacity="0.9"/>
+                                                 </local:WigTintKeptBadge.Effect>
+                                             </local:WigTintKeptBadge>
 
                                              <!-- Replaced by the "No Wig" icon (same ring and slash
                                                   as "No Antlers") when the wig will NOT reach the game:
@@ -1406,6 +1477,13 @@
                                                    Command="{Binding PlacementTarget.(local:UC_LiveTileViewport.SyncGroup).TogglePivotCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                                    Visibility="{Binding IsLiveTile, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                    ToolTip="How Lock 3D View moves the other live tiles. Own center: each tile turns around the center of its own mugshot framing, so every face stays in frame. Shared pivot: all tiles use the moved tile's exact camera, showing true relative heights."/>
+                                         <!-- Only while the NPC being patched has a kept converted-wig hair colour
+                                              (the half-green wig badge): removes it, so the NPC follows its mod.
+                                              The same item as on the NPC row. -->
+                                         <MenuItem Header="Clear kept wig hair color"
+                                                   Command="{Binding ClearKeptWigHairTintCommand}"
+                                                   ToolTip="{Binding KeptWigHairTintTooltip}"
+                                                   Visibility="{Binding HasKeptWigHairTint, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                          <Separator/>
                                          <MenuItem Header="Generate Mugshot"
                                                    Command="{Binding GenerateMugshotCommand}"

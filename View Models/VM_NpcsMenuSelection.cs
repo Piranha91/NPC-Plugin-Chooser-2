@@ -87,7 +87,37 @@ public class VM_NpcsMenuSelection : ReactiveObject
     // This property reflects the centrally stored selection
     [Reactive] public string? SelectedAppearanceModName { get; set; }
     [Reactive] public bool SelectedModHasData { get; set; }
-    [Reactive] public SolidColorBrush? SelectionIndicatorBrush { get; set; }
+
+    // The selection indicator (see VM_NpcSelectionBar.SelectionIndicators.cs). The brush is a
+    // SolidColorBrush for red / purple / green, and a hatched brush (green with orange or red
+    // diagonal stripes) for the two "valid, with a note" states.
+    [Reactive] public Brush? SelectionIndicatorBrush { get; set; }
+    // The solid colour of the state, for the "Text Color" indicator style: text cannot be drawn
+    // legibly in a hatched brush. For red / purple / green it is the same brush as above.
+    [Reactive] public SolidColorBrush? SelectionIndicatorTextBrush { get; set; }
+    // True for the hatched states: the row then shows its bar wider, and also in "Text Color" style.
+    [Reactive] public bool SelectionIndicatorIsHatched { get; set; }
+    // What the hatches mean, for the row's tooltip; null for a row without a note.
+    [Reactive] public string? SelectionIndicatorNote { get; set; }
+
+    // The kept converted-wig hair colour of this NPC (Settings.NpcWigHairTintModes), set from the
+    // 3D preview's "Keep for this NPC". While one is stored the row's right-click menu offers
+    // "Clear kept wig hair color", whose tooltip names the mode (the badge itself is on the NPC's
+    // mugshot tiles: VM_NpcsMenuMugshot). Set at construction and again by the NPC list when the
+    // choice is kept, changed or cleared (VM_NpcSelectionBar.ApplyKeptWigHairTint).
+    [Reactive] public bool HasKeptWigHairTint { get; private set; }
+    [Reactive] public string KeptWigHairTintTooltip { get; private set; } = string.Empty;
+
+    /// <summary>Tells the row whether its NPC has a kept wig hair colour. Null = no kept choice.</summary>
+    public void SetKeptWigHairTint(WigHairTintMode? keptMode)
+    {
+        HasKeptWigHairTint = keptMode != null;
+        KeptWigHairTintTooltip = keptMode is { } mode ? WigHairTintPreviewRules.KeptTooltip(mode) : string.Empty;
+    }
+
+    // The winning record names a Template and carries the Inventory template flag
+    // (Settings.NpcIsDressedByTemplate). Set once during init, like the template flags above.
+    public bool WinningOverrideDressedByTemplate { get; set; }
     [Reactive] public ObservableCollection<VM_ModSetting> AppearanceMods { get; set; } = new();
 
     // --- Per-NPC "Render" context-menu overrides (attire toggles) ---
@@ -257,6 +287,8 @@ public class VM_NpcsMenuSelection : ReactiveObject
                 _renderIncludeDefaultOutfit = renderOverride.IncludeDefaultOutfit;
                 _renderIncludeHeadgear = renderOverride.IncludeHeadgear;
             }
+
+            SetKeptWigHairTint(_settings.GetNpcWigHairTintMode(npcFormKey));
         }
 
         using (ContextualPerformanceTracer.Trace("NpcMenuEntry.GetFormID"))
