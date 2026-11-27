@@ -150,6 +150,12 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     private FormKey _wigSelectorNpcFormKey = FormKey.Null;
     private bool _suppressWigRepopulate;
 
+    // --- Converted-wig hair colour toggle + "Keep for this NPC" (per-tile 3D popup only) ---
+    /// <summary>The Auto / On / Off toggle and the Keep box. Offered only when the loaded NPC's
+    /// wig is converted to head parts and can take a hair colour; while offered, the wig is drawn
+    /// as the toggle's mode would bake it (see <see cref="LoadWigTintState"/>).</summary>
+    public VM_WigHairTintPreview WigTint { get; }
+
     // Non-persistent override state for the full-screen popup (see
     // PersistAttireToggles). Seeded from the persisted defaults at construction.
     private bool _localIncludeDefaultOutfit;
@@ -283,7 +289,8 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         Lazy<VM_NpcSelectionBar> npcSelectionBar,
         EnvironmentStateProvider env,
         NpcMeshResolver resolver,
-        RenderLogGate logGate)
+        RenderLogGate logGate,
+        RaceMenuDetector raceMenuDetector)
     {
         Viewer = viewer;
         _settings = settings;
@@ -291,6 +298,10 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         _env = env;
         _resolver = resolver;
         _logGate = logGate;
+
+        WigTint = new VM_WigHairTintPreview(settings, () => raceMenuDetector.State, PersistThrottled);
+        WigTint.RenderInvalidated += OnWigTintRenderInvalidated;
+        WigTint.DisposeWith(_disposables);
 
         // Seed the non-persistent popup override state from the persisted
         // defaults. Harmless for the persistent (Settings-tab) instance, which
@@ -658,6 +669,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             // environment rebuild, so the memo served the PREVIOUS selection's
             // record resolution (head parts / worn armor / TXST) after a switch.
             // Resolution is a cheap record walk; skipping the memo is correct.
+            WigTint.Clear(); // the hair colour toggle belongs to the per-tile popup
             var paths = _resolver.ResolveForActiveSelection(formKey);
             if (paths == null)
             {
@@ -730,7 +742,10 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             // path resolved against vanilla + the tile's mod only.
             Viewer.AdditionalScopes = _resolver.BuildResolutionScopes(modSetting, formKey);
             ApplyAdvancedResolutionToggles();
-            var paths = _resolver.Resolve(formKey, modSetting);
+            // Before the meshes are resolved: while the hair colour toggle is offered, the wig is
+            // drawn as the toggle's mode would bake it, not as the mugshot setting says.
+            LoadWigTintState(formKey, modSetting, targetNpcFormKey);
+            var paths = _resolver.Resolve(formKey, modSetting, WigTint.RenderTintOverride);
             if (paths == null)
             {
                 StatusText = $"Could not resolve mesh paths for {formKey}";
@@ -769,6 +784,60 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             // A failed load may never reach SceneCommitted — close the session
             // here so the log gate isn't left forced-on indefinitely.
             EndRenderLogSession(_renderLogCaptureGeneration);
+        }
+    }
+
+    /// <summary>
+    /// Decides whether the converted-wig hair colour toggle is offered for this load and hands
+    /// the toggle what Auto needs. Offered when all of these hold:
+    /// <list type="number">
+    /// <item>the wig mode that applies to the NPC being patched is Convert To Head Parts
+    /// (<c>Settings.GetEffectiveWigModeForNpc</c>, asked of the NPC's winning record);</item>
+    /// <item>the appearance has an effective wig (<see cref="Settings.GetEffectiveNpcWigSources"/>);</item>
+    /// <item>the one wig the converter would take is found
+    /// (<see cref="NpcMeshResolver.ResolveWigTintCarrier"/>), and its mesh, when it could be read,
+    /// has a HairTint shape.</item>
+    /// </list>
+    /// A failure to work any of this out hides the toggle; the preview then loads as before.
+    /// </summary>
+    private void LoadWigTintState(FormKey formKey, ModSetting? modSetting, FormKey? targetNpcFormKey)
+    {
+        try
+        {
+            var target = targetNpcFormKey ?? formKey;
+            if (modSetting == null || _env.LinkCache is not { } linkCache)
+            {
+                WigTint.Clear();
+                return;
+            }
+
+            linkCache.TryResolve<Mutagen.Bethesda.Skyrim.INpcGetter>(target, out var winningRecord);
+            bool converts = _settings.GetEffectiveWigModeForNpc(modSetting, winningRecord, target) ==
+                            WigHandlingMode.ConvertToHeadParts;
+            bool hasWig = converts && _settings.GetEffectiveNpcWigSources(modSetting, formKey).Count > 0;
+            var carrier = hasWig ? _resolver.ResolveWigTintCarrier(formKey, modSetting) : null;
+
+            WigTint.Load(modSetting, target,
+                WigHairTintPreviewRules.IsEligible(converts, hasWig, carrier != null, carrier?.HasHairTintShape),
+                carrier?.ArmorSlotMask ?? 0, carrier?.AddonSlotMask ?? 0);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("VM_InternalMugshotPreview: wig hair colour state failed: " + ex.Message);
+            WigTint.Clear();
+        }
+    }
+
+    /// <summary>The hair colour toggle was flipped: draw the NPC again. The tint is applied when
+    /// the meshes are installed, so the same-NPC reload must force a full rebuild.</summary>
+    private async void OnWigTintRenderInvalidated()
+    {
+        if (CurrentNpcFormKey.IsNull) return;
+        Viewer.ForceRebuildNextLoad();
+        try { await ReloadCurrentAsync(); }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("VM_InternalMugshotPreview: wig hair colour reload failed: " + ex.Message);
         }
     }
 

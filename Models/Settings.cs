@@ -190,10 +190,62 @@ public class Settings
     public WigHandlingMode DefaultWigHandlingMode { get; set; } = WigHandlingMode.None;
 
     // Whether ConvertToHeadParts re-tints a converted wig with the NPC's hair
-    // color (see WigHairTintMode). Auto fixes the placeholder-tint mods without
-    // touching wigs whose textures are already pre-colored; an absent field in
-    // an old Settings.json deserializes to Auto (no migration).
+    // color (see WigHairTintMode). Auto reproduces what the game shows without
+    // this app: tinted where RaceMenu would tint the worn wig, untouched
+    // otherwise. An absent field in an old Settings.json deserializes to Auto
+    // (no migration). Precedence: NpcWigHairTintModes, then
+    // ModSetting.ModWigHairTintMode, then this.
     public WigHairTintMode DefaultWigHairTintMode { get; set; } = WigHairTintMode.Auto;
+
+    // Per-NPC override of the converted-wig hair tint mode, keyed by the TARGET NPC (the one
+    // being patched, not the appearance donor), like WigHeadgearConflictChoices. An NPC with no
+    // entry follows its mod's mode. Stored here rather than on ModSetting so it survives
+    // VM_Mods.SaveModSettingsToModel; an absent field in an old Settings.json deserializes to
+    // empty. Entries are not pruned when a selection changes: an entry for an NPC whose wig is
+    // not converted is simply never read.
+    public Dictionary<FormKey, WigHairTintMode> NpcWigHairTintModes { get; set; } = new();
+
+    /// <summary>The stored converted-wig hair tint override for
+    /// <paramref name="targetNpcFormKey"/>, or null when that NPC follows its mod's mode.</summary>
+    public WigHairTintMode? GetNpcWigHairTintMode(FormKey targetNpcFormKey) =>
+        NpcWigHairTintModes != null &&
+        NpcWigHairTintModes.TryGetValue(targetNpcFormKey, out var mode)
+            ? mode
+            : null;
+
+    /// <summary>Stores one converted-wig hair tint override for every NPC in
+    /// <paramref name="targetNpcFormKeys"/>, replacing any earlier one. A null
+    /// <paramref name="mode"/> removes the override instead, so the NPC follows its mod again.</summary>
+    public void SetNpcWigHairTintMode(IEnumerable<FormKey> targetNpcFormKeys, WigHairTintMode? mode)
+    {
+        if (mode == null)
+        {
+            RemoveNpcWigHairTintModes(targetNpcFormKeys);
+            return;
+        }
+
+        NpcWigHairTintModes ??= new();
+        foreach (var npcFormKey in targetNpcFormKeys)
+        {
+            NpcWigHairTintModes[npcFormKey] = mode.Value;
+        }
+    }
+
+    /// <summary>Forgets the converted-wig hair tint override of each NPC in
+    /// <paramref name="targetNpcFormKeys"/>. Returns how many overrides were removed.</summary>
+    public int RemoveNpcWigHairTintModes(IEnumerable<FormKey> targetNpcFormKeys)
+    {
+        if (NpcWigHairTintModes == null) return 0;
+        int removed = 0;
+        foreach (var npcFormKey in targetNpcFormKeys)
+        {
+            if (NpcWigHairTintModes.Remove(npcFormKey)) removed++;
+        }
+        return removed;
+    }
+
+    /// <summary>Forgets every per-NPC converted-wig hair tint override.</summary>
+    public void ClearNpcWigHairTintModes() => NpcWigHairTintModes?.Clear();
 
 
     // Antlers are handled independently of hair-slot wigs (see AntlerHandlingMode).
@@ -395,19 +447,34 @@ public class Settings
         && writtenRecord.Template is { IsNull: false };
 
     /// <summary>
-    /// The wig hair-tint mode that will actually apply to
-    /// <paramref name="modSetting"/>: the per-mod override when set, else the
-    /// global default. Gated on wig detection like
-    /// <see cref="GetEffectiveWigMode"/>, but NOT on the output mode — the
-    /// caller (the wig→HeadPart converter) only runs when
-    /// <see cref="GetEffectiveWigMode"/> already returned
-    /// <see cref="WigHandlingMode.ConvertToHeadParts"/>, and the renderer needs
-    /// the same answer while previewing.
+    /// The wig hair-tint mode <paramref name="modSetting"/> gives its NPCs: the per-mod
+    /// override when set, else the global default. Gated on wig detection like
+    /// <see cref="GetEffectiveWigMode"/>, but NOT on the output mode — the mode is only ever
+    /// acted on by the wig→HeadPart converter, which runs behind the wig mode already.
+    ///
+    /// <para>This is the mod level only. An NPC can carry its own override; the patcher asks
+    /// <see cref="GetEffectiveWigHairTintMode(ModSetting, FormKey)"/>. Use this overload to show
+    /// what an NPC with no override of its own would get. The mode is a request, not the
+    /// outcome: under <see cref="WigHairTintMode.Auto"/> whether a wig is tinted is decided per
+    /// NPC by <c>WigHairTintDecision.ShouldTint</c>.</para>
     /// </summary>
     public WigHairTintMode GetEffectiveWigHairTintMode(ModSetting? modSetting)
     {
         if (modSetting == null || !ModHasWigs(modSetting)) return DefaultWigHairTintMode;
         return modSetting.ModWigHairTintMode ?? DefaultWigHairTintMode;
+    }
+
+    /// <summary>
+    /// The wig hair-tint mode that applies to ONE NPC: its own override
+    /// (<see cref="NpcWigHairTintModes"/>) when it has one, else what
+    /// <see cref="GetEffectiveWigHairTintMode(ModSetting)"/> gives its mod. The NPC override is
+    /// not gated on wig detection: it was set for that NPC on purpose.
+    /// </summary>
+    /// <param name="targetNpcFormKey">The NPC being patched (the key of the selection), not the
+    /// appearance donor.</param>
+    public WigHairTintMode GetEffectiveWigHairTintMode(ModSetting? modSetting, FormKey targetNpcFormKey)
+    {
+        return GetNpcWigHairTintMode(targetNpcFormKey) ?? GetEffectiveWigHairTintMode(modSetting);
     }
 
     /// <summary>

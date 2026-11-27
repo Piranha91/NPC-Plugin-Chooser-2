@@ -112,14 +112,20 @@ public class HeadPartWigConverter
     internal Func<string, IReadOnlyCollection<string>> PhysicsXmlProvider { get; set; }
         = path => NifHandler.GetPhysicsXmlPathsFromNif(path);
 
+    /// <summary>What RaceMenu does to a worn wig in this installation — the input
+    /// <see cref="WigHairTintMode.Auto"/> turns on. Seam for tests; production reads the
+    /// <see cref="RaceMenuDetector"/>'s state, which the patcher refreshes once per run.</summary>
+    internal Func<RaceMenuHairTintState> RaceMenuStateProvider { get; set; }
+
     public HeadPartWigConverter(EnvironmentStateProvider environmentStateProvider, RecordHandler recordHandler,
-        BsaHandler bsaHandler, Settings settings)
+        BsaHandler bsaHandler, Settings settings, RaceMenuDetector raceMenuDetector)
     {
         _environmentStateProvider = environmentStateProvider;
         _recordHandler = recordHandler;
         _bsaHandler = bsaHandler;
         _settings = settings;
         HeadPartRaceAllowedProbe = RaceBuildsAFaceGenHead;
+        RaceMenuStateProvider = () => raceMenuDetector.State;
     }
 
     /// <summary>Whether a race can wear a minted head part at all — i.e. whether the engine builds
@@ -230,16 +236,31 @@ public class HeadPartWigConverter
         /// <see cref="NifHandler.WigBakeInstruction"/>.</summary>
         public bool SynthesizeHairPartitionTemplate { get; init; }
 
-        /// <summary>This mod's effective <see cref="Models.WigHairTintMode"/> —
-        /// whether the bake re-tints the wig with the NPC's hair color once it
-        /// leaves skee64's reach. Threaded into
-        /// <see cref="NifHandler.WigBakeInstruction"/>.</summary>
+        /// <summary>The <see cref="Models.WigHairTintMode"/> that applied to this NPC: its own
+        /// override, else the mod's, else the global default
+        /// (<see cref="Settings.GetEffectiveWigHairTintMode(ModSetting, FormKey)"/>). The request,
+        /// kept for the log; <see cref="ApplyHairTint"/> is the outcome.</summary>
         public Models.WigHairTintMode HairTintMode { get; init; } = Models.WigHairTintMode.Auto;
 
-        /// <summary>The donor NPC's resolved HCLR as sRGB 0..1 — the color
-        /// skee64 applied to the wig while it was still worn, and so what the
-        /// bake writes into it. Null when the NPC has no hair color record; the
-        /// bake then harvests the FaceGen's own hair tint instead.</summary>
+        /// <summary>Whether the bake writes the NPC's hair color into the wig — the resolved
+        /// answer of <see cref="WigHairTintDecision.ShouldTint"/> for
+        /// <see cref="HairTintMode"/>, this run's RaceMenu state and the two slot masks below.
+        /// Threaded into <see cref="NifHandler.WigBakeInstruction"/>, which applies no rule of
+        /// its own.</summary>
+        public bool ApplyHairTint { get; init; }
+
+        /// <summary>Biped slots of the ARMOR the wig came from: the outfit wig item, or the skin
+        /// for a skin-carried wig. 0 when the record has no body template. One half of RaceMenu's
+        /// slot test.</summary>
+        public uint CarrierArmorSlotMask { get; init; }
+
+        /// <summary>Biped slots of the wig's ArmorAddon. The other half of RaceMenu's slot
+        /// test.</summary>
+        public uint CarrierAddonSlotMask { get; init; }
+
+        /// <summary>The donor NPC's resolved HCLR as sRGB 0..1. A fallback for the bake, which
+        /// prefers the hair tint harvested from the FaceGen itself. Null when the NPC has no
+        /// hair color record.</summary>
         public (float R, float G, float B)? HairTintRgb { get; init; }
     }
 
@@ -295,6 +316,12 @@ public class HeadPartWigConverter
     /// and the donor's own fields are what the output carries. Two parameters keep this class
     /// field-for-field consistent with <c>CopyAppearanceData</c>.</para>
     /// </param>
+    /// <param name="targetNpcFormKey">
+    /// The NPC being patched (the key of the selection), which is not the donor when the user
+    /// gave one NPC another's appearance. Used only to look up that NPC's own hair tint override
+    /// (<see cref="Settings.NpcWigHairTintModes"/>). Null = no per-NPC override is consulted and
+    /// the mod's mode applies.
+    /// </param>
     public Result? Apply(
         INpcGetter donorNpc,
         ModSetting appearanceModSetting,
@@ -303,7 +330,8 @@ public class HeadPartWigConverter
         Action<string, bool, bool> appendLog,
         out bool fallBackToForwardToSkin,
         FormKey? faceGenSubjectFormKey = null,
-        INpcGetter? flattenTerminusNpc = null)
+        INpcGetter? flattenTerminusNpc = null,
+        FormKey? targetNpcFormKey = null)
     {
         fallBackToForwardToSkin = false;
         var faceGenKey = faceGenSubjectFormKey ?? donorNpc.FormKey;
@@ -345,7 +373,7 @@ public class HeadPartWigConverter
             // skin-carried wig is already in its ForwardToSkin end state, so a
             // declined conversion just leaves the donor's correct in-game state.
             return ApplyWnamConversion(appearanceNpc, donorNpc, appearanceModSetting, modFolderPaths,
-                npcIdentifier, appendLog, wnamWigArmas, faceGenKey);
+                npcIdentifier, appendLog, wnamWigArmas, faceGenKey, targetNpcFormKey);
         }
 
         if (wigItemKeys.Count > 1)
@@ -387,8 +415,8 @@ public class HeadPartWigConverter
         // 2. Resolve the worn wig NIF: hair-slot ARMA for the donor's race/sex,
         //    weight-matched _0/_1 variant (nearest, no interpolation).
         string? wigNifRecordPath = ResolveWigNifRecordPath(wigArmor, appearanceNpc, appearanceModSetting,
-            modFolderPaths, npcIdentifier, appendLog);
-        if (wigNifRecordPath == null)
+            modFolderPaths, npcIdentifier, appendLog, out var wigArma);
+        if (wigNifRecordPath == null || wigArma == null)
         {
             fallBackToForwardToSkin = true;
             return null;
@@ -446,6 +474,10 @@ public class HeadPartWigConverter
             return null;
         }
 
+        // The wig was worn as this outfit item through this ArmorAddon: the pair RaceMenu's
+        // slot test would have seen in game.
+        var tint = ResolveHairTint(appearanceModSetting, targetNpcFormKey, wigArmor, wigArma);
+
         var result = new Result
         {
             ParentHeadPartKey = set.ParentKey,
@@ -457,7 +489,10 @@ public class HeadPartWigConverter
             PhysicsXmlSourcePath = set.PhysicsXmlSourcePath,
             PhysicsXmlSourceDataRelPath = set.PhysicsXmlSourceDataRelPath,
             PhysicsXmlNewDataRelPath = set.PhysicsXmlNewDataRelPath,
-            HairTintMode = _settings.GetEffectiveWigHairTintMode(appearanceModSetting),
+            HairTintMode = tint.Mode,
+            ApplyHairTint = tint.Apply,
+            CarrierArmorSlotMask = tint.ArmorSlotMask,
+            CarrierAddonSlotMask = tint.AddonSlotMask,
             HairTintRgb = ResolveHairColorRgb(appearanceNpc, appearanceModSetting, modFolderPaths),
         };
         result.DonorHairHeadPartKeys.UnionWith(donorHairKeys);
@@ -472,7 +507,47 @@ public class HeadPartWigConverter
                   $"as head parts ('{set.ParentEditorId}' + {set.ShapeRenames.Count - 1} extra(s)); " +
                   $"donor hair {string.Join(", ", stripNames)} will be stripped and the wig baked into the " +
                   "copied FaceGen after asset copy.", false, false);
+        appendLog($"      Wig conversion: {npcIdentifier} hair color: {tint.Description}", false, false);
         return result;
+    }
+
+    /// <summary>
+    /// Resolves the hair tint for one conversion: the effective <see cref="WigHairTintMode"/>
+    /// (the NPC's own override, else the mod's, else the global default) and, from it, whether
+    /// the bake writes the NPC's hair color in (<see cref="WigHairTintDecision.ShouldTint"/>).
+    /// <paramref name="carrierArmor"/> and <paramref name="carrierArma"/> are the records the wig
+    /// was worn through in game — the outfit item or the skin, and the wig's ArmorAddon — because
+    /// under <see cref="WigHairTintMode.Auto"/> RaceMenu's slot test is asked of exactly that
+    /// pair. A carrier with no body template occupies no slot and so fails the test, as in game.
+    /// </summary>
+    private (WigHairTintMode Mode, bool Apply, uint ArmorSlotMask, uint AddonSlotMask, string Description)
+        ResolveHairTint(ModSetting appearanceModSetting, FormKey? targetNpcFormKey,
+            IArmorGetter? carrierArmor, IArmorAddonGetter carrierArma)
+    {
+        var mode = targetNpcFormKey is { } target
+            ? _settings.GetEffectiveWigHairTintMode(appearanceModSetting, target)
+            : _settings.GetEffectiveWigHairTintMode(appearanceModSetting);
+        uint armorSlots = (uint)(carrierArmor?.BodyTemplate?.FirstPersonFlags ?? 0);
+        uint addonSlots = (uint)(carrierArma.BodyTemplate?.FirstPersonFlags ?? 0);
+        var raceMenu = RaceMenuStateProvider();
+        bool apply = WigHairTintDecision.ShouldTint(mode, raceMenu, armorSlots, addonSlots);
+
+        string description = mode switch
+        {
+            WigHairTintMode.Always => "On, the NPC's hair color is baked into the wig.",
+            WigHairTintMode.Never => "Off, the wig keeps its own tint.",
+            _ when apply => "Auto, tinted: RaceMenu tints this wig while it is worn " +
+                            $"(armor {RaceMenuHairTintState.DescribeSlots(armorSlots)}, addon " +
+                            $"{RaceMenuHairTintState.DescribeSlots(addonSlots)}, RaceMenu mask {raceMenu.SlotMask}).",
+            _ when !raceMenu.Installed => "Auto, not tinted: RaceMenu is not installed, so the worn wig " +
+                                          "is not tinted in game either.",
+            _ when !raceMenu.TintEnabled => "Auto, not tinted: RaceMenu's hair-slot tint " +
+                                            "(bEnableTintHairSlot) is off.",
+            _ => "Auto, not tinted: the wig does not pass RaceMenu's slot test " +
+                 $"(armor {RaceMenuHairTintState.DescribeSlots(armorSlots)}, addon " +
+                 $"{RaceMenuHairTintState.DescribeSlots(addonSlots)}, RaceMenu mask {raceMenu.SlotMask}).",
+        };
+        return (mode, apply, armorSlots, addonSlots, description);
     }
 
     /// <summary>Effective wig ArmorAddons (<see cref="Settings.IsWigArmature"/>)
@@ -512,7 +587,7 @@ public class HeadPartWigConverter
     private Result? ApplyWnamConversion(INpcGetter appearanceNpc, INpcGetter donorNpc,
         ModSetting appearanceModSetting,
         HashSet<string> modFolderPaths, string npcIdentifier, Action<string, bool, bool> appendLog,
-        List<IArmorAddonGetter> wnamWigArmas, FormKey faceGenKey)
+        List<IArmorAddonGetter> wnamWigArmas, FormKey faceGenKey, FormKey? targetNpcFormKey)
     {
         var raceKey = appearanceNpc.Race.IsNull ? (FormKey?)null : appearanceNpc.Race.FormKey;
         var armorRaceKey = ResolveArmorRaceKey(appearanceNpc,
@@ -599,6 +674,12 @@ public class HeadPartWigConverter
             raceKey, appearanceModSetting, npcIdentifier, appendLog);
         if (set == null) return null;
 
+        // The wig was worn as part of the SKIN (the WornArmor of the record whose appearance the
+        // output carries) through this ArmorAddon: the pair RaceMenu's slot test saw in game.
+        var skinArmor = ResolveFromModsOrWinner<IArmorGetter>(appearanceNpc.WornArmor,
+            appearanceModSetting.CorrespondingModKeys, modFolderPaths);
+        var tint = ResolveHairTint(appearanceModSetting, targetNpcFormKey, skinArmor, arma);
+
         var result = new Result
         {
             ParentHeadPartKey = set.ParentKey,
@@ -611,7 +692,10 @@ public class HeadPartWigConverter
             PhysicsXmlSourceDataRelPath = set.PhysicsXmlSourceDataRelPath,
             PhysicsXmlNewDataRelPath = set.PhysicsXmlNewDataRelPath,
             SynthesizeHairPartitionTemplate = synthesize,
-            HairTintMode = _settings.GetEffectiveWigHairTintMode(appearanceModSetting),
+            HairTintMode = tint.Mode,
+            ApplyHairTint = tint.Apply,
+            CarrierArmorSlotMask = tint.ArmorSlotMask,
+            CarrierAddonSlotMask = tint.AddonSlotMask,
             HairTintRgb = ResolveHairColorRgb(appearanceNpc, appearanceModSetting, modFolderPaths),
         };
         result.DonorHairHeadPartKeys.UnionWith(donorHairKeys);
@@ -625,6 +709,7 @@ public class HeadPartWigConverter
                       : "bald donor (synthesized hair partition) — ") +
                   "the wig is baked into the copied FaceGen after asset copy; the skin duplicate loses the " +
                   "converted ArmorAddon.", false, false);
+        appendLog($"      Wig conversion: {npcIdentifier} hair color: {tint.Description}", false, false);
         return result;
     }
 
@@ -775,11 +860,14 @@ public class HeadPartWigConverter
     /// <summary>Resolves the record-style (no "meshes\" prefix) path of the wig
     /// NIF this NPC actually wears: the single race-applicable hair-slot ARMA's
     /// per-sex WorldModel with the weight-matched _0/_1 variant. Null (with a
-    /// log line) when ambiguous or unresolvable — the caller falls back.</summary>
+    /// log line) when ambiguous or unresolvable — the caller falls back.
+    /// <paramref name="wigArma"/> is that single ArmorAddon (null whenever the path is): the
+    /// hair tint decision needs its biped slots.</summary>
     private string? ResolveWigNifRecordPath(IArmorGetter wigArmor, INpcGetter appearanceNpc,
         ModSetting appearanceModSetting, HashSet<string> modFolderPaths, string npcIdentifier,
-        Action<string, bool, bool> appendLog)
+        Action<string, bool, bool> appendLog, out IArmorAddonGetter? wigArma)
     {
+        wigArma = null;
         IArmorAddonGetter? ResolveArma(FormKey fk) =>
             ResolveFromModsOrWinner<IArmorAddonGetter>(fk.ToLink<IArmorAddonGetter>(),
                 appearanceModSetting.CorrespondingModKeys, modFolderPaths);
@@ -816,8 +904,10 @@ public class HeadPartWigConverter
             return null;
         }
 
-        return ResolveArmaNifRecordPath(hairArmas[0], appearanceNpc, appearanceModSetting, npcIdentifier,
+        var recordPath = ResolveArmaNifRecordPath(hairArmas[0], appearanceNpc, appearanceModSetting, npcIdentifier,
             "wig ArmorAddon", appendLog);
+        if (recordPath != null) wigArma = hairArmas[0];
+        return recordPath;
     }
 
     /// <summary>Shared ARMA→NIF tail of both wig sources: the addon's per-sex

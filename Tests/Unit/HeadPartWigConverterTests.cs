@@ -166,7 +166,10 @@ public class HeadPartWigConverterTests : IDisposable
         }
 
         var bsaHandler = new BsaHandler(env);
-        f.Converter = new HeadPartWigConverter(env, f.RecordHandler, bsaHandler, f.Settings)
+        // RaceMenu is absent by default (the bare environment has no Data folder to find it in);
+        // the hair-tint tests stand it up through RaceMenuStateProvider.
+        f.Converter = new HeadPartWigConverter(env, f.RecordHandler, bsaHandler, f.Settings,
+            new RaceMenuDetector(env))
         {
             RenderShapeNamesProvider = _ => WigShapes,
             PartitionProbe = (_, _) => true,
@@ -1095,6 +1098,216 @@ public class HeadPartWigConverterTests : IDisposable
         fallback.Should().BeFalse();
         result.Should().NotBeNull("the manual promotion makes it an effective wig");
         result!.WnamArmatureKeysToStrip.Should().BeEquivalentTo(new[] { wigArma.FormKey });
+    }
+
+    // ---- Hair tint (WigHairTintMode) ----------------------------------------------------------
+    //
+    // The converter resolves, per NPC, whether the bake writes the NPC's hair color into the wig
+    // (Result.ApplyHairTint); NifHandler then applies no rule of its own. Auto reproduces what the
+    // game shows without this app: tinted exactly when RaceMenu would have tinted the worn wig,
+    // which is its slot test asked of the armor and armor addon the wig was worn through. The
+    // bake itself, on real meshes, is NifHandlerWigHairTintTests.
+
+    private static RaceMenuHairTintState RaceMenu(bool installed = true, bool enabled = true, uint mask = 2050) =>
+        new(installed, enabled, mask, @"SKSE\Plugins\skee64.dll", installed ? @"X:\Data\SKSE\Plugins\skee64.dll" : null,
+            Array.Empty<string>());
+
+    /// <summary>The fixture's outfit wig ARMO has no body template; a real wig item occupies the
+    /// hair slot (FoxGlove Auri's is 31 + 38).</summary>
+    private static void GiveOutfitWigTheHairSlot(Fixture f) =>
+        f.WigArmor.BodyTemplate = new BodyTemplate { FirstPersonFlags = BipedObjectFlag.Hair };
+
+    private static HeadPartWigConverter.Result? ApplyFor(Fixture f, FormKey targetNpc,
+        List<(string Message, bool IsError, bool ForceLog)>? log = null) =>
+        f.Converter.Apply(f.DonorNpc, f.ModSetting, new HashSet<string>(), "TestNpc",
+            (m, isError, force) => log?.Add((m, isError, force)), out _, targetNpcFormKey: targetNpc);
+
+    [Fact]
+    public void Apply_Auto_RaceMenuDetected_TintsAWigThatPassesTheSlotTest()
+    {
+        var f = Make();
+        GiveOutfitWigTheHairSlot(f);
+        f.Converter.RaceMenuStateProvider = () => RaceMenu();
+        var log = new List<(string Message, bool IsError, bool ForceLog)>();
+
+        var result = Apply(f, out _, log);
+
+        result.Should().NotBeNull();
+        result!.HairTintMode.Should().Be(WigHairTintMode.Auto, "Auto is the default at every level");
+        result.CarrierArmorSlotMask.Should().Be((uint)BipedObjectFlag.Hair, "the outfit wig item");
+        result.CarrierAddonSlotMask.Should().Be((uint)BipedObjectFlag.Hair, "the wig's ArmorAddon");
+        result.ApplyHairTint.Should().BeTrue("RaceMenu tints this wig while it is worn, so the converted one is tinted too");
+        log.Should().Contain(l => l.Message.Contains("hair color: Auto, tinted"));
+    }
+
+    [Fact]
+    public void Apply_Auto_RaceMenuNotInstalled_LeavesTheWigUntinted()
+    {
+        var f = Make();
+        GiveOutfitWigTheHairSlot(f);
+        f.Converter.RaceMenuStateProvider = () => RaceMenu(installed: false);
+        var log = new List<(string Message, bool IsError, bool ForceLog)>();
+
+        var result = Apply(f, out _, log);
+
+        result!.ApplyHairTint.Should().BeFalse("nothing tints the worn wig in game, so Auto leaves the converted one alone");
+        log.Should().Contain(l => l.Message.Contains("RaceMenu is not installed"));
+    }
+
+    [Fact]
+    public void Apply_Auto_WithNoRaceMenuStateSupplied_ReadsTheDetector()
+    {
+        // The production wiring: no seam set, the detector answers. This fixture's environment
+        // has no Data folder, so RaceMenu is not found.
+        var f = Make();
+        GiveOutfitWigTheHairSlot(f);
+
+        Apply(f, out _)!.ApplyHairTint.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Apply_Auto_RaceMenuTintSettingOff_LeavesTheWigUntinted()
+    {
+        var f = Make();
+        GiveOutfitWigTheHairSlot(f);
+        f.Converter.RaceMenuStateProvider = () => RaceMenu(enabled: false);
+
+        Apply(f, out _)!.ApplyHairTint.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Apply_Auto_CarrierThatFailsTheSlotTest_LeavesTheWigUntinted()
+    {
+        var f = Make();
+        f.Converter.RaceMenuStateProvider = () => RaceMenu();
+
+        // The fixture's wig ARMO has no body template: it occupies no slot.
+        var noTemplate = Apply(f, out _);
+        noTemplate!.CarrierArmorSlotMask.Should().Be(0u);
+        noTemplate.ApplyHairTint.Should().BeFalse();
+
+        // An armor in the body slot only does not meet the hair-slot mask either.
+        var g = Make();
+        g.WigArmor.BodyTemplate = new BodyTemplate { FirstPersonFlags = BipedObjectFlag.Body };
+        g.Converter.RaceMenuStateProvider = () => RaceMenu();
+        Apply(g, out _)!.ApplyHairTint.Should().BeFalse();
+
+        // RaceMenu with the code-default mask (no ini): slot 30, so no hair-slot wig passes.
+        var h = Make();
+        GiveOutfitWigTheHairSlot(h);
+        h.Converter.RaceMenuStateProvider = () => RaceMenu(mask: RaceMenuHairTintState.DefaultSlotMask);
+        Apply(h, out _)!.ApplyHairTint.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Apply_Always_Tints_WithoutRaceMenu_AndWhateverTheSlots()
+    {
+        var f = Make(); // wig ARMO without a body template, RaceMenu absent
+        f.ModSetting.ModWigHairTintMode = WigHairTintMode.Always;
+
+        var result = Apply(f, out _);
+
+        result!.HairTintMode.Should().Be(WigHairTintMode.Always);
+        result.ApplyHairTint.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Apply_Never_DoesNotTint_EvenWhenRaceMenuWould()
+    {
+        var f = Make();
+        GiveOutfitWigTheHairSlot(f);
+        f.Converter.RaceMenuStateProvider = () => RaceMenu();
+        f.Settings.DefaultWigHairTintMode = WigHairTintMode.Never;
+
+        var result = Apply(f, out _);
+
+        result!.HairTintMode.Should().Be(WigHairTintMode.Never);
+        result.ApplyHairTint.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Apply_NpcOverride_BeatsTheModsMode_AndIsKeyedByTheNpcBeingPatched()
+    {
+        // The patched NPC is not the donor here: one NPC wearing another's appearance.
+        var target = MutagenFixtures.Fk("01B13F:Skyrim.esm");
+        var otherTarget = MutagenFixtures.Fk("01B140:Skyrim.esm");
+
+        var f = Make();
+        f.ModSetting.ModWigHairTintMode = WigHairTintMode.Never;
+        f.Settings.SetNpcWigHairTintMode(new[] { target }, WigHairTintMode.Always);
+
+        var overridden = ApplyFor(f, target);
+        overridden!.HairTintMode.Should().Be(WigHairTintMode.Always);
+        overridden.ApplyHairTint.Should().BeTrue("the NPC's own override beats the mod's Never");
+
+        var followsMod = ApplyFor(f, otherTarget);
+        followsMod!.HairTintMode.Should().Be(WigHairTintMode.Never);
+        followsMod.ApplyHairTint.Should().BeFalse("an NPC with no override follows its mod");
+
+        // An override stored for the DONOR does not reach a different NPC that borrows it...
+        var g = Make();
+        g.Settings.SetNpcWigHairTintMode(new[] { g.DonorNpc.FormKey }, WigHairTintMode.Always);
+        ApplyFor(g, target)!.ApplyHairTint.Should().BeFalse();
+        // ...and a caller that names no NPC gets the mod's mode.
+        Apply(g, out _)!.ApplyHairTint.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Apply_NpcOverride_Auto_BeatsAModSetToAlways()
+    {
+        var target = MutagenFixtures.Fk("01B13F:Skyrim.esm");
+        var f = Make();
+        GiveOutfitWigTheHairSlot(f);
+        f.ModSetting.ModWigHairTintMode = WigHairTintMode.Always;
+        f.Settings.SetNpcWigHairTintMode(new[] { target }, WigHairTintMode.Auto);
+        f.Converter.RaceMenuStateProvider = () => RaceMenu(installed: false);
+
+        var result = ApplyFor(f, target);
+
+        result!.HairTintMode.Should().Be(WigHairTintMode.Auto);
+        result.ApplyHairTint.Should().BeFalse("Auto without RaceMenu, although the mod says Always");
+    }
+
+    [Fact]
+    public void ApplyWnam_Auto_TheSkinIsTheCarrierArmor()
+    {
+        // A skin-carried wig is worn as part of the SKIN, so RaceMenu's slot test sees the skin
+        // ARMO's slots. High Poly NPC Overhaul's skins claim 30-33 + 37, hair slot included, which
+        // is why RaceMenu tints its wigs; a skin that claims only the body slot is not tinted.
+        var f = Make(donorHasHair: false);
+        RemoveOutfitWig(f);
+        var (skin, _) = AddWnamWig(f); // skin: Body only; wig addon: Hair
+        f.Converter.RaceMenuStateProvider = () => RaceMenu();
+        var log = new List<(string Message, bool IsError, bool ForceLog)>();
+
+        var bodyOnlySkin = Apply(f, out _, log);
+        bodyOnlySkin!.CarrierArmorSlotMask.Should().Be((uint)BipedObjectFlag.Body);
+        bodyOnlySkin.CarrierAddonSlotMask.Should().Be((uint)BipedObjectFlag.Hair);
+        bodyOnlySkin.ApplyHairTint.Should().BeFalse("armor and addon share no slot of the mask");
+        log.Should().Contain(l => l.Message.Contains("does not pass RaceMenu's slot test"));
+
+        skin.BodyTemplate = new BodyTemplate { FirstPersonFlags = BipedObjectFlag.Body | BipedObjectFlag.Hair };
+        var hairSlotSkin = Apply(f, out _);
+        hairSlotSkin!.CarrierArmorSlotMask.Should().Be((uint)(BipedObjectFlag.Body | BipedObjectFlag.Hair));
+        hairSlotSkin.ApplyHairTint.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ApplyWnam_AlwaysAndNever_IgnoreRaceMenu()
+    {
+        var f = Make(donorHasHair: false);
+        RemoveOutfitWig(f);
+        AddWnamWig(f);
+        f.ModSetting.ModWigHairTintMode = WigHairTintMode.Always;
+        Apply(f, out _)!.ApplyHairTint.Should().BeTrue("On needs no RaceMenu");
+
+        var g = Make(donorHasHair: false);
+        RemoveOutfitWig(g);
+        var (skin, _) = AddWnamWig(g);
+        skin.BodyTemplate = new BodyTemplate { FirstPersonFlags = BipedObjectFlag.Body | BipedObjectFlag.Hair };
+        g.Converter.RaceMenuStateProvider = () => RaceMenu();
+        g.ModSetting.ModWigHairTintMode = WigHairTintMode.Never;
+        Apply(g, out _)!.ApplyHairTint.Should().BeFalse("Off wins over RaceMenu");
     }
 
     // ---- EditorID sanitation -----------------------------------------------------------------

@@ -639,6 +639,50 @@ public class SerializableModelsRoundTripTests
     }
 
     [Fact]
+    public void Settings_NpcWigHairTintModes_SurviveRoundTrip()
+    {
+        // The per-NPC override of the converted-wig hair tint mode: FormKey as a dictionary KEY
+        // with an enum value, like the wig-and-headgear answers. A broken round trip would
+        // silently put every overridden NPC back on its mod's mode.
+        var settings = new Settings
+        {
+            NpcWigHairTintModes = new Dictionary<FormKey, WigHairTintMode>
+            {
+                [Npc1] = WigHairTintMode.Auto,
+                [Npc2] = WigHairTintMode.Always,
+                [Npc3] = WigHairTintMode.Never,
+            },
+        };
+
+        var json = JSONhandler<Settings>.Serialize(settings, out var ok, out _);
+        ok.Should().BeTrue();
+        json.Should().Contain("\"00ABCD:Skyrim.esm\": \"Always\"",
+            "the key is the FormKey's canonical string and the mode is written by name");
+
+        var clone = RoundTrip(settings);
+
+        clone.NpcWigHairTintModes.Should().HaveCount(3);
+        clone.NpcWigHairTintModes[Npc1].Should().Be(WigHairTintMode.Auto);
+        clone.NpcWigHairTintModes[Npc2].Should().Be(WigHairTintMode.Always);
+        clone.NpcWigHairTintModes[Npc3].Should().Be(WigHairTintMode.Never);
+        clone.GetNpcWigHairTintMode(Npc3).Should().Be(WigHairTintMode.Never);
+        clone.GetEffectiveWigHairTintMode(null, Npc2).Should().Be(WigHairTintMode.Always);
+    }
+
+    [Fact]
+    public void Settings_WithoutNpcWigHairTintModes_DeserializesToEmpty()
+    {
+        // A Settings.json written before the per-NPC override existed has no such field.
+        var clone = JSONhandler<Settings>.Deserialize("{ \"OutputDirectory\": \"NPC Output\" }", out var ok, out var err);
+
+        ok.Should().BeTrue("deserialization should succeed: {0}", err);
+        clone!.NpcWigHairTintModes.Should().NotBeNull().And.BeEmpty();
+        clone.GetNpcWigHairTintMode(Npc1).Should().BeNull();
+        clone.DefaultWigHairTintMode.Should().Be(WigHairTintMode.Auto);
+        clone.GetEffectiveWigHairTintMode(null, Npc1).Should().Be(WigHairTintMode.Auto);
+    }
+
+    [Fact]
     public void Settings_FavoriteFacesGroupAssignments_SurviveRoundTrip()
     {
         // The favorites group store is a List<FavoriteFaceGroupAssignment> rather than a

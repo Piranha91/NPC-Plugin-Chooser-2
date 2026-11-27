@@ -184,8 +184,10 @@ public class ModSetting
     public AntlerHandlingMode? ModAntlerHandlingMode { get; set; } = null;
 
     /// <summary>Per-mod override of <see cref="Settings.DefaultWigHairTintMode"/>
-    /// (null = use the global default). Only meaningful when this mod's
-    /// effective wig mode is <see cref="WigHandlingMode.ConvertToHeadParts"/>.</summary>
+    /// (null = use the global default). Only meaningful when one of this mod's wigs is
+    /// converted to head parts. An NPC's own override
+    /// (<see cref="Settings.NpcWigHairTintModes"/>) beats this; the resolved mode comes from
+    /// <see cref="Settings.GetEffectiveWigHairTintMode(ModSetting, Mutagen.Bethesda.Plugins.FormKey)"/>.</summary>
     public WigHairTintMode? ModWigHairTintMode { get; set; } = null;
 
     /// <summary>Per-mod override of the global <see cref="Settings.TemplateHandlingMode"/>

@@ -718,17 +718,20 @@
                                                              hair-slot items — that is why High Poly NPC Overhaul gives every NPC black
                                                              hair until RaceMenu is installed). A wig baked into the FaceGen file is no
                                                              longer a worn item, so RaceMenu stops recoloring it and the placeholder
-                                                             sticks. This bakes the NPC's own hair color in instead.
+                                                             sticks. This can bake the NPC's own hair colour in instead.
                                                              <LineBreak/><LineBreak/>
                                                              Default: Use the default setting from the Settings tab.
                                                              <LineBreak/>
-                                                             Auto: recolor only wigs carrying a placeholder tint; leave wigs whose
-                                                             textures are already colored by their author alone.
+                                                             Auto (follow RaceMenu): a converted wig gets the NPC's hair colour only
+                                                             when RaceMenu is installed and its hair-slot tint is on, which is what
+                                                             the game shows for the worn wig.
                                                              <LineBreak/>
-                                                             Always use NPC's hair color: recolor every converted wig, exactly as
-                                                             RaceMenu would have done to the original worn wig.
+                                                             On: a converted wig always gets the NPC's hair colour.
                                                              <LineBreak/>
-                                                             Keep the wig's own color: never touch the wig's baked hair color.
+                                                             Off: a converted wig never does; it keeps the colour its mesh came with.
+                                                             <LineBreak/><LineBreak/>
+                                                             A single NPC can be given its own setting from its 3D preview ("Keep for
+                                                             this NPC"); that wins over this.
                                                          </TextBlock>
                                                      </ToolTip>
                                                  </TextBlock.ToolTip>

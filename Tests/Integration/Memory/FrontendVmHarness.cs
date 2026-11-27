@@ -75,6 +75,7 @@ public sealed class FrontendVmHarness : IDisposable
         builder.RegisterType<WigForwarder>().AsSelf().SingleInstance();
         builder.RegisterType<WigHeadgearChoiceCoordinator>().AsSelf().SingleInstance();
         builder.RegisterType<HeadPartWigConverter>().AsSelf().SingleInstance();
+        builder.RegisterType<RaceMenuDetector>().AsSelf().SingleInstance();
         builder.RegisterType<OutputValidator>().AsSelf().SingleInstance();
         builder.RegisterType<EasyNpcTranslator>().AsSelf().SingleInstance();
         builder.RegisterType<FaceFinderClient>().AsSelf().SingleInstance();

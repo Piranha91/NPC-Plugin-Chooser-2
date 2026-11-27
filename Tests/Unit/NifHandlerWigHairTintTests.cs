@@ -12,31 +12,64 @@ namespace NPC_Plugin_Chooser_2.Tests.Unit;
 /// <summary>
 /// The hair-tint leg of <see cref="NifHandler.BakeWigIntoFaceGen"/>
 /// (<see cref="WigHairTintMode"/>). A worn hair-slot wig is recolored in game by
-/// RaceMenu's skee64 (<c>bEnableTintHairSlot</c>), never by the engine, so wig
+/// RaceMenu (<c>bEnableTintHairSlot</c>), never by the engine, so wig
 /// meshes routinely ship a dark PLACEHOLDER <c>hairTintColor</c>. Baking such a
-/// wig into the FaceGen takes it out of skee64's reach and would freeze the
-/// placeholder — the bake writes the NPC's hair color in instead.
+/// wig into the FaceGen takes it out of RaceMenu's reach, so whatever tint the
+/// bake leaves is permanent.
 ///
-/// <para>Two real specimens anchor the modes, one per authoring style:</para>
+/// <para>Whether the bake writes the NPC's hair color in is decided before it
+/// runs (<see cref="WigHairTintDecision.ShouldTint"/>) and handed over as
+/// <c>ApplyHairTint</c>. Each test here goes through that decision with a mode, a
+/// RaceMenu state and the specimen's real carrier slots, then reads the tints the
+/// bake left. Auto reproduces what the game shows without this app: tinted when
+/// RaceMenu would have tinted the worn wig, untouched otherwise. It does NOT look
+/// at the tint the wig already carries (RaceMenu does not either).</para>
+///
+/// <para>Two real specimens, one per authoring style:</para>
 /// <list type="bullet">
 /// <item>High Poly NPC Overhaul's KS Hairdos wigs — HairTint shader, placeholder
-/// tint (0.1333, 0.1333, 0.1333), greyscale-ish texture. Black hair in game
-/// without RaceMenu; the case this feature exists for.</item>
+/// tint (0.1333, 0.1333, 0.1333), greyscale-ish texture, carried on the skin.
+/// Black hair in game without RaceMenu, the NPC's hair color with it.</item>
 /// <item>FoxGlove Auri's wig — HairTint shader, NEUTRAL tint (1, 1, 1) over a
-/// pre-colored red texture. Auto must leave it alone.</item>
+/// pre-colored red texture, carried in the outfit. Measured in game: RaceMenu
+/// tints it all the same.</item>
 /// </list>
 /// Machine-local: gracefully skips when a specimen isn't installed (suite
 /// convention). Works on temp copies; source files are never modified.
 /// </summary>
 public class NifHandlerWigHairTintTests
 {
+    /// <summary>RaceMenu as its shipped ini configures it: tint on, mask 2050 (slots 31 + 41).</summary>
+    private static readonly RaceMenuHairTintState RaceMenuShipped =
+        new(true, true, 2050, @"SKSE\Plugins\skee64.dll", @"X:\Data\SKSE\Plugins\skee64.dll", Array.Empty<string>());
+
+    private static readonly RaceMenuHairTintState NoRaceMenu =
+        RaceMenuHairTintState.NotInstalled(@"SKSE\Plugins\skee64.dll");
+
+    /// <summary>The slots the wig was worn through, read from the specimens' plugins:
+    /// High Poly's skin ARMO (HighPoly_BodyArmor_Hair*, slots 30-33 + 37) with its wig addon
+    /// (HighPoly_WigAA_*, slot 31); FoxGlove's wig ARMO (FoxGlove_Wig, slots 31 + 38) with its
+    /// addon (FoxGlove_Wig_AA, slots 31 + 41).</summary>
+    private static readonly (uint Armor, uint Addon) HpnoCarrier = (143, 2);
+    private static readonly (uint Armor, uint Addon) FoxGloveCarrier = (258, 2050);
+
     // --- FoxGlove Auri: neutral-tint wig over a pre-colored texture ---
-    private const string FoxGloveModRoot =
-        @"S:\Skyrim NPC Selection\mods\FoxGlove - Auri Visual Overhaul - The FoxGlove - Classic Red - No Warpaint - Test";
-    private const string FoxGloveFaceGen =
-        FoxGloveModRoot + @"\meshes\actors\character\FaceGenData\FaceGeom\018auri.esp\00000D63.NIF";
-    private const string FoxGloveWig =
-        FoxGloveModRoot + @"\meshes\actors\FoxGlove Auri\Wig\22a_1.nif";
+    // The merged "- Test" copy first; where only the mod as installed exists, its FaceGen is in
+    // the option folder and its wig in the Core folder. Without the fallback every test of this
+    // specimen returned early on a machine that has the mod but not the merged copy.
+    private const string FoxGloveMods = @"S:\Skyrim NPC Selection\mods\FoxGlove - Auri Visual Overhaul - ";
+    private const string FoxGloveFaceGenRel =
+        @"\meshes\actors\character\FaceGenData\FaceGeom\018auri.esp\00000D63.NIF";
+    private const string FoxGloveWigRel = @"\meshes\actors\FoxGlove Auri\Wig\22a_1.nif";
+    private static readonly string FoxGloveFaceGen = FirstExisting(
+        FoxGloveMods + "The FoxGlove - Classic Red - No Warpaint - Test" + FoxGloveFaceGenRel,
+        FoxGloveMods + "The FoxGlove - Classic Red - No Warpaint (Default)" + FoxGloveFaceGenRel);
+    private static readonly string FoxGloveWig = FirstExisting(
+        FoxGloveMods + "The FoxGlove - Classic Red - No Warpaint - Test" + FoxGloveWigRel,
+        FoxGloveMods + "Core" + FoxGloveWigRel);
+
+    private static string FirstExisting(params string[] candidates) =>
+        candidates.FirstOrDefault(File.Exists) ?? candidates[0];
     private static readonly string[] FoxGloveDonorHair =
         { "FoxGloveHairMesh", "FoxGloveHairlineMesh", "FoxGloveHairScalp" };
 
@@ -73,18 +106,44 @@ public class NifHandlerWigHairTintTests
     // ═══════════════════════════════════════════════════════════════════════
 
     [Fact]
-    public void Auto_OverwritesPlaceholderTint_WithTheFaceGensOwnHairColor()
+    public void Auto_WithRaceMenu_OverwritesPlaceholderTint_WithTheFaceGensOwnHairColor()
     {
         if (HpnoMissing) return;
 
         // The FaceGen's own hair color wins over the supplied record value, so
         // the wig ends up the same color as this NPC's brows and beard.
         var tints = BakeAndReadWigTints(HpnoFaceGen, HpnoWig, Array.Empty<string>(),
-            WigHairTintMode.Auto, RecordHairColor, synthesizePartition: true);
+            WigHairTintMode.Auto, RaceMenuShipped, HpnoCarrier, RecordHairColor, synthesizePartition: true);
 
         tints.Should().NotBeEmpty();
         tints.Should().OnlyContain(t => Approximately(t, HpnoFaceGenHairTint),
-            "a placeholder tint is exactly what RaceMenu would have replaced in game");
+            "RaceMenu replaces the placeholder on the worn wig in game, so Auto bakes the same result");
+    }
+
+    [Fact]
+    public void Auto_WithoutRaceMenu_LeavesPlaceholderTintUntouched()
+    {
+        if (HpnoMissing) return;
+
+        var tints = BakeAndReadWigTints(HpnoFaceGen, HpnoWig, Array.Empty<string>(),
+            WigHairTintMode.Auto, NoRaceMenu, HpnoCarrier, RecordHairColor, synthesizePartition: true);
+
+        tints.Should().NotBeEmpty();
+        tints.Should().OnlyContain(t => Approximately(t, HpnoPlaceholderTint),
+            "without RaceMenu the game shows the placeholder, and Auto reproduces what the game shows");
+    }
+
+    [Fact]
+    public void Auto_WithRaceMenuTintSettingOff_LeavesPlaceholderTintUntouched()
+    {
+        if (HpnoMissing) return;
+
+        var tintOff = RaceMenuShipped with { TintEnabled = false };
+        var tints = BakeAndReadWigTints(HpnoFaceGen, HpnoWig, Array.Empty<string>(),
+            WigHairTintMode.Auto, tintOff, HpnoCarrier, RecordHairColor, synthesizePartition: true);
+
+        tints.Should().NotBeEmpty();
+        tints.Should().OnlyContain(t => Approximately(t, HpnoPlaceholderTint));
     }
 
     [Fact]
@@ -92,11 +151,46 @@ public class NifHandlerWigHairTintTests
     {
         if (HpnoMissing) return;
 
+        // On needs no RaceMenu.
         var tints = BakeAndReadWigTints(HpnoFaceGen, HpnoWig, Array.Empty<string>(),
-            WigHairTintMode.Always, RecordHairColor, synthesizePartition: true);
+            WigHairTintMode.Always, NoRaceMenu, HpnoCarrier, RecordHairColor, synthesizePartition: true);
 
         tints.Should().NotBeEmpty();
         tints.Should().OnlyContain(t => Approximately(t, HpnoFaceGenHairTint));
+    }
+
+    /// <summary>
+    /// The per-NPC override, end to end: the mod says Off, this one NPC says On, and the mode
+    /// <see cref="Settings.GetEffectiveWigHairTintMode(ModSetting, Mutagen.Bethesda.Plugins.FormKey)"/>
+    /// resolves for each is what the bake then does.
+    /// </summary>
+    [Fact]
+    public void PerNpcOverride_BeatsTheModsMode_InWhatIsBaked()
+    {
+        if (HpnoMissing) return;
+
+        var npc = Mutagen.Bethesda.Plugins.FormKey.Factory("013261:Skyrim.esm");
+        var otherNpc = Mutagen.Bethesda.Plugins.FormKey.Factory("013262:Skyrim.esm");
+        var mod = new ModSetting
+        {
+            DisplayName = "HPNO",
+            DetectedWigArmatures = { Mutagen.Bethesda.Plugins.FormKey.Factory("0008A9:HighPolyResources.esp") },
+            ModWigHairTintMode = WigHairTintMode.Never,
+        };
+        var settings = new Settings();
+        settings.SetNpcWigHairTintMode(new[] { npc }, WigHairTintMode.Always);
+
+        var overridden = BakeAndReadWigTints(HpnoFaceGen, HpnoWig, Array.Empty<string>(),
+            settings.GetEffectiveWigHairTintMode(mod, npc), RaceMenuShipped, HpnoCarrier, RecordHairColor,
+            synthesizePartition: true);
+        var followsMod = BakeAndReadWigTints(HpnoFaceGen, HpnoWig, Array.Empty<string>(),
+            settings.GetEffectiveWigHairTintMode(mod, otherNpc), RaceMenuShipped, HpnoCarrier, RecordHairColor,
+            synthesizePartition: true);
+
+        overridden.Should().NotBeEmpty();
+        overridden.Should().OnlyContain(t => Approximately(t, HpnoFaceGenHairTint), "this NPC's override is On");
+        followsMod.Should().NotBeEmpty();
+        followsMod.Should().OnlyContain(t => Approximately(t, HpnoPlaceholderTint), "the mod's mode is Off");
     }
 
     /// <summary>
@@ -120,8 +214,9 @@ public class NifHandlerWigHairTintTests
     {
         if (HpnoMissing) return;
 
+        // Off wins even where RaceMenu would tint the worn wig.
         var tints = BakeAndReadWigTints(HpnoFaceGen, HpnoWig, Array.Empty<string>(),
-            WigHairTintMode.Never, RecordHairColor, synthesizePartition: true);
+            WigHairTintMode.Never, RaceMenuShipped, HpnoCarrier, RecordHairColor, synthesizePartition: true);
 
         tints.Should().NotBeEmpty();
         tints.Should().OnlyContain(t => Approximately(t, HpnoPlaceholderTint),
@@ -134,7 +229,7 @@ public class NifHandlerWigHairTintTests
         if (HpnoMissing) return;
 
         var tints = BakeAndReadWigTints(HpnoFaceGen, HpnoWig, Array.Empty<string>(),
-            WigHairTintMode.Auto, hairTintRgb: null, synthesizePartition: true);
+            WigHairTintMode.Auto, RaceMenuShipped, HpnoCarrier, hairTintRgb: null, synthesizePartition: true);
 
         tints.Should().NotBeEmpty();
         tints.Should().OnlyContain(t => Approximately(t, HpnoFaceGenHairTint));
@@ -153,7 +248,7 @@ public class NifHandlerWigHairTintTests
         if (HpnoMissing) return;
 
         var tints = BakeAndReadWigTints(HpnoFaceGen, HpnoWig, Array.Empty<string>(),
-            WigHairTintMode.Always, RecordHairColor, synthesizePartition: true);
+            WigHairTintMode.Always, NoRaceMenu, HpnoCarrier, RecordHairColor, synthesizePartition: true);
 
         tints.Should().NotBeEmpty();
         tints.Should().NotContain(t => Approximately(t, RecordHairColor));
@@ -183,17 +278,37 @@ public class NifHandlerWigHairTintTests
     //  Neutral-tint wig (the FoxGlove Auri case — pre-colored texture)
     // ═══════════════════════════════════════════════════════════════════════
 
+    /// <summary>
+    /// Was <c>Auto_LeavesNeutralWhiteTintUntouched</c>: Auto used to mean "tint unless the baked
+    /// tint is neutral white", on the theory that a white tint marks a pre-colored texture the
+    /// game leaves alone. Measured in game, RaceMenu tints Auri's white-tint wig like any other
+    /// (its test is the slot mask, never the existing color), so a converted wig left white would
+    /// NOT look the way the worn one did.
+    /// </summary>
     [Fact]
-    public void Auto_LeavesNeutralWhiteTintUntouched()
+    public void Auto_WithRaceMenu_OverwritesANeutralWhiteTint_AsRaceMenuDoesInGame()
     {
         if (FoxGloveMissing) return;
 
         var tints = BakeAndReadWigTints(FoxGloveFaceGen, FoxGloveWig, FoxGloveDonorHair,
-            WigHairTintMode.Auto, RecordHairColor);
+            WigHairTintMode.Auto, RaceMenuShipped, FoxGloveCarrier, RecordHairColor);
+
+        tints.Should().NotBeEmpty();
+        tints.Should().OnlyContain(t => Approximately(t, FoxGloveFaceGenHairTint),
+            "the white tint is not a reason to skip: RaceMenu does not test the existing color");
+    }
+
+    [Fact]
+    public void Auto_WithoutRaceMenu_LeavesNeutralWhiteTintUntouched()
+    {
+        if (FoxGloveMissing) return;
+
+        var tints = BakeAndReadWigTints(FoxGloveFaceGen, FoxGloveWig, FoxGloveDonorHair,
+            WigHairTintMode.Auto, NoRaceMenu, FoxGloveCarrier, RecordHairColor);
 
         tints.Should().NotBeEmpty();
         tints.Should().OnlyContain(t => Approximately(t, NeutralTint),
-            "a neutral tint is a no-op multiply — the author pre-colored the texture");
+            "nothing tints the worn wig without RaceMenu, so the converted one keeps its authored tint");
     }
 
     [Fact]
@@ -202,11 +317,41 @@ public class NifHandlerWigHairTintTests
         if (FoxGloveMissing) return;
 
         var tints = BakeAndReadWigTints(FoxGloveFaceGen, FoxGloveWig, FoxGloveDonorHair,
-            WigHairTintMode.Always, RecordHairColor);
+            WigHairTintMode.Always, NoRaceMenu, FoxGloveCarrier, RecordHairColor);
 
         tints.Should().NotBeEmpty();
         tints.Should().OnlyContain(t => Approximately(t, FoxGloveFaceGenHairTint),
-            "Always mirrors skee64, which tints every hair-slot HairTint item");
+            "On writes the NPC's hair color into every HairTint shape of the wig");
+    }
+
+    [Fact]
+    public void Never_LeavesNeutralWhiteTintUntouched()
+    {
+        if (FoxGloveMissing) return;
+
+        var tints = BakeAndReadWigTints(FoxGloveFaceGen, FoxGloveWig, FoxGloveDonorHair,
+            WigHairTintMode.Never, RaceMenuShipped, FoxGloveCarrier, RecordHairColor);
+
+        tints.Should().NotBeEmpty();
+        tints.Should().OnlyContain(t => Approximately(t, NeutralTint));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  Which wigs the mode can affect at all
+    // ═══════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void HasHairTintShape_IsTrueForAHairTintWig()
+    {
+        if (HpnoMissing) return;
+
+        NifHandler.HasHairTintShape(HpnoWig).Should().BeTrue();
+    }
+
+    [Fact]
+    public void HasHairTintShape_IsFalseForAMissingFile()
+    {
+        NifHandler.HasHairTintShape(Path.Combine(Path.GetTempPath(), "npc2-no-such-wig.nif")).Should().BeFalse();
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -228,7 +373,7 @@ public class NifHandlerWigHairTintTests
             NifHandler.BakeWigIntoFaceGen(new NifHandler.WigBakeInstruction(
                 tempFaceGen, HpnoWig, renames, Array.Empty<string>(), null,
                 SynthesizeHairPartitionIfNoDonor: true,
-                HairTintMode: WigHairTintMode.Always,
+                ApplyHairTint: true,
                 HairTintRgb: RecordHairColor));
 
             var donorTints = ReadHairTints(tempFaceGen, name => !renames.ContainsValue(name));
@@ -247,10 +392,13 @@ public class NifHandlerWigHairTintTests
     // ═══════════════════════════════════════════════════════════════════════
 
     /// <summary>Bakes onto a temp copy and returns the resulting hairTintColor of
-    /// every BAKED WIG shape (matched by its minted name).</summary>
+    /// every BAKED WIG shape (matched by its minted name). Whether the bake tints is
+    /// resolved the way the converter resolves it: the mode, the RaceMenu state and
+    /// the slots of the armor and armor addon the wig was worn through.</summary>
     private static List<(float R, float G, float B)> BakeAndReadWigTints(
         string faceGenNif, string wigNif, IReadOnlyCollection<string> donorHairShapes,
-        WigHairTintMode mode, (float R, float G, float B)? hairTintRgb,
+        WigHairTintMode mode, RaceMenuHairTintState raceMenu, (uint Armor, uint Addon) carrier,
+        (float R, float G, float B)? hairTintRgb,
         bool synthesizePartition = false)
     {
         string tempFaceGen = CopyToTemp(faceGenNif, out string tempDir);
@@ -260,7 +408,7 @@ public class NifHandlerWigHairTintTests
             int baked = NifHandler.BakeWigIntoFaceGen(new NifHandler.WigBakeInstruction(
                 tempFaceGen, wigNif, renames, donorHairShapes, null,
                 SynthesizeHairPartitionIfNoDonor: synthesizePartition,
-                HairTintMode: mode,
+                ApplyHairTint: WigHairTintDecision.ShouldTint(mode, raceMenu, carrier.Armor, carrier.Addon),
                 HairTintRgb: hairTintRgb));
             baked.Should().BeGreaterThan(0, "the bake must succeed for the tint assertions to mean anything");
 

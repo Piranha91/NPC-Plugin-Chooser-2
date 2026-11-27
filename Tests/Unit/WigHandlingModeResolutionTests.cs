@@ -459,6 +459,80 @@ public class WigHandlingModeResolutionTests
             .Should().Be(WigHairTintMode.Never);
     }
 
+    // Per-NPC override (Settings.NpcWigHairTintModes), keyed by the NPC being patched.
+    // Precedence: the NPC, then its mod, then the global default.
+
+    private static readonly FormKey TintNpc = MutagenFixtures.Fk("01B13F:Skyrim.esm");
+    private static readonly FormKey OtherTintNpc = MutagenFixtures.Fk("01B140:Skyrim.esm");
+
+    [Fact]
+    public void WigHairTint_NpcOverride_BeatsTheModAndTheGlobalDefault()
+    {
+        var settings = new Settings { DefaultWigHairTintMode = WigHairTintMode.Always };
+        var mod = ModWithWig();
+        mod.ModWigHairTintMode = WigHairTintMode.Never;
+        settings.SetNpcWigHairTintMode(new[] { TintNpc }, WigHairTintMode.Auto);
+
+        settings.GetEffectiveWigHairTintMode(mod, TintNpc).Should().Be(WigHairTintMode.Auto);
+        settings.GetEffectiveWigHairTintMode(mod, OtherTintNpc).Should().Be(WigHairTintMode.Never,
+            "an NPC with no override of its own follows its mod");
+        settings.GetEffectiveWigHairTintMode(mod).Should().Be(WigHairTintMode.Never,
+            "the mod-level answer does not move when one NPC is overridden");
+    }
+
+    [Fact]
+    public void WigHairTint_NpcWithoutOverride_FollowsTheMod_ThenTheGlobalDefault()
+    {
+        var settings = new Settings { DefaultWigHairTintMode = WigHairTintMode.Always };
+        var mod = ModWithWig();
+
+        settings.GetEffectiveWigHairTintMode(mod, TintNpc).Should().Be(WigHairTintMode.Always, "global default");
+
+        mod.ModWigHairTintMode = WigHairTintMode.Never;
+        settings.GetEffectiveWigHairTintMode(mod, TintNpc).Should().Be(WigHairTintMode.Never, "the mod's mode");
+    }
+
+    [Fact]
+    public void WigHairTint_NpcOverride_AppliesWithoutAMod()
+    {
+        // The mod-level answer is gated on wig detection; an NPC override was set on purpose for
+        // that NPC and is not.
+        var settings = new Settings { DefaultWigHairTintMode = WigHairTintMode.Auto };
+        settings.SetNpcWigHairTintMode(new[] { TintNpc }, WigHairTintMode.Never);
+
+        settings.GetEffectiveWigHairTintMode(null, TintNpc).Should().Be(WigHairTintMode.Never);
+        settings.GetEffectiveWigHairTintMode(new ModSetting { DisplayName = "Plain" }, TintNpc)
+            .Should().Be(WigHairTintMode.Never);
+    }
+
+    [Fact]
+    public void WigHairTint_NpcOverrides_CanBeStoredForManyNpcs_Removed_AndCleared()
+    {
+        var settings = new Settings { DefaultWigHairTintMode = WigHairTintMode.Auto };
+        var mod = ModWithWig();
+
+        settings.SetNpcWigHairTintMode(new[] { TintNpc, OtherTintNpc }, WigHairTintMode.Always);
+        settings.NpcWigHairTintModes.Should().HaveCount(2);
+        settings.SetNpcWigHairTintMode(new[] { TintNpc }, WigHairTintMode.Never);
+        settings.GetNpcWigHairTintMode(TintNpc).Should().Be(WigHairTintMode.Never, "a later choice replaces the earlier one");
+        settings.GetNpcWigHairTintMode(OtherTintNpc).Should().Be(WigHairTintMode.Always);
+
+        // Setting null is "follow the mod again".
+        settings.SetNpcWigHairTintMode(new[] { TintNpc }, null);
+        settings.GetNpcWigHairTintMode(TintNpc).Should().BeNull();
+        settings.GetEffectiveWigHairTintMode(mod, TintNpc).Should().Be(WigHairTintMode.Auto);
+        settings.NpcWigHairTintModes.Should().ContainSingle();
+
+        settings.RemoveNpcWigHairTintModes(new[] { OtherTintNpc, MutagenFixtures.Fk("000007:Skyrim.esm") })
+            .Should().Be(1);
+        settings.GetNpcWigHairTintMode(OtherTintNpc).Should().BeNull();
+
+        settings.SetNpcWigHairTintMode(new[] { TintNpc, OtherTintNpc }, WigHairTintMode.Always);
+        settings.ClearNpcWigHairTintModes();
+        settings.NpcWigHairTintModes.Should().BeEmpty();
+        settings.GetEffectiveWigHairTintMode(mod, TintNpc).Should().Be(WigHairTintMode.Auto);
+    }
+
     [Fact]
     public void ModSetting_HasWigSources_ReflectsEitherWigSet()
     {

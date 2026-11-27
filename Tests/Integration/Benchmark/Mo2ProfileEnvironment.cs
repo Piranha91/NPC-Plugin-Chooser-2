@@ -43,6 +43,25 @@ internal sealed class Mo2ProfileEnvironment
     /// </summary>
     public required IReadOnlyDictionary<ModKey, string> VirtualDataPlugins { get; init; }
 
+    /// <summary>
+    /// The folders the VFS would overlay into Data, highest priority first: <c>overwrite</c>, the
+    /// enabled mods in <c>modlist.txt</c> order, then the real Data folder. A mod that is not
+    /// enabled in the profile is not in it.
+    /// </summary>
+    public required IReadOnlyList<string> VirtualDataSearchOrder { get; init; }
+
+    /// <summary>
+    /// Where the VFS would serve a Data-relative file from, or null when no enabled folder holds
+    /// it. Hand this to <see cref="RaceMenuDetector.DataRelativeFileResolver"/> so a headless
+    /// build sees RaceMenu exactly when the profile has it enabled.
+    /// </summary>
+    public string? ResolveVirtualDataFile(string dataRelativePath) =>
+        ResolveInSearchOrder(VirtualDataSearchOrder, dataRelativePath);
+
+    /// <summary>The first folder of <paramref name="searchOrder"/> (highest priority first) that
+    /// holds <paramref name="dataRelativePath"/>, as a full path; null when none does.</summary>
+    internal static string? ResolveInSearchOrder(IEnumerable<string> searchOrder, string dataRelativePath) =>
+        searchOrder.Select(dir => Path.Combine(dir, dataRelativePath)).FirstOrDefault(File.Exists);
 
     internal required Func<IEnumerable<IModListingGetter<ISkyrimModGetter>>, IEnumerable<IModListingGetter<ISkyrimModGetter>>> Transform { get; init; }
     internal required string OutputPluginName { get; init; }
@@ -185,6 +204,7 @@ internal sealed class Mo2ProfileEnvironment
                 ResolvedPlugins = resolved,
                 UnresolvedPlugins = unresolved,
                 VirtualDataPlugins = virtualPlugins,
+                VirtualDataSearchOrder = searchOrder,
                 Transform = Transform,
                 OutputPluginName = outputPluginName,
             };

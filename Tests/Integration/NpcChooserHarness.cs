@@ -42,6 +42,7 @@ public sealed class NpcChooserHarness : IDisposable
         builder.RegisterType<BackEnd.OutfitDistribution.ForwardedOutfitDistributor>().AsSelf().SingleInstance();
         builder.RegisterType<WigForwarder>().AsSelf().SingleInstance();
         builder.RegisterType<HeadPartWigConverter>().AsSelf().SingleInstance();
+        builder.RegisterType<RaceMenuDetector>().AsSelf().SingleInstance();
         builder.RegisterType<Validator>().AsSelf().SingleInstance();
         builder.RegisterType<Patcher>().AsSelf().SingleInstance();
         builder.RegisterType<SplitOutputRunner>().AsSelf().SingleInstance();
@@ -75,6 +76,11 @@ public sealed class NpcChooserHarness : IDisposable
     /// <summary>Exposed so an integration test can stub the converter's NIF-reading seams before a
     /// run — a synthetic fixture cannot supply parseable meshes.</summary>
     public HeadPartWigConverter HeadPartWigConverter => Container.Resolve<HeadPartWigConverter>();
+
+    /// <summary>Exposed so a headless build of an MO2 profile can tell the detector where the
+    /// virtual Data folder's files really are (<see cref="RaceMenuDetector.DataRelativeFileResolver"/>),
+    /// and so a test can stand RaceMenu up from fake files.</summary>
+    public RaceMenuDetector RaceMenuDetector => Container.Resolve<RaceMenuDetector>();
 
     public void Dispose() => Container.Dispose();
 }

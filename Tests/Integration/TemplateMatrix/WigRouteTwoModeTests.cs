@@ -846,6 +846,105 @@ public class WigRouteTwoModeTests
             "the body armature is still worn, so its copy stays");
     }
 
+    /// <summary>
+    /// The hair-tint leg of Route 4, through the real patcher: the run reads RaceMenu's state once
+    /// and logs it, and the converter resolves each NPC's tint from the mode that applies to THAT
+    /// NPC (its own override, else the mod's, else the global default) and, under Auto, from what
+    /// RaceMenu would have done to the worn wig. The fixture's wig is an outfit item in the hair
+    /// slot with a hair-slot ArmorAddon, so it passes RaceMenu's slot test.
+    ///
+    /// <para>RaceMenu is stood up from fake files through the detector's resolver seam, or the
+    /// seam answers "nothing" so the result does not depend on what this machine's Data folder
+    /// holds. The dummy meshes cannot be baked; what the bake does with the resolved answer on
+    /// real meshes is <c>NifHandlerWigHairTintTests</c>.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(null, true, "hair color: Auto, tinted")]
+    [InlineData(null, false, "hair color: Auto, not tinted: RaceMenu is not installed")]
+    [InlineData(WigHairTintMode.Never, true, "hair color: Off")]
+    [InlineData(WigHairTintMode.Always, false, "hair color: On")]
+    public async Task Route4_ConvertToHeadParts_HairTintFollowsRaceMenu_AndTheNpcOverride(
+        WigHairTintMode? npcOverride, bool raceMenuInstalled, string expectedDecision)
+    {
+        const string wigNifRecordPath = @"actors\NPC2Route\wig_1.nif";
+        using var fx = new WigRouteFixture("r4tint");
+        var npc = fx.AddBaseNpc("NPC2Route_R4Tint");
+
+        var wigArma = fx.AddResArmorAddon("NPC2Route_WigAA");
+        wigArma.WorldModel = new GenderedItem<Model?>(
+            new Model { File = wigNifRecordPath }, new Model { File = wigNifRecordPath });
+        var wigArmo = fx.AddResArmor("NPC2Route_Wig", wigArma);
+        var donorOutfit = fx.AddResOutfit("NPC2Route_DonorOutfit", wigArmo);
+        var donorHair = MutagenFixtures.NewHeadPart(fx.ResMod, "NPC2Route_DonorHair", HeadPart.TypeEnum.Hair);
+
+        var modNpc = fx.AppearanceMod.Npcs.GetOrAddAsOverride(npc);
+        modNpc.DefaultOutfit.SetTo(donorOutfit);
+        modNpc.HeadParts.Clear();
+        modNpc.HeadParts.Add(donorHair.FormKey);
+
+        fx.WriteLooseFile(@"meshes\actors\NPC2Route\wig_1.nif", "dummy");
+        fx.WriteLooseFile(@"meshes\actors\NPC2Route\wig_0.nif", "dummy");
+        fx.WriteFaceGen(npc.FormKey);
+        fx.WritePlugins();
+
+        var settings = fx.NewSettings(false, "record");
+        settings.DefaultWigHandlingMode = WigHandlingMode.ConvertToHeadParts;
+        var modSetting = fx.NewModSetting();
+        modSetting.DetectedWigArmors.Add(wigArmo.FormKey);
+        Select(fx, settings, modSetting, npc.FormKey);
+        // The mod and the global default stay on Auto; only the NPC being patched is overridden.
+        if (npcOverride != null) settings.SetNpcWigHairTintMode(new[] { npc.FormKey }, npcOverride);
+
+        var raceMenuData = Path.Combine(Path.GetTempPath(), "NPC2_RouteRaceMenu", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var pluginsDir = Path.Combine(raceMenuData, "SKSE", "Plugins");
+            Directory.CreateDirectory(pluginsDir);
+            if (raceMenuInstalled)
+            {
+                File.WriteAllText(Path.Combine(pluginsDir, "skee64.dll"), "");
+                File.WriteAllText(Path.Combine(pluginsDir, "skee64.ini"),
+                    "[Features]\r\nbEnableTintHairSlot=1 ; Default[1]\r\n[General]\r\nuTintHairSlot=2050 ; Default[2050]\r\n");
+            }
+
+            using var run = await fx.RunAsync(settings, _output, "record", configure: h =>
+            {
+                var converter = h.HeadPartWigConverter;
+                converter.RenderShapeNamesProvider = _ => new[] { "wigMain", "wigExtra" };
+                converter.PartitionProbe = (_, _) => true;
+                converter.PhysicsXmlProvider = _ => Array.Empty<string>();
+                h.RaceMenuDetector.DataRelativeFileResolver = rel =>
+                {
+                    var path = Path.Combine(raceMenuData, rel);
+                    return File.Exists(path) ? path : null;
+                };
+            });
+            if (run == null) return;
+
+            AssertCleanWrite(run, npc.FormKey);
+            run.Output.HeadParts.Should().Contain(
+                h => h.EditorID != null && h.EditorID.StartsWith("NPC2Wig_", StringComparison.Ordinal),
+                "the wig must actually have been converted for a tint decision to mean anything");
+
+            run.Log.Should().Contain(raceMenuInstalled
+                    ? "Converted wig hair color (Auto follows RaceMenu): RaceMenu is installed"
+                    : "Converted wig hair color (Auto follows RaceMenu): RaceMenu is not installed",
+                "the run states once what detection found");
+            if (raceMenuInstalled)
+            {
+                run.Log.Should().Contain("hair-slot tint is ON").And.Contain("slot mask 2050")
+                    .And.Contain(Path.Combine(pluginsDir, "skee64.ini"));
+            }
+            run.Log.Should().Contain(expectedDecision,
+                "the converter resolves the tint for the NPC being patched");
+        }
+        finally
+        {
+            try { if (Directory.Exists(raceMenuData)) Directory.Delete(raceMenuData, true); }
+            catch { /* best effort */ }
+        }
+    }
+
     // =============================================================================================
     // Route 5 — Antler Remove, all three sources.
     // =============================================================================================

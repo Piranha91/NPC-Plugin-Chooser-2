@@ -93,6 +93,49 @@
                     </StackPanel>
                 </Border>
 
+                <!-- Converted-wig hair colour (per-tile 3D popup only; shown only when this
+                     NPC's wig is converted to head parts and its mesh can take a hair colour).
+                     The three-position toggle redraws the NPC as that mode would bake it;
+                     nothing is stored unless "Keep for this NPC" is checked, which keeps the
+                     toggle's position as this NPC's own setting (and turns the wig badge on its
+                     mugshot tiles half green). -->
+                <Border x:Name="WigTintPanel" Margin="0,6,0,0" HorizontalAlignment="Left"
+                        Background="#A0000000" CornerRadius="4" Padding="8,6"
+                        DataContext="{Binding WigTint}"
+                        Visibility="{Binding IsAvailable, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}">
+                    <StackPanel Orientation="Vertical">
+                        <TextBlock Text="Converted wig hair color" Foreground="White"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                            <!-- Each label is its own white TextBlock. The panel is dark in every theme,
+                                 and Foreground="White" on the button alone is not enough: the themes'
+                                 application-wide TextBlock style gives the text the button generates
+                                 the theme's text colour, which is black in a light theme. -->
+                            <RadioButton GroupName="WigTintMode" VerticalContentAlignment="Center"
+                                         IsChecked="{Binding IsAuto}"
+                                         ToolTip="Auto (follow RaceMenu): the wig gets the NPC's hair color only when RaceMenu is installed and its hair-slot tint is on, which is what the game shows for the worn wig.">
+                                <TextBlock Text="Auto" Foreground="White"/>
+                            </RadioButton>
+                            <RadioButton GroupName="WigTintMode" VerticalContentAlignment="Center" Margin="10,0,0,0"
+                                         IsChecked="{Binding IsOn}"
+                                         ToolTip="On: the converted wig always gets the NPC's hair color.">
+                                <TextBlock Text="On" Foreground="White"/>
+                            </RadioButton>
+                            <RadioButton GroupName="WigTintMode" VerticalContentAlignment="Center" Margin="10,0,0,0"
+                                         IsChecked="{Binding IsOff}"
+                                         ToolTip="Off: the converted wig keeps the color its mesh came with.">
+                                <TextBlock Text="Off" Foreground="White"/>
+                            </RadioButton>
+                        </StackPanel>
+                        <TextBlock Text="{Binding AutoCaption}" Foreground="#CCCCCC" FontSize="11" Margin="0,4,0,0"
+                                   ToolTip="What Auto does for this NPC right now."/>
+                        <CheckBox Margin="0,4,0,0"
+                                  IsChecked="{Binding Keep}"
+                                  ToolTip="Checked: the toggle's position is kept as this NPC's own setting and used when you run the patcher, whatever the mod's setting says. Unchecked: the NPC follows its mod again. Flipping the toggle without this changes only the preview.">
+                            <TextBlock Text="Keep for this NPC" Foreground="White"/>
+                        </CheckBox>
+                    </StackPanel>
+                </Border>
+
                 <!-- "Set Wig Meshes" selector (per-tile 3D popup only; hidden when
                      the NPC's WornArmor carries no hair-slot ArmorAddons). Unlike
                      the antler selector, auto-detected rows stay toggleable:

@@ -34,6 +34,7 @@ public class Patcher : OptionalUIModule
     private readonly RecastInterface _recastInterface;
     private readonly WigForwarder _wigForwarder;
     private readonly HeadPartWigConverter _headPartWigConverter;
+    private readonly RaceMenuDetector _raceMenuDetector;
     private readonly ForwardedOutfitDistributor _forwardedOutfitDistributor;
     private readonly OutfitDisplayResolver _outfitDisplayResolver;
 
@@ -168,8 +169,10 @@ public class Patcher : OptionalUIModule
         WigForwarder wigForwarder, HeadPartWigConverter headPartWigConverter,
         ForwardedOutfitDistributor forwardedOutfitDistributor,
         OutfitDisplayResolver outfitDisplayResolver,
-        Lazy<FaceGenConsistencyAnalyzer> faceGenConsistency)
+        Lazy<FaceGenConsistencyAnalyzer> faceGenConsistency,
+        RaceMenuDetector raceMenuDetector)
     {
+        _raceMenuDetector = raceMenuDetector;
         _faceGenConsistency = faceGenConsistency;
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
@@ -690,6 +693,17 @@ public class Patcher : OptionalUIModule
                 _editedFaceGenPaths.Clear();
                 _headPartWigConverter.ResetSession(); // collision guards + temp BSA extractions from the last run
                 RecordProvenanceDiag.Reset(); // opt-in per-run record provenance report (no-op unless enabled)
+
+                // What RaceMenu does to a worn wig in this installation, read once per run: it is
+                // what a converted wig's hair color follows under WigHairTintMode.Auto. Shown in the
+                // normal log only when some selection's mod can convert a wig (ForwardToOutfit
+                // converts per NPC too); otherwise it is detail for the verbose log.
+                var raceMenu = _raceMenuDetector.Refresh();
+                bool wigsMayConvert = selectionsToProcess.Any(kv =>
+                    _settings.GetEffectiveWigMode(kv.Value.AppearanceModSetting) is
+                        WigHandlingMode.ConvertToHeadParts or WigHandlingMode.ForwardToOutfit);
+                AppendLog($"Converted wig hair color (Auto follows RaceMenu): {raceMenu.Describe()}",
+                    false, wigsMayConvert);
             }
 
             _recordDeltaPatcher.Reinitialize(true);
@@ -1283,7 +1297,8 @@ public class Patcher : OptionalUIModule
                                             appearanceModSetting, currentModFolderPaths, npcIdentifier,
                                             AppendLog, out bool fallBackToForwardToSkin,
                                             faceGenSubjectFormKey: FlattenedFaceGenSubject(faceGenDecision),
-                                            flattenTerminusNpc: flattenTerminus);
+                                            flattenTerminusNpc: flattenTerminus,
+                                            targetNpcFormKey: npcFormKey);
                                         if (wigConvert != null)
                                         {
                                             RegisterRecordOwnerships(npcFormKey, wigConvert.MintedRecords,
@@ -3131,7 +3146,7 @@ public class Patcher : OptionalUIModule
                         convert.FaceGenShapeNamesToStrip,
                         convert.PhysicsXmlNewDataRelPath,
                         SynthesizeHairPartitionIfNoDonor: convert.SynthesizeHairPartitionTemplate,
-                        HairTintMode: convert.HairTintMode,
+                        ApplyHairTint: convert.ApplyHairTint,
                         HairTintRgb: convert.HairTintRgb),
                     msg => AppendLog("    " + msg, false, false));
 

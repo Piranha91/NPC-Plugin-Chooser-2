@@ -219,7 +219,15 @@ public class NpcMeshResolver
     /// applied and resolution falls back to the LinkCache winner +
     /// vanilla data folder.</para>
     /// </summary>
-    public ResolvedNpcMeshPaths? Resolve(FormKey npcFormKey, ModSetting? modSetting)
+    /// <param name="wornHairSlotTintOverride">
+    /// Whether a worn hair-slot wig is drawn with the NPC's hair color: true forces it, false
+    /// forces the wig's authored tint, null (the default) follows the mugshot setting
+    /// <see cref="InternalMugshotSettings.EmulateRaceMenuHairSlotTint"/>. Set only by the 3D
+    /// preview's converted-wig hair color toggle, which shows what the patch would bake for a
+    /// given <see cref="WigHairTintMode"/> instead of what the setting says.
+    /// </param>
+    public ResolvedNpcMeshPaths? Resolve(FormKey npcFormKey, ModSetting? modSetting,
+        bool? wornHairSlotTintOverride = null)
     {
         var linkCache = _env.LinkCache;
         if (linkCache == null) return null;
@@ -231,7 +239,121 @@ public class NpcMeshResolver
         // those designations on the NPC they had open, and this is the only place that still knows
         // which one that was. See ComputeWigHideHeadShapeNames.
         return Resolve(appearanceKey, linkCache, BuildContext(appearanceKey, modSetting), modSetting,
-            designationScopeKey: npcFormKey);
+            designationScopeKey: npcFormKey, wornHairSlotTintOverride: wornHairSlotTintOverride);
+    }
+
+    /// <summary>
+    /// The records a converted wig's hair tint is decided from, as the patch would find them for
+    /// this appearance: the armor the wig is worn through (the outfit wig item, or the skin for a
+    /// skin-carried wig) and the wig's ArmorAddon, as biped slot masks for
+    /// <see cref="WigHairTintDecision.ShouldTint"/>, plus whether the wig mesh has a shape the
+    /// tint can be written to at all.
+    /// </summary>
+    /// <param name="ArmorSlotMask">Biped slots of the carrier armor (0 without a body template).</param>
+    /// <param name="AddonSlotMask">Biped slots of the wig's ArmorAddon.</param>
+    /// <param name="HasHairTintShape">Whether the wig NIF has a HairTint-shader shape; null when
+    /// the mesh is not a loose file under the mod's folders (BSA-packed), so it was not read.</param>
+    public sealed record WigTintCarrier(uint ArmorSlotMask, uint AddonSlotMask, bool? HasHairTintShape);
+
+    // NifHandler.HasHairTintShape per wig mesh path: one NIF parse each, then free.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _hairTintShapeByPath =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Finds the single wig <see cref="HeadPartWigConverter"/> would convert for this appearance,
+    /// by the converter's own choice of source: one detected wig in the donor's outfit (through
+    /// its one race-applicable hair-slot ArmorAddon), else one race-applicable effective wig
+    /// ArmorAddon in the skin. Null when there is none or more than one, which are the cases the
+    /// converter declines. It does NOT repeat the converter's other declines (missing FaceGen, no
+    /// donor hair to take partitions from, unreadable mesh), so a non-null answer means "this is
+    /// the wig", not "the conversion will succeed".
+    /// </summary>
+    public WigTintCarrier? ResolveWigTintCarrier(FormKey npcFormKey, ModSetting? modSetting)
+    {
+        if (modSetting == null) return null;
+        var linkCache = _env.LinkCache;
+        if (linkCache == null) return null;
+
+        // The outfit is the donor's own (inventory data); skin, race and sex are those of the
+        // record whose appearance is drawn (the end of a Traits template chain).
+        var appearanceKey = ResolveAppearanceNpcKey(npcFormKey, modSetting);
+        var context = BuildContext(appearanceKey, modSetting);
+        var donor = ResolveRecord<INpcGetter>(npcFormKey.ToLink<INpcGetter>(), linkCache,
+            BuildContext(npcFormKey, modSetting));
+        var npc = ResolveRecord<INpcGetter>(appearanceKey.ToLink<INpcGetter>(), linkCache, context);
+        if (donor == null || npc == null) return null;
+
+        FormKey? npcRaceKey = npc.Race.IsNull ? null : npc.Race.FormKey;
+        var armorRaceChain = ResolveArmorRaceChain(npc, linkCache, context);
+        var sex = Auxilliary.IsFemale(npc) ? NpcGender.Female : NpcGender.Male;
+
+        IArmorGetter? carrierArmor = null;
+        IArmorAddonGetter? carrierArma = null;
+
+        var outfitWigKeys = new List<FormKey>();
+        if (!donor.DefaultOutfit.IsNull)
+        {
+            var outfit = ResolveRecord<IOutfitGetter>(donor.DefaultOutfit, linkCache, context);
+            if (outfit?.Items != null)
+            {
+                outfitWigKeys.AddRange(outfit.Items
+                    .Where(i => i != null && !i.IsNull &&
+                                modSetting.DetectedWigArmors.Contains(i.FormKey) &&
+                                !modSetting.DetectedAntlerArmors.Contains(i.FormKey))
+                    .Select(i => i.FormKey));
+            }
+        }
+
+        if (outfitWigKeys.Count > 1) return null; // the converter falls back to Forward To Skin
+        if (outfitWigKeys.Count == 1)
+        {
+            carrierArmor = ResolveRecord<IArmorGetter>(outfitWigKeys[0].ToLink<IArmorGetter>(), linkCache, context);
+            if (carrierArmor == null) return null;
+
+            IArmorAddonGetter? ResolveArma(FormKey key) =>
+                ResolveRecord<IArmorAddonGetter>(key.ToLink<IArmorAddonGetter>(), linkCache, context);
+            var hairArmas = WigDetector.GetForwardableArmatures(carrierArmor, isAntler: false, ResolveArma)
+                .Select(l => ResolveArma(l.FormKey))
+                .Where(a => a != null)
+                .Select(a => a!)
+                .ToList();
+            if (hairArmas.Count > 1)
+            {
+                var raceMatched = hairArmas.Where(a => IsArmatureForRace(a, npcRaceKey, armorRaceChain)).ToList();
+                if (raceMatched.Count > 0) hairArmas = raceMatched;
+            }
+            if (hairArmas.Count != 1) return null;
+            carrierArma = hairArmas[0];
+        }
+        else
+        {
+            if (npc.WornArmor.IsNull) return null;
+            carrierArmor = ResolveRecord<IArmorGetter>(npc.WornArmor, linkCache, context);
+            var wigArmas = WigDetector.EffectiveWnamWigArmatures(
+                    carrierArmor,
+                    link => ResolveRecord<IArmorAddonGetter>(link, linkCache, context),
+                    arma => _settings.IsWigArmature(modSetting, arma.FormKey, arma.EditorID, npcFormKey),
+                    arma => IsArmatureForRace(arma, npcRaceKey, armorRaceChain))
+                .ToList();
+            if (wigArmas.Count != 1) return null;
+            carrierArma = wigArmas[0];
+        }
+
+        bool? hasHairTintShape = null;
+        string? meshPath = GetWorldModelPath(carrierArma, sex);
+        if (meshPath != null)
+        {
+            string? absolute = RebaseToAbsoluteIfPresent(meshPath, context);
+            if (absolute != null && Path.IsPathRooted(absolute) && File.Exists(absolute))
+            {
+                hasHairTintShape = _hairTintShapeByPath.GetOrAdd(absolute, NifHandler.HasHairTintShape);
+            }
+        }
+
+        return new WigTintCarrier(
+            (uint)(carrierArmor?.BodyTemplate?.FirstPersonFlags ?? 0),
+            (uint)(carrierArma.BodyTemplate?.FirstPersonFlags ?? 0),
+            hasHairTintShape);
     }
 
     /// <summary>
@@ -548,9 +670,11 @@ public class NpcMeshResolver
     /// terminus. Used ONLY as the scope key for manual wig designations, which the UI stores against
     /// the open NPC. Null means "they are the same NPC".
     /// </param>
+    /// <param name="wornHairSlotTintOverride">See
+    /// <see cref="Resolve(FormKey, ModSetting, bool?)"/>: null follows the mugshot setting.</param>
     public ResolvedNpcMeshPaths? Resolve(FormKey npcFormKey, ILinkCache linkCache,
         NpcResolutionContext? context = null, ModSetting? modSetting = null,
-        FormKey? designationScopeKey = null)
+        FormKey? designationScopeKey = null, bool? wornHairSlotTintOverride = null)
     {
         var npcGetter = ResolveRecord<INpcGetter>(npcFormKey.ToLink<INpcGetter>(), linkCache, context);
         if (npcGetter == null)
@@ -778,7 +902,10 @@ public class NpcMeshResolver
             // because that is the space FaceGen tints live in (see
             // NifHandler.HclrToFaceGenTint) — the same value the wig→HeadPart
             // bake writes, so the preview matches the patch output.
-            WornHairSlotTintRgb = _settings.InternalMugshot.EmulateRaceMenuHairSlotTint && hairRgb != null
+            //
+            // wornHairSlotTintOverride (the 3D preview's converted-wig hair color toggle)
+            // replaces the setting for that one load: it shows what the bake would do.
+            WornHairSlotTintRgb = (wornHairSlotTintOverride ?? _settings.InternalMugshot.EmulateRaceMenuHairSlotTint) && hairRgb != null
                 ? NifHandler.HclrToFaceGenTint(hairRgb.Value)
                 : null,
             EyeShapeNames = eyeShapeNames,

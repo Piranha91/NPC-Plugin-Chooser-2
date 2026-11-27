@@ -33,9 +33,9 @@ public static class HandlingModeDisplay
 
     public static string ToDisplayString(WigHairTintMode mode) => mode switch
     {
-        WigHairTintMode.Auto => "Auto (placeholder tints only)",
-        WigHairTintMode.Always => "Always use NPC's hair color",
-        WigHairTintMode.Never => "Keep the wig's own color",
+        WigHairTintMode.Auto => "Auto (follow RaceMenu)",
+        WigHairTintMode.Always => "On",
+        WigHairTintMode.Never => "Off",
         _ => mode.ToString(),
     };
 
