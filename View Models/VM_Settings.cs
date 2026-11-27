@@ -1320,19 +1320,14 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedDefaultWigHandlingMode).Skip(1)
             .Subscribe(m => _model.DefaultWigHandlingMode = m).DisposeWith(_disposables);
-        // Two GLOBAL-default wig-mode selections need confirming, and they share one
-        // Buffer(2,1) + revert path so landing on a warned mode can never stack two
-        // dialogs (declining Convert To Headparts can revert straight into Forward To
-        // Outfit). Buffer(2,1) yields (previous, current) pairs starting with the first
-        // user change (the model-loaded value is the first buffered emission, never a
-        // trigger), and a decline reverts to the previous selection rather than a
-        // hardcoded default.
-        //   - Convert To Headparts is experimental (mirrors the override-handling-mode
-        //     confirmation).
-        //   - Forward To Outfit under SkyPatcher mode is the naked-NPC combination; see
-        //     HandlingModeDisplay.SkyPatcherForwardToOutfitWarning. Checked against the
-        //     global default only — per-mod overrides are caught at patch time by the
-        //     pre-run check in VM_Run.
+        // One GLOBAL-default wig-mode selection needs confirming: Forward To Outfit under
+        // SkyPatcher mode is the naked-NPC combination; see
+        // HandlingModeDisplay.SkyPatcherForwardToOutfitWarning. Checked against the global
+        // default only — per-mod overrides are caught at patch time by the pre-run check
+        // in VM_Run. Every other mode, Convert To Headparts included, simply takes effect.
+        // Buffer(2,1) yields (previous, current) pairs starting with the first user change
+        // (the model-loaded value is the first buffered emission, never a trigger), and a
+        // decline reverts to the previous selection rather than a hardcoded default.
         this.WhenAnyValue(x => x.SelectedDefaultWigHandlingMode)
             .Buffer(2, 1)
             .Subscribe(pair =>
@@ -1340,26 +1335,11 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                 var previous = pair[0];
                 var current = pair[1];
                 if (current == previous || SuppressPopupWarnings) return;
+                if (current != WigHandlingMode.ForwardToOutfit || !_model.SkyPatcherDirectivesAvailable) return;
 
-                string warning;
-                string title;
-                if (current == WigHandlingMode.ConvertToHeadParts)
-                {
-                    warning = HandlingModeDisplay.ConvertToHeadPartsWarning;
-                    title = HandlingModeDisplay.ConvertToHeadPartsWarningTitle;
-                }
-                else if (current == WigHandlingMode.ForwardToOutfit && _model.SkyPatcherDirectivesAvailable)
-                {
-                    warning = HandlingModeDisplay.SkyPatcherForwardToOutfitWarning +
-                              "\n\nUse Forward To Outfit anyway?";
-                    title = HandlingModeDisplay.SkyPatcherForwardToOutfitWarningTitle;
-                }
-                else
-                {
-                    return;
-                }
-
-                if (!ScrollableMessageBox.Confirm(warning, title, MessageBoxImage.Warning))
+                if (!ScrollableMessageBox.Confirm(
+                        HandlingModeDisplay.SkyPatcherForwardToOutfitWarning + "\n\nUse Forward To Outfit anyway?",
+                        HandlingModeDisplay.SkyPatcherForwardToOutfitWarningTitle, MessageBoxImage.Warning))
                 {
                     // Revert on the UI thread after a short delay so the ComboBox
                     // finishes processing the selection first (same pattern as the

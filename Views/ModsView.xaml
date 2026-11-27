@@ -676,7 +676,7 @@
                                                              add the wig to the duplicate (no change if it already contains the wig). A
                                                              skin-carried wig is moved into that outfit as a generated wig armor.
                                                              <LineBreak/>
-                                                             Convert To Headparts (EXPERIMENTAL): discard the wig armor and make the wig
+                                                             Convert To Headparts: discard the wig armor and make the wig
                                                              the NPC's hair — generated head part records + the wig mesh baked into the
                                                              FaceGen file (HDT-SMP preserved; helmets hide it like normal hair). Works
                                                              for outfit wigs AND skin-carried wigs (the 3D preview's "Set Wig Meshes"

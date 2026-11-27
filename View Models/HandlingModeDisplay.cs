@@ -103,22 +103,6 @@ public static class HandlingModeDisplay
         AntlerHandlingMode.None,
     };
 
-    /// <summary>Confirmation shown when the user selects Convert To Headparts
-    /// (globally or per mod). Declining reverts the dropdown to its previous
-    /// value.</summary>
-    public const string ConvertToHeadPartsWarning =
-        "Convert To Headparts is an EXPERIMENTAL feature.\n\n" +
-        "The wig armor is discarded and rebuilt as head part records, with the wig mesh baked " +
-        "directly into each affected NPC's FaceGen file.\n\n" +
-        "Please verify your output by spawning the affected NPCs in game and confirming they " +
-        "don't have the dark face bug.\n\n" +
-        "You may report NPCs for which the conversion is unsuccessful, but no promises that " +
-        "anything can be done about it. (In the author's testing this works reliably, including " +
-        "on HDT-enabled wigs.)\n\n" +
-        "Are you sure you want to enable Convert To Headparts?";
-
-    public const string ConvertToHeadPartsWarningTitle = "Confirm Wig Conversion";
-
     /// <summary>
     /// Warning shown wherever Forward To Outfit and SkyPatcher mode are both in
     /// play: either dropdown/checkbox in Settings, and again before patching.

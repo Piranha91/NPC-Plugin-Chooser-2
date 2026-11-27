@@ -800,37 +800,6 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             .DisposeWith(_disposables);
         ;
 
-        // Convert To Headparts is experimental — confirm before enabling it for
-        // THIS mod (mirrors the override-handling-mode confirmation above).
-        // Buffer(2,1) yields (previous, current) pairs starting with the first
-        // change after the model load, and a decline reverts to the previous
-        // selection (usually "Default") rather than always to null.
-        this.WhenAnyValue(x => x.OverrideWigHandlingMode)
-            .Buffer(2, 1)
-            .Subscribe(pair =>
-            {
-                var previous = pair[0];
-                var current = pair[1];
-                if (current != WigHandlingMode.ConvertToHeadParts ||
-                    previous == WigHandlingMode.ConvertToHeadParts ||
-                    _isLoadingFromModel ||
-                    IsPerformingBatchAction ||
-                    _parentVm.SuppressPopupWarnings)
-                {
-                    return;
-                }
-
-                if (!ScrollableMessageBox.Confirm(HandlingModeDisplay.ConvertToHeadPartsWarning,
-                        HandlingModeDisplay.ConvertToHeadPartsWarningTitle, MessageBoxImage.Warning))
-                {
-                    // Revert on the UI thread after a short delay so the ComboBox
-                    // finishes processing the selection first.
-                    Observable.Timer(TimeSpan.FromMilliseconds(1), RxApp.MainThreadScheduler)
-                        .Subscribe(_ => { OverrideWigHandlingMode = previous; });
-                }
-            })
-            .DisposeWith(_disposables);
-
         this.WhenAnyValue(x => x.IncludeOutfits)
             .Skip(1) // Skip the initial value loaded from the model
             .Where(isChecked => isChecked) // Only trigger when the box is checked (i.e., set to true)
@@ -917,8 +886,8 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         // batch actions, the decline-popup revert to null) flow into the
         // display, and user selections flow back through the same
         // OverrideRecordOverrideHandlingMode / OverrideWigHandlingMode
-        // properties, so the existing confirmation-popup subscriptions keep
-        // working unchanged.
+        // properties, so the override-handling-mode confirmation popup keeps
+        // working unchanged (a wig mode asks nothing).
         this.WhenAnyValue(x => x.OverrideRecordOverrideHandlingMode)
             .Subscribe(mode => SelectedRecordOverrideHandlingItem =
                 RecordOverrideHandlingModes.First(kv => kv.Key == mode))
