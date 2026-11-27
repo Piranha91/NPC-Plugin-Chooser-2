@@ -20,8 +20,10 @@ internal sealed class GoldenPatchResult
 /// <summary>
 /// Drives the real <see cref="Patcher"/> headlessly through the same sequence as
 /// <c>VM_Run.ExecutePatchingAsync</c> (BuildModSettingsMap -&gt; PreInit -&gt; ScreenSelections -&gt;
-/// fresh OutputMod -&gt; RunPatchingLogic -&gt; WriteUnifiedTokenFile), against a supplied environment and
-/// settings, writing the output plugin + assets (+ SkyPatcher .ini) into the settings' output directory.
+/// <see cref="SplitOutputRunner.RunAsync"/>: fresh OutputMod -&gt; RunPatchingLogic, once or once per
+/// split group -&gt; WriteUnifiedTokenFile), against a supplied environment and settings, writing the
+/// output plugin(s) + assets (+ SkyPatcher .ini) into the settings' output directory. With
+/// <see cref="Settings.SplitOutput"/> on, that is one plugin per group, as in the app.
 /// </summary>
 internal static class GoldenPatchRunner
 {
@@ -54,31 +56,27 @@ internal static class GoldenPatchRunner
         configure?.Invoke(harness);
         var patcher = harness.Patcher;
         var validator = harness.Validator;
+        var splitOutputRunner = harness.SplitOutputRunner;
 
         var log = new ConcurrentQueue<string>();
         void Append(string msg, bool isError, bool force) => log.Enqueue(msg);
         patcher.ConnectToUILogger(Append, (_, _, _) => { }, () => { }, () => { });
         validator.ConnectToUILogger(Append, (_, _, _) => { }, () => { }, () => { });
+        splitOutputRunner.ConnectToUILogger(Append, (_, _, _) => { }, () => { }, () => { });
 
         var modSettingsMap = patcher.BuildModSettingsMap();
         await patcher.PreInitializationLogicAsync();
 
         var report = await validator.ScreenSelectionsAsync(modSettingsMap, "<All NPCs>", CancellationToken.None);
 
-        // Mirror VM_Run: recreate a fresh output mod immediately before the patch run.
-        provider.OutputMod = new SkyrimMod(
-            ModKey.FromName(provider.OutputPluginName, ModType.Plugin), provider.SkyrimVersion);
-
         var validSelections = validator.GetScreeningCache()
             .Where(kv => kv.Value.SelectionIsValid)
             .ToList();
 
-        await patcher.RunPatchingLogic(validSelections, showFinalMessage: false, isFirstIteration: true,
-            CancellationToken.None);
-        if (writeUnifiedToken)
-        {
-            patcher.WriteUnifiedTokenFile();
-        }
+        // The same call VM_Run makes: a fresh output mod, then the patcher once -- or once per group
+        // when Settings.SplitOutput is on, each group into a plugin of its own -- then the token.
+        await splitOutputRunner.RunAsync(validSelections, CancellationToken.None,
+            writeUnifiedTokenFile: writeUnifiedToken);
 
         return new GoldenPatchResult
         {

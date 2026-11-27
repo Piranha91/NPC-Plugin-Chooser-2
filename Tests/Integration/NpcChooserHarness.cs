@@ -44,6 +44,7 @@ public sealed class NpcChooserHarness : IDisposable
         builder.RegisterType<HeadPartWigConverter>().AsSelf().SingleInstance();
         builder.RegisterType<Validator>().AsSelf().SingleInstance();
         builder.RegisterType<Patcher>().AsSelf().SingleInstance();
+        builder.RegisterType<SplitOutputRunner>().AsSelf().SingleInstance();
         // AssetHandler depends on Lazy<VM_Run>; VM_Run is a heavy UI VM not registered here.
         // The lazy is only realized on progress/feedback paths the headless patcher tests avoid.
         builder.Register(_ => new Lazy<VM_Run>(() => null!)).As<Lazy<VM_Run>>().SingleInstance();
@@ -62,6 +63,10 @@ public sealed class NpcChooserHarness : IDisposable
 
     public Patcher Patcher => Container.Resolve<Patcher>();
     public Validator Validator => Container.Resolve<Validator>();
+
+    /// <summary>The patch run as the app drives it: the patcher once, or once per group when
+    /// <see cref="Settings.SplitOutput"/> is on.</summary>
+    public SplitOutputRunner SplitOutputRunner => Container.Resolve<SplitOutputRunner>();
 
     /// <summary>Exposed so a headless build of an MO2 profile can tell the provider where the
     /// virtual Data folder's plugins really are (<see cref="PluginProvider.VirtualDataPluginPaths"/>).</summary>

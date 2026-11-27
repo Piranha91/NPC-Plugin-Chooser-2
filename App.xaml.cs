@@ -319,6 +319,7 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterType<EnvironmentStateProvider>().AsSelf().SingleInstance();
             builder.RegisterType<Auxilliary>().AsSelf().SingleInstance();
             builder.RegisterType<Patcher>().AsSelf().SingleInstance();
+            builder.RegisterType<SplitOutputRunner>().AsSelf().SingleInstance();
             builder.RegisterType<Validator>().AsSelf().SingleInstance();
             builder.RegisterType<AssetHandler>().AsSelf().SingleInstance();
             builder.RegisterType<BsaHandler>().AsSelf().SingleInstance();

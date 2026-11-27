@@ -36,6 +36,7 @@ public class VM_Run : ReactiveObject, IDisposable
     private readonly VM_Validate _vmValidate;
     private readonly Lazy<VM_Mods> _lazyVmMods;
     private readonly Patcher _patcher;
+    private readonly SplitOutputRunner _splitOutputRunner;
     private readonly Validator _validator;
     private readonly AssetHandler _assetHandler;
     private readonly BsaHandler _bsaHandler;
@@ -116,6 +117,7 @@ public class VM_Run : ReactiveObject, IDisposable
         VM_Validate vmValidate,
         Lazy<VM_Mods> lazyVmMods,
         Patcher patcher,
+        SplitOutputRunner splitOutputRunner,
         Validator validator,
         AssetHandler assetHandler,
         BsaHandler bsaHandler,
@@ -135,6 +137,7 @@ public class VM_Run : ReactiveObject, IDisposable
         _vmValidate = vmValidate;
         _lazyVmMods = lazyVmMods;
         _patcher = patcher;
+        _splitOutputRunner = splitOutputRunner;
         _validator = validator;
         _assetHandler = assetHandler;
         _bsaHandler = bsaHandler;
@@ -148,6 +151,7 @@ public class VM_Run : ReactiveObject, IDisposable
         _offscreenRenderer = offscreenRenderer;
 
         _patcher.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
+        _splitOutputRunner.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
         _validator.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
         _assetHandler.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
         _bsaHandler.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
@@ -519,52 +523,9 @@ public class VM_Run : ReactiveObject, IDisposable
 
                 var validSelections = _validator.GetScreeningCache().Where(kv => kv.Value.SelectionIsValid).ToList();
                 
-                // Reiniitialize the output mod in case the user is re-running the patcher in the current session
-                _environmentStateProvider.OutputMod = new SkyrimMod(
-                    ModKey.FromName(_environmentStateProvider.OutputPluginName, ModType.Plugin), _environmentStateProvider.SkyrimVersion);
-
-                // --- NEW: Splitting Logic ---
-                if (_settings.SplitOutput && validSelections.Any())
-                {
-                    AppendLog($"\nSplitting output based on user settings...", forceLog: true);
-                    var batches = CreatePatchingBatches(validSelections);
-                    AppendLog($"Created {batches.Count} patching batches.", forceLog: true);
-
-                    for (int i = 0; i < batches.Count; i++)
-                    {
-                        var batch = batches[i];
-                        token.ThrowIfCancellationRequested();
-
-                        string originalPluginName =
-                            Path.GetFileNameWithoutExtension(_environmentStateProvider.OutputPluginName);
-                        string newPluginName = string.IsNullOrWhiteSpace(batch.Suffix)
-                            ? originalPluginName
-                            : $"{originalPluginName}_{batch.Suffix}";
-
-                        AppendLog(
-                            $"\n--- Processing Batch {i + 1}/{batches.Count}: {newPluginName} ({batch.Selections.Count} NPCs) ---",
-                            forceLog: true);
-
-                        // Update environment with the new output mod name for this batch run
-                        _environmentStateProvider.OutputMod = new SkyrimMod(
-                            ModKey.FromName(newPluginName, ModType.Plugin), _environmentStateProvider.SkyrimVersion);
-
-                        // Call patcher with just the NPCs for this specific batch
-                        await _patcher.RunPatchingLogic(batch.Selections, false, i == 0, token);
-                    }
-                    
-                    // Write unified NPC token file after all batches are complete
-                    _patcher.WriteUnifiedTokenFile();
-                }
-                else
-                {
-                    // If not splitting, run the patcher once with all valid selections
-                    await _patcher.RunPatchingLogic(validSelections, false, true, token);
-                    
-                    // Write unified NPC token file after patching is complete
-                    _patcher.WriteUnifiedTokenFile();
-                }
-                // --- END: Splitting Logic ---
+                // Fresh output mod, then the patcher once -- or once per group when the user splits
+                // the output -- then the unified NPC token file. Shared with the headless runners.
+                await _splitOutputRunner.RunAsync(validSelections, token);
 
                 if (PatchingStartTime.HasValue && FinalValidationTime.HasValue)
                 {
@@ -929,75 +890,6 @@ public class VM_Run : ReactiveObject, IDisposable
             }
             resultsWindow.Show();
         });
-    }
-
-    private record PatchingBatch(string Suffix, List<KeyValuePair<FormKey, ScreeningResult>> Selections);
-
-    /// <summary>
-    /// Creates virtual groups ("batches") of NPCs to be processed into separate plugin files.
-    /// </summary>
-    private List<PatchingBatch> CreatePatchingBatches(List<KeyValuePair<FormKey, ScreeningResult>> validSelections)
-    {
-        var batches = new List<PatchingBatch>();
-        if (!validSelections.Any()) return batches;
-
-        // Group selections by the chosen criteria (gender and/or race).
-        var groupedByCriteria = validSelections.GroupBy(kvp =>
-        {
-            var npc = kvp.Value.WinningNpcOverride;
-
-            string genderKey = _settings.SplitOutputByGender ? Auxilliary.GetGender(npc).ToString() : string.Empty;
-            string raceKey = string.Empty;
-            if (_settings.SplitOutputByRace)
-            {
-                raceKey = npc.Race.TryResolve(_environmentStateProvider.LinkCache, out var raceRecord)
-                    ? (raceRecord.EditorID ?? "UnknownRace")
-                    : "UnknownRace";
-            }
-
-            // Sanitize raceKey to be filename-friendly
-            raceKey = Regex.Replace(raceKey, @"[^a-zA-Z0-9]", "");
-
-            return (Gender: genderKey, Race: raceKey);
-        });
-
-        int maxNpcsPerPlugin = _settings.SplitOutputMaxNpcs ?? int.MaxValue;
-
-        // Process each criteria group (e.g., all Male Nords).
-        foreach (var group in groupedByCriteria)
-        {
-            var npcsInGroup = group.ToList();
-            int totalInGroup = npcsInGroup.Count;
-            int currentOffset = 0;
-            int subBatchCounter = 1;
-
-            // Sub-divide the criteria group by the max number of NPCs.
-            while (currentOffset < totalInGroup)
-            {
-                var chunk = npcsInGroup.Skip(currentOffset).Take(maxNpcsPerPlugin).ToList();
-
-                var nameParts = new List<string>();
-                if (_settings.SplitOutputByGender && !string.IsNullOrEmpty(group.Key.Gender))
-                    nameParts.Add(group.Key.Gender);
-                if (_settings.SplitOutputByRace && !string.IsNullOrEmpty(group.Key.Race))
-                    nameParts.Add(group.Key.Race);
-
-                // Only add a numeric suffix if the group was large enough to be split.
-                if (totalInGroup > maxNpcsPerPlugin)
-                {
-                    nameParts.Add(subBatchCounter.ToString());
-                }
-
-                string batchSuffix = string.Join("_", nameParts.Where(s => !string.IsNullOrEmpty(s)));
-
-                batches.Add(new PatchingBatch(batchSuffix, chunk));
-
-                currentOffset += maxNpcsPerPlugin;
-                subBatchCounter++;
-            }
-        }
-
-        return batches;
     }
 
     private void ResetProgress()

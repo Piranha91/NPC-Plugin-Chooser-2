@@ -20,14 +20,14 @@ namespace NPC_Plugin_Chooser_2.Tests.Integration;
 ///
 /// Covered seams:
 /// * <see cref="VM_Run.ALL_NPCS_GROUP"/> constant value.
-/// * private <c>CreatePatchingBatches</c> — empty input, no-split single batch, MaxNpcs
-///   chunking with numeric suffixes, ByGender splitting using in-memory NPCs, and the
-///   "group size == MaxNpcs" boundary (no suffix).
+/// * <see cref="SplitOutputRunner.CreatePatchingBatches"/> — empty input, no-split single batch,
+///   MaxNpcs chunking with numeric suffixes, ByGender splitting using in-memory NPCs, and the
+///   "group size == MaxNpcs" boundary (no suffix). The grouping was a private method of VM_Run
+///   until it moved to the back end so the headless runners split too; the cases stayed here.
 /// * private <c>BuildNpcLogTargets</c> — null/empty <see cref="Settings.NpcsToLog"/>,
 ///   <see cref="FormKey.Null"/> entries skipped, and the null-LinkCache ToString fallback.
 /// * public <c>AppendLog</c> verbose-mode gating across the 4 isError/forceLog/verbose combos.
-/// * the private nested <c>PatchingBatch</c> record's value-equality (via reflection, since
-///   the type is private and cannot be named).
+/// * the <see cref="SplitOutputRunner.PatchingBatch"/> record's value-equality.
 ///
 /// Runs in the integration collection on the STA fixture because the VM is a
 /// <see cref="ReactiveUI.ReactiveObject"/> (setting the <c>IsVerboseModeEnabled</c>
@@ -87,19 +87,15 @@ public class VM_RunPureTests
         return list;
     }
 
-    // --- reflection accessors for the private nested PatchingBatch record ---
+    // --- the grouping lives in SplitOutputRunner; its constructor only stores its arguments, and
+    //     CreatePatchingBatches never touches the patcher, so a null one is enough here ---
 
-    private static string BatchSuffix(object batch) => Reflect.GetField<string>(batch, "<Suffix>k__BackingField");
+    private static SplitOutputRunner MakeRunner(Settings settings, EnvironmentStateProvider? env = null) =>
+        new(env ?? NullEnvProvider(), settings, patcher: null!);
 
-    private static IList BatchSelections(object batch) =>
-        Reflect.GetField<IList>(batch, "<Selections>k__BackingField");
+    private static string BatchSuffix(SplitOutputRunner.PatchingBatch batch) => batch.Suffix;
 
-    private static List<object> InvokeCreateBatches(
-        VM_Run vm, List<KeyValuePair<FormKey, ScreeningResult>> selections)
-    {
-        var result = Reflect.Invoke<IEnumerable>(vm, "CreatePatchingBatches", selections)!;
-        return result.Cast<object>().ToList();
-    }
+    private static IList BatchSelections(SplitOutputRunner.PatchingBatch batch) => batch.Selections;
 
     // ==================================================================
     // ALL_NPCS_GROUP constant
@@ -124,9 +120,9 @@ public class VM_RunPureTests
         await _sta.RunOnStaAsync(() =>
         {
             using var _ = new StaticStateGuard();
-            var vm = MakeVm(new Settings { SplitOutputByGender = false, SplitOutputByRace = false });
+            var runner = MakeRunner(new Settings { SplitOutputByGender = false, SplitOutputByRace = false });
 
-            var batches = InvokeCreateBatches(vm, new List<KeyValuePair<FormKey, ScreeningResult>>());
+            var batches = runner.CreatePatchingBatches(new List<KeyValuePair<FormKey, ScreeningResult>>());
 
             batches.Should().BeEmpty();
         });
@@ -140,7 +136,7 @@ public class VM_RunPureTests
             using var _ = new StaticStateGuard();
             var mod = MutagenFixtures.NewMod("App.esp");
             // No gender/race split, no max -> everything lands in one batch with an empty suffix.
-            var vm = MakeVm(new Settings
+            var runner = MakeRunner(new Settings
             {
                 SplitOutputByGender = false,
                 SplitOutputByRace = false,
@@ -148,7 +144,7 @@ public class VM_RunPureTests
             });
 
             var selections = Selections(mod, female: new[] { false, true, false, true });
-            var batches = InvokeCreateBatches(vm, selections);
+            var batches = runner.CreatePatchingBatches(selections);
 
             batches.Should().HaveCount(1);
             BatchSuffix(batches[0]).Should().BeEmpty();
@@ -164,7 +160,7 @@ public class VM_RunPureTests
             using var _ = new StaticStateGuard();
             var mod = MutagenFixtures.NewMod("App.esp");
             // 5 NPCs, max 2 per plugin, no gender/race -> chunks of [2,2,1] each suffixed 1/2/3.
-            var vm = MakeVm(new Settings
+            var runner = MakeRunner(new Settings
             {
                 SplitOutputByGender = false,
                 SplitOutputByRace = false,
@@ -172,7 +168,7 @@ public class VM_RunPureTests
             });
 
             var selections = Selections(mod, female: new[] { false, false, false, false, false });
-            var batches = InvokeCreateBatches(vm, selections);
+            var batches = runner.CreatePatchingBatches(selections);
 
             batches.Should().HaveCount(3);
             BatchSuffix(batches[0]).Should().Be("1");
@@ -194,7 +190,7 @@ public class VM_RunPureTests
             using var _ = new StaticStateGuard();
             var mod = MutagenFixtures.NewMod("App.esp");
             // Exactly 2 NPCs with max 2: totalInGroup (2) is NOT > max (2) -> single batch, no suffix.
-            var vm = MakeVm(new Settings
+            var runner = MakeRunner(new Settings
             {
                 SplitOutputByGender = false,
                 SplitOutputByRace = false,
@@ -202,7 +198,7 @@ public class VM_RunPureTests
             });
 
             var selections = Selections(mod, female: new[] { false, false });
-            var batches = InvokeCreateBatches(vm, selections);
+            var batches = runner.CreatePatchingBatches(selections);
 
             batches.Should().HaveCount(1);
             BatchSuffix(batches[0]).Should().BeEmpty("group size == max means the group was not split");
@@ -218,7 +214,7 @@ public class VM_RunPureTests
             using var _ = new StaticStateGuard();
             var mod = MutagenFixtures.NewMod("App.esp");
             // 3 male + 2 female, gender split only -> two batches keyed "Male" / "Female".
-            var vm = MakeVm(new Settings
+            var runner = MakeRunner(new Settings
             {
                 SplitOutputByGender = true,
                 SplitOutputByRace = false,
@@ -226,7 +222,7 @@ public class VM_RunPureTests
             });
 
             var selections = Selections(mod, female: new[] { false, true, false, true, false });
-            var batches = InvokeCreateBatches(vm, selections);
+            var batches = runner.CreatePatchingBatches(selections);
 
             batches.Should().HaveCount(2);
             var suffixes = batches.Select(BatchSuffix).ToList();
@@ -247,7 +243,7 @@ public class VM_RunPureTests
             using var _ = new StaticStateGuard();
             var mod = MutagenFixtures.NewMod("App.esp");
             // 3 males, max 2 -> the male group splits into Male_1 (2 NPCs) and Male_2 (1 NPC).
-            var vm = MakeVm(new Settings
+            var runner = MakeRunner(new Settings
             {
                 SplitOutputByGender = true,
                 SplitOutputByRace = false,
@@ -255,7 +251,7 @@ public class VM_RunPureTests
             });
 
             var selections = Selections(mod, female: new[] { false, false, false });
-            var batches = InvokeCreateBatches(vm, selections);
+            var batches = runner.CreatePatchingBatches(selections);
 
             batches.Should().HaveCount(2);
             batches.Select(BatchSuffix).Should().BeEquivalentTo(new[] { "Male_1", "Male_2" });
@@ -449,7 +445,7 @@ public class VM_RunPureTests
     }
 
     // ==================================================================
-    // private nested PatchingBatch record value-equality
+    // SplitOutputRunner.PatchingBatch record value-equality
     // ==================================================================
 
     [Fact]
@@ -461,24 +457,11 @@ public class VM_RunPureTests
             var mod = MutagenFixtures.NewMod("App.esp");
             // Two batches produced from the SAME selection list with the same suffix should be
             // value-equal (positional record), while different suffixes / contents differ.
-            var vm = MakeVm(new Settings
-            {
-                SplitOutputByGender = false,
-                SplitOutputByRace = false,
-                SplitOutputMaxNpcs = null
-            });
-
             var selections = Selections(mod, female: new[] { false, false });
 
-            // Construct the private PatchingBatch via its compiler-generated constructor so we can
-            // assert record value-equality directly (the type cannot be named from the test asm).
-            var batchType = typeof(VM_Run)
-                .GetNestedType("PatchingBatch", System.Reflection.BindingFlags.NonPublic)!;
-            var ctor = batchType.GetConstructors().Single();
-
-            var b1 = ctor.Invoke(new object[] { "Suffix", selections });
-            var b2 = ctor.Invoke(new object[] { "Suffix", selections });
-            var b3 = ctor.Invoke(new object[] { "Other", selections });
+            var b1 = new SplitOutputRunner.PatchingBatch("Suffix", selections);
+            var b2 = new SplitOutputRunner.PatchingBatch("Suffix", selections);
+            var b3 = new SplitOutputRunner.PatchingBatch("Other", selections);
 
             b1.Equals(b2).Should().BeTrue("records with equal positional members are value-equal");
             b1.GetHashCode().Should().Be(b2.GetHashCode());
