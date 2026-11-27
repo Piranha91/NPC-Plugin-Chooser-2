@@ -683,6 +683,69 @@ public class WigRouteTwoModeTests
         settings.GetEffectiveWigModeForNpc(modSetting, outNpc)
             .Should().Be(WigHandlingMode.ConvertToHeadParts,
                 "the validator must reach the patcher's per-NPC verdict from the output record alone");
+
+        run.Log.Should().Contain("inherits its inventory from a template",
+            "here the template IS the reason the forwarded outfit could never reach the NPC");
+    }
+
+    /// <summary>
+    /// Recast Only, ForwardToOutfit, on an NPC that NO template dresses. The wig is converted to
+    /// head parts all the same, because Recast alone has no way to deliver an outfit
+    /// (<see cref="Settings.OutfitFieldIsInert"/>; docs/Recast-Integration-Plan.md §1). The run log
+    /// must give that reason. It used to say the NPC "inherits its inventory from a template",
+    /// which is the record-mode reason and was false here (seen on the bench for Urag, Rikke and
+    /// Auri, none of whom a template dresses).
+    /// </summary>
+    [Fact]
+    public async Task Route3c_RecastOnly_ForwardToOutfit_LogGivesTheBackEndAsTheReason_NotATemplate()
+    {
+        const string wigNifRecordPath = @"actors\NPC2Route\wig_1.nif";
+        using var fx = new WigRouteFixture("r3c");
+        var npc = fx.AddBaseNpc("NPC2Route_R3c");
+
+        var bodyArma = fx.AddResArmorAddon("NPC2Route_BodyAA", BipedObjectFlag.Body);
+        var wigArma = fx.AddResArmorAddon("NPC2Route_WigAA");
+        wigArma.WorldModel = new GenderedItem<Model?>(
+            new Model { File = wigNifRecordPath }, new Model { File = wigNifRecordPath });
+        wigArma.Race.SetTo(WigRouteFixture.NordRace);
+        var skin = fx.AddResArmor("NPC2Route_Skin", bodyArma, wigArma);
+
+        var baldHair = MutagenFixtures.NewHeadPart(
+            fx.ResMod, "NPC2Route_BaldHair", HeadPart.TypeEnum.Hair, modeless: true);
+
+        var modNpc = fx.AppearanceMod.Npcs.GetOrAddAsOverride(npc);
+        modNpc.WornArmor.SetTo(skin);
+        modNpc.HeadParts.Clear();
+        modNpc.HeadParts.Add(baldHair.FormKey);
+
+        fx.WriteLooseFile(@"meshes\actors\NPC2Route\wig_1.nif", "dummy");
+        fx.WriteLooseFile(@"meshes\actors\NPC2Route\wig_0.nif", "dummy");
+        fx.WriteFaceGen(npc.FormKey);
+        fx.WritePlugins();
+
+        var settings = fx.NewSettings(skyPatcherMode: false, "recast-only");
+        settings.OutputBackend = OutputBackend.Recast;
+        settings.RecastMode = RecastMode.RecastOnly;
+        settings.DefaultWigHandlingMode = WigHandlingMode.ForwardToOutfit;
+        var modSetting = fx.NewModSetting();
+        modSetting.DetectedWigArmatures.Add(wigArma.FormKey);
+        Select(fx, settings, modSetting, npc.FormKey);
+
+        using var run = await fx.RunAsync(settings, _output, "recast-only", configure: h =>
+        {
+            var converter = h.HeadPartWigConverter;
+            converter.RenderShapeNamesProvider = _ => new[] { "wigMain", "wigExtra" };
+            converter.PartitionProbe = (_, _) => true;
+            converter.PhysicsXmlProvider = _ => Array.Empty<string>();
+        });
+        if (run == null) return;
+
+        run.Log.Should().Contain("converting the wig to head parts instead",
+            "the premise: under Recast Only a wig meant for the outfit is converted");
+        run.Log.Should().NotContain("inherits its inventory from a template",
+            "no template dresses this NPC");
+        run.Log.Should().Contain("Recast alone cannot deliver an outfit",
+            "the reason the wig cannot be forwarded here is the back end");
     }
 
     // =============================================================================================

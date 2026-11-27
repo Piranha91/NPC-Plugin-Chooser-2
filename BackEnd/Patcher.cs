@@ -1240,9 +1240,18 @@ public class Patcher : OptionalUIModule
                                     {
                                         if (outfitFieldInert)
                                         {
-                                            AppendLog($"      Wig handling: {npcIdentifier} inherits its inventory from " +
-                                                      "a template, so a forwarded outfit could never reach it — " +
-                                                      "converting the wig to head parts instead.", false, false);
+                                            // The field is inert for one of two reasons
+                                            // (Settings.OutfitFieldIsInert); name the one that holds.
+                                            // Under Recast it is the back end, whether or not a
+                                            // template dresses the NPC: Hybrid never gets here, its
+                                            // outfit travels by SkyPatcher directive.
+                                            AppendLog(_settings.UsesRecast
+                                                ? $"      Wig handling: Recast alone cannot deliver an outfit, so a wig " +
+                                                  $"forwarded to the outfit could never reach {npcIdentifier} — " +
+                                                  "converting the wig to head parts instead."
+                                                : $"      Wig handling: {npcIdentifier} inherits its inventory from " +
+                                                  "a template, so a forwarded outfit could never reach it — " +
+                                                  "converting the wig to head parts instead.", false, false);
                                         }
 
                                         wigConvert = _headPartWigConverter.Apply(appearanceNpcRecord,
