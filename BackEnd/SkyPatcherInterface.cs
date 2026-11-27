@@ -52,6 +52,20 @@ public class SkyPatcherInterface : OptionalUIModule
         }
     }
 
+    /// <summary>
+    /// What stands between two directives of one line: a COLON.
+    /// <para>SkyPatcher cuts a line into <c>key=value</c> parts at each ':' and a value runs to the
+    /// next ':' (parsetable.h, <c>KeyTable::parse</c>, read at commit 48d1779 = 8.0.1; the older
+    /// per-key regexes were <c>key\s*=([^:]+)</c>, the same rule). A ',' only separates the items
+    /// of a LIST value (<c>setFlags</c>, <c>setTemplateFlags</c>, <c>keywordsToAdd</c>).</para>
+    /// <para>NPC2 used to join directives with ','. Every value then carried the directives after
+    /// it as trailing text. Form identifiers and numbers happened to survive that (their parsers
+    /// stop at the first character that does not fit); a list did not: <c>setFlags=female,skin=…,
+    /// weight=60</c> gave SkyPatcher the "flags" <c>skin=…</c> and <c>weight=60</c>, logged as
+    /// "unrecognized flag" (in-game bench, 2026-11-25).</para>
+    /// </summary>
+    internal const string ActionSeparator = ":";
+
     public SkyPatcherInterface(EnvironmentStateProvider environmentStateProvider, SurrogateNpcRegistry surrogates)
     {
         _environmentStateProvider = environmentStateProvider;
@@ -217,9 +231,14 @@ public class SkyPatcherInterface : OptionalUIModule
         }
     }
 
+    // A null outfit writes NO directive. SkyPatcher has no way to say "no outfit": it skips the
+    // key when the value is "none" (npc.cpp: `line.outfitDefault != "none"`), and a null FormKey
+    // rendered as "Null|" is not a form identifier at all. Written anyway, it made SkyPatcher log
+    // "Invalid form identifier" for the line (in-game bench 2026-11-25, a follower whose appearance
+    // mod gives her no default outfit).
     public void SetOutfit(FormKey applyTo, FormKey outfitFk)
     {
-        if (!_outputs.TryGetValue(applyTo, out var npcContainer) || npcContainer == null)
+        if (outfitFk.IsNull || !_outputs.TryGetValue(applyTo, out var npcContainer) || npcContainer == null)
         {
             return;
         }
@@ -228,7 +247,7 @@ public class SkyPatcherInterface : OptionalUIModule
 
     public void SetSleepOutfit(FormKey applyTo, FormKey outfitFk)
     {
-        if (!_outputs.TryGetValue(applyTo, out var npcContainer) || npcContainer == null)
+        if (outfitFk.IsNull || !_outputs.TryGetValue(applyTo, out var npcContainer) || npcContainer == null)
         {
             return;
         }
@@ -342,7 +361,7 @@ public class SkyPatcherInterface : OptionalUIModule
 
                 string npc = FormatFormKeyForSkyPatcher(entry.NpcFormKey);
                 sb.Append($"filterByNPCs={npc}:");
-                sb.Append(string.Join(",", entry.Actions.Select(a => RenderAction(a, formKeyRemap)).Order()));
+                sb.Append(string.Join(ActionSeparator, entry.Actions.Select(a => RenderAction(a, formKeyRemap)).Order()));
                 sb.Append(Environment.NewLine);
             }
 

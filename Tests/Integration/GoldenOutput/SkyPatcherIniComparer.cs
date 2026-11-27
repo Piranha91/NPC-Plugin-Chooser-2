@@ -156,11 +156,20 @@ internal static class SkyPatcherIniComparer
             var directivePart = line.Substring(colon + 1);
 
             var dirs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var token in directivePart.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            // Directives are joined with ':' (since 2026-11) or ',' (the committed references and
+            // every earlier ini). A piece without '=' is a further item of the previous directive's
+            // list value (keywordsToAdd=a,b), not a directive of its own.
+            string? lastKey = null;
+            foreach (var token in directivePart.Split(new[] { ':', ',' }, StringSplitOptions.RemoveEmptyEntries))
             {
                 var eq = token.IndexOf('=');
-                if (eq <= 0) continue;
-                dirs[token.Substring(0, eq).Trim()] = token.Substring(eq + 1).Trim();
+                if (eq <= 0)
+                {
+                    if (lastKey != null) dirs[lastKey] += "," + token.Trim();
+                    continue;
+                }
+                lastKey = token.Substring(0, eq).Trim();
+                dirs[lastKey] = token.Substring(eq + 1).Trim();
             }
             map[target] = dirs;
         }

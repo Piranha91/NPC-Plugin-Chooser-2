@@ -3517,14 +3517,15 @@ public class OutputValidator
             var filterKey = filterParts[0].Trim().ToLowerInvariant();
             if (filterKey != "filterbynpcs" && filterKey != "filterbynpcsformid") continue;
 
-            // Actions part: copyVisualStyle=<surrogate>,skin=...,height=... (the surrogate FormKey
-            // has no comma, so a simple per-segment scan is safe). SkyPatcherInterface.WriteIni
-            // joins actions with ',' and emits removeTemplateFlags with the single value "traits",
-            // so that directive is always its own segment here.
+            // Actions part: copyVisualStyle=<surrogate>:skin=...:height=... SkyPatcherInterface.WriteIni
+            // joins actions with ':' (SkyPatcherInterface.ActionSeparator); an ini written before
+            // 2026-11 joined them with ','. Both are read: the surrogate FormKey holds neither
+            // character, and removeTemplateFlags is emitted with the single value "traits", so
+            // that directive is always its own segment either way.
             FormKey surrogate = default;
             bool hasSurrogate = false;
             bool clearsTraits = false;
-            foreach (var seg in line.Substring(colon + 1).Split(','))
+            foreach (var seg in line.Substring(colon + 1).Split(':', ','))
             {
                 var trimmed = seg.Trim();
                 if (!hasSurrogate && trimmed.StartsWith("copyVisualStyle=", StringComparison.OrdinalIgnoreCase))

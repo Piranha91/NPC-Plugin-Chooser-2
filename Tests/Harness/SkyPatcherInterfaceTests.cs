@@ -237,9 +237,9 @@ public class SkyPatcherInterfaceTests
         spi.SetOutfitStandalone(target, FormKey.Factory("000900:NPCTest.esp"));
         spi.WriteIni(tmp.Path);
 
-        // One line per NPC; directives are written comma-joined in alphabetical order.
+        // One line per NPC; directives are written colon-joined in alphabetical order.
         File.ReadAllText(IniPath(tmp.Path)).TrimEnd('\r', '\n')
-            .Should().Be("filterByNPCs=T.esp|801:copyVisualStyle=Skyrim.esm|800,outfitDefault=NPCTest.esp|900");
+            .Should().Be("filterByNPCs=T.esp|801:copyVisualStyle=Skyrim.esm|800:outfitDefault=NPCTest.esp|900");
     }
 
     [Fact]
@@ -413,7 +413,70 @@ public class SkyPatcherInterfaceTests
         spi.WriteIni(tmp.Path).Should().BeTrue();
 
         var line = File.ReadAllText(IniPath(tmp.Path)).TrimEnd('\r', '\n');
-        line.Should().Be("filterByNPCs=T.esp|801:height=1,skin=Skins.esp|222,weight=50");
+        line.Should().Be("filterByNPCs=T.esp|801:height=1:skin=Skins.esp|222:weight=50");
+    }
+
+    // ── WriteIni: what SkyPatcher's parser needs (in-game bench, 2026-11-25) ──
+
+    /// <summary>
+    /// The values SkyPatcher would read from a line, by ITS rule (parsetable.h, KeyTable::parse, at
+    /// commit 48d1779): the line is cut at every ':', and in each part the text after '=' up to the
+    /// part's end is the value of the key before it.
+    /// </summary>
+    private static Dictionary<string, string> ReadAsSkyPatcherDoes(string line)
+    {
+        var read = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var part in line.Split(':'))
+        {
+            var eq = part.IndexOf('=');
+            if (eq > 0) read[part.Substring(0, eq).Trim()] = part.Substring(eq + 1).Trim();
+        }
+        return read;
+    }
+
+    [Fact]
+    public void WriteIni_AListDirective_IsNotFollowedByOtherDirectivesInItsValue()
+    {
+        // setFlags is a LIST key: SkyPatcher splits its value at ','. Joined with ',' the line read
+        // "setFlags=female,skin=…,weight=60" and SkyPatcher logged the flags "skin=…" and "weight=60"
+        // as unrecognized.
+        using var tmp = new TempDir();
+        var spi = NewInterface(out _);
+        var target = FormKey.Factory("000801:T.esp");
+        spi.AddNpc(target);
+        spi.ApplyFace(target, FormKey.Factory("000800:Skyrim.esm"));
+        spi.ToggleGender(target, Gender.Female);
+        spi.ApplySkin(target, FormKey.Factory("000222:Skins.esp"));
+        spi.ApplyWeight(target, 60f);
+        spi.ToggleTemplateTraitsStatus(target, false);
+
+        spi.WriteIni(tmp.Path).Should().BeTrue();
+
+        var read = ReadAsSkyPatcherDoes(File.ReadAllText(IniPath(tmp.Path)).TrimEnd('\r', '\n'));
+        read["setFlags"].Should().Be("female");
+        read["removeTemplateFlags"].Should().Be("traits");
+        read["skin"].Should().Be("Skins.esp|222");
+        read["weight"].Should().Be("60");
+        read["copyVisualStyle"].Should().Be("Skyrim.esm|800");
+    }
+
+    [Fact]
+    public void SetOutfit_NullOutfit_WritesNoDirective()
+    {
+        // "outfitDefault=Null|" is not a form identifier; SkyPatcher logged the line as invalid.
+        using var tmp = new TempDir();
+        var spi = NewInterface(out _);
+        var target = FormKey.Factory("000801:T.esp");
+        spi.AddNpc(target);
+        spi.ApplyFace(target, FormKey.Factory("000800:Skyrim.esm"));
+        spi.SetOutfit(target, FormKey.Null);
+        spi.SetSleepOutfit(target, FormKey.Null);
+
+        spi.WriteIni(tmp.Path).Should().BeTrue();
+
+        var line = File.ReadAllText(IniPath(tmp.Path)).TrimEnd('\r', '\n');
+        line.Should().Be("filterByNPCs=T.esp|801:copyVisualStyle=Skyrim.esm|800");
+        line.Should().NotContain("Null");
     }
 
     // ── WriteIni: post-auto-split FormKey remap ───────────────────────────────
