@@ -24,7 +24,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 /// PatchingMode); the caller gates on
 /// <see cref="Settings.WigOrAntlerHandlingActive"/>.
 /// </summary>
-public class WigForwarder
+public partial class WigForwarder
 {
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private readonly RecordHandler _recordHandler;
@@ -419,51 +419,24 @@ public class WigForwarder
         var antlerMode = _settings.GetEffectiveAntlerMode(appearanceModSetting);
         if (wigMode == WigHandlingMode.None && antlerMode == AntlerHandlingMode.None) return null;
 
-        var modKeys = appearanceModSetting.CorrespondingModKeys;
+        // Which pieces go where. Decided by DetermineRouting, which the pre-run headgear scan
+        // also calls, so the scan and the run cannot disagree about what would be forwarded.
+        var routing = DetermineRouting(donorNpc, appearanceModSetting, modFolderPaths, wigMode, antlerMode,
+            flattenTerminusNpc);
 
         // The record whose Traits-governed appearance the OUTPUT will carry (see the doc above).
-        var appearanceNpc = flattenTerminusNpc ?? donorNpc;
-
-        // Applicable outfit pieces = the donor outfit's direct items the scan
-        // classified, partitioned by class (wigs nested in leveled lists are not
-        // forwarded — the detection is outfit-item based by design).
-        var donorOutfitGetter = ResolveFromModsOrWinner<IOutfitGetter>(donorNpc.DefaultOutfit, modKeys, modFolderPaths);
-        var wigItems = new List<(FormKey Key, bool IsAntler)>();
-        var antlerItems = new List<(FormKey Key, bool IsAntler)>();
-        if (donorOutfitGetter?.Items != null)
-        {
-            foreach (var item in donorOutfitGetter.Items)
-            {
-                if (item == null || item.IsNull) continue;
-                if (appearanceModSetting.DetectedAntlerArmors.Contains(item.FormKey))
-                    antlerItems.Add((item.FormKey, true));
-                else if (appearanceModSetting.DetectedWigArmors.Contains(item.FormKey))
-                    wigItems.Add((item.FormKey, false));
-            }
-        }
-
-        // Resolve the WNAM up front: ForwardToSkin needs a resolvable WNAM
-        // to transfer into. hasWnam = present AND resolvable so the no-WNAM
-        // fallback (→ ForwardToOutfit) also covers an unresolvable link.
-        // Traits-governed, so this is the terminus's skin under a flatten — the same one
-        // CopyInheritedAppearance writes, which the duplicate then replaces.
-        var wnamKey = appearanceNpc.WornArmor.IsNull ? FormKey.Null : appearanceNpc.WornArmor.FormKey;
-        var wnamGetter = appearanceNpc.WornArmor.IsNull
-            ? null
-            : ResolveFromModsOrWinner<IArmorGetter>(appearanceNpc.WornArmor, modKeys, modFolderPaths);
-        bool hasWnam = wnamGetter != null;
-
-        // Per-class effective routing (the no-WNAM fallback flips ForwardToSkin →
-        // ForwardToOutfit for both classes, since they share the one donor WNAM).
-        bool wigToSkin = wigMode == WigHandlingMode.ForwardToSkin && hasWnam && wigItems.Count > 0;
-        bool wigToOutfit = wigItems.Count > 0 &&
-            (wigMode == WigHandlingMode.ForwardToOutfit ||
-             (wigMode == WigHandlingMode.ForwardToSkin && !hasWnam));
-        bool antlerToSkin = antlerMode == AntlerHandlingMode.ForwardToSkin && hasWnam && antlerItems.Count > 0;
-        bool antlerToOutfit = antlerItems.Count > 0 &&
-            (antlerMode == AntlerHandlingMode.ForwardToOutfit ||
-             (antlerMode == AntlerHandlingMode.ForwardToSkin && !hasWnam));
-        bool antlerRemove = antlerMode == AntlerHandlingMode.Remove;
+        var appearanceNpc = routing.AppearanceNpc;
+        var donorOutfitGetter = routing.DonorOutfit;
+        var wigItems = routing.WigItems;
+        var antlerItems = routing.AntlerItems;
+        var wnamKey = routing.WnamKey;
+        var wnamGetter = routing.Wnam;
+        bool hasWnam = routing.HasWnam;
+        bool wigToSkin = routing.WigToSkin;
+        bool wigToOutfit = routing.WigToOutfit;
+        bool antlerToSkin = routing.AntlerToSkin;
+        bool antlerToOutfit = routing.AntlerToOutfit;
+        bool antlerRemove = routing.AntlerRemove;
 
         if (wigMode == WigHandlingMode.ForwardToSkin && !hasWnam && wigItems.Count > 0)
             appendLog($"      Wig handling: {npcIdentifier} has no WNAM in the appearance plugin — the wig falls back to ForwardToOutfit.",
@@ -471,6 +444,43 @@ public class WigForwarder
         if (antlerMode == AntlerHandlingMode.ForwardToSkin && !hasWnam && antlerItems.Count > 0)
             appendLog($"      Antler handling: {npcIdentifier} has no WNAM in the appearance plugin — the antler falls back to ForwardToOutfit.",
                 false, false);
+
+        // Wig forwarded into an outfit that already holds headgear on the wig's biped slot (see
+        // WigHeadgearChoice): the game shows only one of the two. Tested only under
+        // ForwardToOutfit proper and only when there is a wig to add, so every other route
+        // resolves the worn outfit where it always did (inside TryForwardToOutfit).
+        ForwardTarget? forwardTarget = null;
+        IReadOnlyList<WigHeadgearConflict> headgearConflicts = Array.Empty<WigHeadgearConflict>();
+        bool omitWigFromOutfit = false;
+        if (wigMode == WigHandlingMode.ForwardToOutfit && routing.HasWigForOutfit)
+        {
+            forwardTarget = ResolveForwardTarget(targetNpcFormKey, donorNpc, appearanceModSetting, modFolderPaths);
+            try
+            {
+                headgearConflicts = FindHeadgearConflicts(routing, forwardTarget, appearanceModSetting, modFolderPaths);
+            }
+            catch (Exception ex)
+            {
+                // The test only informs; a record it cannot read must not stop the forwarding
+                // that would have happened without it.
+                appendLog($"      Wig handling: could not check {npcIdentifier}'s outfit for headgear on the wig's " +
+                          $"body slot ({ex.Message}); forwarding the wig as usual.", true, false);
+            }
+
+            if (headgearConflicts.Count > 0 &&
+                _settings.GetWigHeadgearChoice(targetNpcFormKey) == WigHeadgearChoice.Omit)
+            {
+                // The user's stored answer for this NPC: keep the headgear, drop the wig. The wig
+                // still comes off the skin below (as ForwardToOutfit always does); it is just not
+                // added to the outfit, and no wearable wig armor is generated for it.
+                omitWigFromOutfit = true;
+                appendLog($"      Wig handling (ForwardToOutfit): {npcIdentifier}'s wig is not added to outfit " +
+                          $"'{headgearConflicts[0].OutfitLabel}', which holds " +
+                          string.Join(" and ", headgearConflicts.Select(c => $"'{c.Headgear.Label}'").Distinct()) +
+                          " on the same body slot (stored choice: omit the wig). The NPC keeps the headgear " +
+                          "and has no wig.", false, false);
+            }
+        }
 
         // Pieces routed to the skin (union), added to the worn outfit, and pieces
         // that must NOT remain in a forwarded worn outfit (moved to skin, or
@@ -480,7 +490,7 @@ public class WigForwarder
         if (antlerToSkin) skinPieces.AddRange(antlerItems);
 
         var outfitAddPieces = new List<(FormKey Key, bool IsAntler)>();
-        if (wigToOutfit) outfitAddPieces.AddRange(wigItems);
+        if (wigToOutfit && !omitWigFromOutfit) outfitAddPieces.AddRange(wigItems);
         if (antlerToOutfit) outfitAddPieces.AddRange(antlerItems);
 
         var outfitStripPieces = new List<(FormKey Key, bool IsAntler)>();
@@ -527,18 +537,19 @@ public class WigForwarder
         // Skin-carried (WNAM) wigs under ForwardToOutfit: relocate each effective
         // wig ARMA (IsWigArmature — scan minus vetoes plus manual designations)
         // into the worn outfit via a minted wearable wig ARMO, and strip it from
-        // the WNAM duplicate.
-        if (wigMode == WigHandlingMode.ForwardToOutfit && wnamGetter?.Armature != null)
+        // the WNAM duplicate. (The list is empty in every other mode — see
+        // DetermineRouting.) When the user chose to omit the wig for this NPC the
+        // ARMA still comes off the skin, but nothing is minted or added.
+        foreach (var arma in routing.SkinWigArmasForOutfit)
         {
-            foreach (var arma in CollectWnamWigArmas(wnamGetter, donorNpc, appearanceModSetting,
-                         modFolderPaths, hairSlotOnly: false))
+            if (!omitWigFromOutfit)
             {
                 FormKey mintedArmoKey = GetOrMintWigArmorForArma(arma, appearanceModSetting,
                     donorContextModKey, modFolderPaths, mergeInDependencyRecords, result,
                     npcIdentifier, appendLog);
                 outfitAddPieces.Add((mintedArmoKey, false));
-                wnamRemovals.Add(arma.FormKey);
             }
+            wnamRemovals.Add(arma.FormKey);
         }
 
         // Skin-carried (WNAM) wigs under ForwardToSkin: the ARMA is already in its end state, so
@@ -579,7 +590,16 @@ public class WigForwarder
         {
             TryForwardToOutfit(targetNpcFormKey, donorNpc, appearanceModSetting, donorContextModKey,
                 modFolderPaths, mergeInDependencyRecords, wigMode, antlerMode, outfitAddPieces,
-                outfitStripPieces, result, npcIdentifier, appendLog);
+                outfitStripPieces, result, npcIdentifier, appendLog, forwardTarget);
+        }
+
+        // The wig went into an outfit that holds headgear on the same slot, and the user did not
+        // choose otherwise for this NPC: tell them, in the batched end-of-run report. Recorded
+        // only once the outfit really was produced, so a failed duplication does not claim a
+        // wig that was never added.
+        if (headgearConflicts.Count > 0 && !omitWigFromOutfit && result.OutfitDuplicateKey != null)
+        {
+            ReportWigForwardedOntoHeadgear(headgearConflicts, forwardTarget, appearanceModSetting, npcIdentifier);
         }
 
         // 3) Include-Outfit strip of the forwarded DONOR outfit (only when step 2
@@ -775,26 +795,21 @@ public class WigForwarder
         List<(FormKey Key, bool IsAntler)> stripPieces,
         Result result,
         string npcIdentifier,
-        Action<string, bool, bool> appendLog)
+        Action<string, bool, bool> appendLog,
+        ForwardTarget? resolvedTarget = null)
     {
-        // The outfit the NPC will actually wear in game absent forwarding:
-        // plugin-level effective outfit (patch-mode aware) + SkyPatcher/SPID
-        // runtime layers — the same simulation the renderer depicts.
-        var display = _outfitDisplayResolver.ResolveForDisplay(
-            targetNpcFormKey, donorNpc.FormKey, appearanceModSetting, includeDefaultOutfitRenderFlag: true);
+        // The outfit the NPC will actually wear in game absent forwarding (see
+        // ResolveForwardTarget). Apply hands it in when it already resolved it for the
+        // headgear test, so one NPC is never resolved twice.
+        var target = resolvedTarget ??
+                     ResolveForwardTarget(targetNpcFormKey, donorNpc, appearanceModSetting, modFolderPaths);
+        var display = target.Display;
 
         // Recorded before any early return so the Patcher sees it on the duplicate-
         // reuse path too (the contest is per-NPC; the duplicate is shared).
         result.OutfitContest = display.Contest;
 
-        IOutfitGetter? effectiveOutfit = null;
-        if (display.OutfitFormKey is { } effectiveKey)
-        {
-            var link = effectiveKey.ToLink<IOutfitGetter>();
-            effectiveOutfit = display.UseModScopedResolution
-                ? ResolveFromModsOrWinner<IOutfitGetter>(link, appearanceModSetting.CorrespondingModKeys, modFolderPaths)
-                : ResolveWinner<IOutfitGetter>(effectiveKey);
-        }
+        IOutfitGetter? effectiveOutfit = target.EffectiveOutfit;
 
         var stripKeys = stripPieces.Select(s => s.Key).ToHashSet();
 

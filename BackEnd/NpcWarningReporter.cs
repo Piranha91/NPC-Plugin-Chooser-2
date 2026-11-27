@@ -50,6 +50,15 @@ public enum NpcWarningKind
     /// Patcher's inert-outfit report.</summary>
     TemplatedOutfitReplaced,
 
+    /// <summary>Wig handling "Forward to Outfit" added a wig to an outfit that already holds
+    /// headgear on the same biped slot, and the user had not chosen otherwise for the NPC (see
+    /// <see cref="NPC_Plugin_Chooser_2.Models.WigHeadgearChoice"/>). The game shows only one of
+    /// two items on a slot: Legate Rikke's twin wore the wig and no Imperial officer helmet, a
+    /// Forsworn Briarheart the wig and no headdress (in-game bench, 2026-11-25). The selection is
+    /// valid and is patched (user decision of 2026-11-26); each entry names the wig, the outfit,
+    /// the headgear and the slot numbers as read from the records.</summary>
+    WigForwardedOntoHeadgear,
+
     // NOTE (user standard, 2026-08-02): a kind belongs in this enum — i.e. in the colored,
     // grouped WARNING report — only when the user would NOTICE the issue in game (dark face,
     // missing meshes/textures, CTD-class null references, wrong outfits). Findings that are real
@@ -193,6 +202,15 @@ public static class NpcWarningReporter
             "patched normally. To keep the templated clothing, turn off 'Include Outfit' for " +
             "the appearance mod:",
 
+        // Wording given by the user (2026-11-26); no pronoun in it needs context.
+        NpcWarningKind.WigForwardedOntoHeadgear =>
+            "Wig handling 'Forward to Outfit' added a wig to the outfit of each of the following " +
+            "NPCs, and that outfit already holds headgear on the same body slot. Skyrim shows " +
+            "only one of two items on the same slot, so either the wig or the headgear will be " +
+            "missing in game. To choose what happens, set the wig handling for the appearance " +
+            "mod to 'Forward to Skin' or 'Convert to Head Parts', or answer the wig and headgear " +
+            "question NPC2 asks before a run:",
+
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
     };
 
@@ -245,6 +263,16 @@ public static class NpcWarningReporter
             "record's own DefaultOutfit. A SkyPatcher outfitDefault directive sets the outfit " +
             "on the actor base at run time and is honoured regardless of that flag. Each entry " +
             "names the template and the outfit the directive sets.",
+
+        NpcWarningKind.WigForwardedOntoHeadgear =>
+            "The test compares biped slot masks (BodyTemplate first-person flags, slot 30 = bit " +
+            "0). The wig side is each wig piece ForwardToOutfit adds to the outfit: a wig Armor " +
+            "from the mod's outfit, or a wig ArmorAddon relocated from the skin (WornArmor), " +
+            "which is wrapped in a generated NPC2WigArmor_ Armor with the same slots. The " +
+            "headgear side is every Armor the outfit holds directly or through leveled lists, " +
+            "followed recursively. The outfit is the one the NPC wears in game without the " +
+            "forwarding (load order winner, SkyPatcher and SPID distribution included). Each " +
+            "entry lists the FormKeys and slot masks of both sides and the outfit.",
 
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
     };

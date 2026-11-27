@@ -1236,7 +1236,25 @@ public class Patcher : OptionalUIModule
                                     bool outfitFieldInert = effectiveWigMode == WigHandlingMode.ForwardToOutfit &&
                                                             RecordOutfitIsInert(winningNpcOverride, appearanceNpcRecord);
 
-                                    if (effectiveWigMode == WigHandlingMode.ConvertToHeadParts || outfitFieldInert)
+                                    // The user's stored answer for THIS NPC (keyed by the NPC being
+                                    // patched) to "the outfit the wig would be forwarded into already
+                                    // holds headgear on the same body slot": convert the wig to head
+                                    // parts instead (see WigHeadgearChoice). Acted on only while the
+                                    // records still show that conflict, asked of the same determination
+                                    // the forwarder itself uses; with no conflict the NPC is forwarded
+                                    // exactly as the mod's mode says. The other two answers (forward
+                                    // anyway, omit the wig) are the forwarder's to apply.
+                                    bool convertByHeadgearChoice =
+                                        effectiveWigMode == WigHandlingMode.ForwardToOutfit && !outfitFieldInert &&
+                                        _settings.GetWigHeadgearChoice(npcFormKey) == WigHeadgearChoice.ConvertToHeadParts &&
+                                        _wigForwarder.FindHeadgearConflicts(npcFormKey, appearanceNpcRecord,
+                                            appearanceModSetting, currentModFolderPaths, flattenTerminus).Count > 0;
+
+                                    // Either reason sends this one NPC through the converter in place
+                                    // of ForwardToOutfit, by the one mechanism.
+                                    bool convertInsteadOfForward = outfitFieldInert || convertByHeadgearChoice;
+
+                                    if (effectiveWigMode == WigHandlingMode.ConvertToHeadParts || convertInsteadOfForward)
                                     {
                                         if (outfitFieldInert)
                                         {
@@ -1253,6 +1271,13 @@ public class Patcher : OptionalUIModule
                                                   "a template, so a forwarded outfit could never reach it — " +
                                                   "converting the wig to head parts instead.", false, false);
                                         }
+                                        else if (convertByHeadgearChoice)
+                                        {
+                                            AppendLog($"      Wig handling: the outfit {npcIdentifier} wears holds headgear " +
+                                                      "on the wig's body slot, and the stored choice for this NPC is to " +
+                                                      "convert — converting the wig to head parts instead of forwarding " +
+                                                      "it to the outfit.", false, false);
+                                        }
 
                                         wigConvert = _headPartWigConverter.Apply(appearanceNpcRecord,
                                             appearanceModSetting, currentModFolderPaths, npcIdentifier,
@@ -1266,13 +1291,15 @@ public class Patcher : OptionalUIModule
 
                                             // The forwarder must now STRIP the wig from any forwarded
                                             // outfit rather than add it — the head parts carry it.
-                                            if (outfitFieldInert) wigModeOverride = WigHandlingMode.ConvertToHeadParts;
+                                            if (convertInsteadOfForward) wigModeOverride = WigHandlingMode.ConvertToHeadParts;
                                         }
                                         // Any decline on the inert-outfit path goes to the skin, which IS
                                         // live: WornArmor is Traits data, not inventory. Declines on the
                                         // ordinary path keep their own contract (only the risky ones
-                                        // downgrade; "nothing to convert" leaves the mode alone).
-                                        else if (fallBackToForwardToSkin || outfitFieldInert)
+                                        // downgrade; "nothing to convert" leaves the mode alone). A decline
+                                        // on the headgear-choice path goes to the skin as well: the user
+                                        // asked for the wig to stay out of the outfit.
+                                        else if (fallBackToForwardToSkin || convertInsteadOfForward)
                                         {
                                             wigModeOverride = WigHandlingMode.ForwardToSkin;
                                         }

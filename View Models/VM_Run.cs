@@ -47,6 +47,8 @@ public class VM_Run : ReactiveObject, IDisposable
     private readonly RecordHandler _recordHandler;
     private readonly Auxilliary _aux;
     private readonly MasterAnalyzer _masterAnalyzer;
+    private readonly WigForwarder _wigForwarder;
+    private readonly WigHeadgearChoiceCoordinator _wigHeadgearChoices;
     private readonly Lazy<IOffscreenRenderer> _offscreenRenderer;
     private CancellationTokenSource? _patchingCts;
     private readonly CompositeDisposable _disposables = new();
@@ -129,6 +131,8 @@ public class VM_Run : ReactiveObject, IDisposable
         RecordHandler recordHandler,
         MasterAnalyzer masterAnalyzer,
         NPC_Plugin_Chooser_2.BackEnd.OutfitDistribution.ForwardedOutfitDistributor forwardedOutfitDistributor,
+        WigForwarder wigForwarder,
+        WigHeadgearChoiceCoordinator wigHeadgearChoices,
         Lazy<IOffscreenRenderer> offscreenRenderer)
     {
         _environmentStateProvider = environmentStateProvider;
@@ -148,6 +152,8 @@ public class VM_Run : ReactiveObject, IDisposable
         _pluginProvider = pluginProvider;
         _recordHandler = recordHandler;
         _masterAnalyzer = masterAnalyzer;
+        _wigForwarder = wigForwarder;
+        _wigHeadgearChoices = wigHeadgearChoices;
         _offscreenRenderer = offscreenRenderer;
 
         _patcher.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
@@ -349,12 +355,20 @@ public class VM_Run : ReactiveObject, IDisposable
         _patchingCts = new CancellationTokenSource();
         var token = _patchingCts.Token;
 
+        // The patcher reads wig-and-headgear answers from Settings on its own threads, so remembered
+        // answers may not be cleared while this run is going (the Settings button checks this mark).
+        IDisposable? wigHeadgearRunMark = null;
+        // Answers given in this run's wig-and-headgear window WITHOUT "remember": written to Settings
+        // for the patcher to read, and taken out again in the finally below, however the run ends.
+        IDisposable? runOnlyWigHeadgearChoices = null;
+
         try
         {
             // MANUALLY set IsRunning to true. This will update the UI.
             IsRunning = true;
             ValidationStartTime = null;
             PatchingStartTime = null;
+            wigHeadgearRunMark = _wigHeadgearChoices.BeginRun();
 
             // --- *** Save Mod Settings Before Proceeding *** ---
             try
@@ -519,10 +533,24 @@ public class VM_Run : ReactiveObject, IDisposable
 
             if (continuePatching)
             {
+                var validSelections = _validator.GetScreeningCache().Where(kv => kv.Value.SelectionIsValid).ToList();
+
+                // Second pre-run window: valid selections whose wig 'Forward to Outfit' would add to
+                // an outfit that already holds headgear on the same slot. They stay valid; the user
+                // says what to do with the wig, or cancels. Asked before PatchingStartTime is set,
+                // so cancelling here leaves the run as untouched as declining the dialog above.
+                var (continueAfterWigQuestion, runOnlyChoices) =
+                    await AskAboutWigHeadgearConflictsAsync(validSelections, token);
+                runOnlyWigHeadgearChoices = runOnlyChoices;
+                if (!continueAfterWigQuestion)
+                {
+                    AppendLog("Patching cancelled by user at the wig and headgear window.");
+                    ResetProgress();
+                    return; // Abort
+                }
+
                 PatchingStartTime = DateTime.Now;
 
-                var validSelections = _validator.GetScreeningCache().Where(kv => kv.Value.SelectionIsValid).ToList();
-                
                 // Fresh output mod, then the patcher once -- or once per group when the user splits
                 // the output -- then the unified NPC token file. Shared with the headless runners.
                 await _splitOutputRunner.RunAsync(validSelections, token);
@@ -555,6 +583,11 @@ public class VM_Run : ReactiveObject, IDisposable
         }
         finally
         {
+            // This run's own wig-and-headgear answers leave Settings again, whether the run
+            // succeeded, failed or was cancelled; then remembered answers may be cleared again.
+            runOnlyWigHeadgearChoices?.Dispose();
+            wigHeadgearRunMark?.Dispose();
+
             // Close per-NPC diagnostic files opened for this run.
             NpcDiagnosticLogger.Shutdown();
 
@@ -586,6 +619,49 @@ public class VM_Run : ReactiveObject, IDisposable
             _patchingCts?.Dispose();
             _patchingCts = null;
         }
+    }
+
+    /// <summary>
+    /// The wig-and-headgear step of validation. Scans the valid selections off the UI thread
+    /// (<see cref="WigForwarder.FindUnansweredHeadgearConflicts"/>; it returns at once when no
+    /// selected mod forwards wigs to outfits) and, when it finds cases, shows
+    /// <see cref="WigHeadgearConflictWindow"/>.
+    /// </summary>
+    /// <returns>Whether to go on patching, and, for an answer the user did not ask to have
+    /// remembered, the handle that takes it out of Settings again when disposed (null otherwise).
+    /// A remembered answer is stored and stays; "Cancel run" stores nothing.</returns>
+    private async Task<(bool Continue, IDisposable? RunOnlyChoices)> AskAboutWigHeadgearConflictsAsync(
+        List<KeyValuePair<FormKey, ScreeningResult>> validSelections, CancellationToken token)
+    {
+        CurrentProgressMessage = "Checking wigs against headgear...";
+        var cases = await Task.Run(() => _wigForwarder.FindUnansweredHeadgearConflicts(validSelections, token), token);
+        if (cases.Count == 0) return (true, null);
+
+        // No UI to ask through: the cases stay unanswered, which the patcher forwards and lists
+        // in its end-of-run warnings (what a headless run does).
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null) return (true, null);
+
+        CurrentProgressMessage = "Waiting for user input...";
+
+        var decision = WigHeadgearConflictDecision.CancelRun;
+        dispatcher.Invoke(() => { decision = WigHeadgearConflictWindow.Ask(cases); });
+
+        if (decision.Choice is not { } choice) return (false, null);
+
+        var npcs = cases.Select(c => c.TargetNpcFormKey).ToList();
+        var handle = _wigHeadgearChoices.ApplyForRun(npcs, choice, decision.Remember);
+
+        string what = choice switch
+        {
+            WigHeadgearChoice.Omit => "the wig is omitted",
+            WigHeadgearChoice.ConvertToHeadParts => "the wig is converted to head parts",
+            _ => "the wig is forwarded",
+        };
+        AppendLog($"Wig and headgear on the same slot: {what} for {npcs.Count} NPC(s) " +
+                  (decision.Remember ? "(choice remembered)." : "(this run only)."), forceLog: true);
+
+        return (true, decision.Remember ? null : handle);
     }
 
     /// <summary>

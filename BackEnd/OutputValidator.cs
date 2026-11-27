@@ -1677,7 +1677,7 @@ public class OutputValidator
                 }
                 else
                 {
-                    var diffs = CompareAppearance(subjectRec, donorRec, linkCache, modSetting);
+                    var diffs = CompareAppearance(subjectRec, donorRec, linkCache, modSetting, npcFk);
                     if (diffs.Count > 0)
                     {
                         result.Issues.Add(new ValidationIssue
@@ -1780,7 +1780,7 @@ public class OutputValidator
         var swCompare = System.Diagnostics.Stopwatch.StartNew();
         List<string> diffs;
         using (ContextualPerformanceTracer.Trace("CompareAppearance"))
-            diffs = CompareAppearance(winningRecord, sourceRecord, linkCache, modSetting);
+            diffs = CompareAppearance(winningRecord, sourceRecord, linkCache, modSetting, npcFk);
         long compareMs = swCompare.ElapsedMilliseconds;
         if (compareMs > 1000)
             log.AppendLine($"[perf] SLOW CompareAppearance: {displayName} [{npcFk}] -> '{selectedModName}' took {compareMs} ms.");
@@ -1904,7 +1904,10 @@ public class OutputValidator
     /// mode), and the in-game dark-face bug is itself keyed on HeadPart EditorIDs matching the FaceGen
     /// NIF node names. HeadParts are compared as an unordered set of EditorIDs (order is not significant).
     /// </summary>
-    private List<string> CompareAppearance(INpcGetter a, INpcGetter b, ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache, ModSetting sourceMod)
+    /// <param name="targetNpcFk">The NPC the selection is FOR (not the donor, not the surrogate):
+    /// the key the user's per-NPC wig-and-headgear answer is stored under.</param>
+    private List<string> CompareAppearance(INpcGetter a, INpcGetter b, ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache, ModSetting sourceMod,
+        FormKey targetNpcFk)
     {
         // a = actual (this app's output / surrogate); b = expected (selected mod / donor).
         var src = new SourceModRefs(sourceMod);
@@ -1930,7 +1933,7 @@ public class OutputValidator
         // intentional rewrites aren't reported as mismatches. The wig mode is resolved PER NPC
         // off the output record — the patcher converts instead of forwarding when that record's
         // outfit field is inert, and the mode alone does not say so.
-        bool excludeHair = WigHandlingRewritesHair(b, a, sourceMod, linkCache, src);
+        bool excludeHair = WigHandlingRewritesHair(b, a, sourceMod, linkCache, src, targetNpcFk);
         var antlerRemovals = AntlerRemovalHeadPartKeys(b, sourceMod, linkCache, src);
         var aHead = HeadPartKeySet(a.HeadParts, linkCache, src, excludeHair, antlerRemovals);
         var bHead = HeadPartKeySet(b.HeadParts, linkCache, src, excludeHair, antlerRemovals);
@@ -2202,11 +2205,17 @@ public class OutputValidator
     /// inventory-templated. Reading the mod-level mode alone reported all 1,621 of those
     /// conversions as an appearance mismatch. The output record is the right subject in both
     /// patching modes: Create-and-Patch overrides the winning record and inherits its template
-    /// flags, and plain Create copies the donor the patcher tested.</para></summary>
+    /// flags, and plain Create copies the donor the patcher tested.</para>
+    ///
+    /// <para><b>And per TARGET NPC.</b> A stored "convert to head parts" answer to the
+    /// wig-and-headgear question (<see cref="WigHeadgearChoice"/>) also turns ForwardToOutfit into
+    /// ConvertToHeadParts for that one NPC, so the resolver is given the NPC the selection is for.
+    /// The answer read is the one stored NOW, which is the one the run used only as long as the
+    /// user has not changed or cleared it since.</para></summary>
     private bool WigHandlingRewritesHair(INpcGetter donor, INpcGetter outputRecord, ModSetting sourceMod,
-        ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache, SourceModRefs src)
+        ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache, SourceModRefs src, FormKey targetNpcFk)
     {
-        var wigMode = _settings.GetEffectiveWigModeForNpc(sourceMod, outputRecord);
+        var wigMode = _settings.GetEffectiveWigModeForNpc(sourceMod, outputRecord, targetNpcFk);
         if (wigMode != WigHandlingMode.ForwardToSkin && wigMode != WigHandlingMode.ConvertToHeadParts) return false;
 
         // ForwardToSkin only ever REMOVES, and the collectors skip geometry-less Hair parts

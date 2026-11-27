@@ -336,4 +336,34 @@ public class NpcWarningReporterTests
         RunLogClassifier.Classify("WARNING: " + header, RunLogSeverity.Info)
             .Should().Be(RunLogSeverity.Warning);
     }
+
+    [Fact]
+    public void WigForwardedOntoHeadgear_HeaderSaysWhatHappenedAndHowToChoose()
+    {
+        string header = NpcWarningReporter.Header(NpcWarningKind.WigForwardedOntoHeadgear);
+
+        header.Should().StartWith("Wig handling 'Forward to Outfit' added a wig to the outfit of each of the following NPCs");
+        header.Should().Contain("already holds headgear on the same body slot");
+        header.Should().Contain("either the wig or the headgear will be missing in game");
+        header.Should().Contain("'Forward to Skin'").And.Contain("'Convert to Head Parts'");
+        header.TrimEnd().Should().EndWith(":", "the NPC list follows immediately");
+        RunLogClassifier.Classify("WARNING: " + header, RunLogSeverity.Info)
+            .Should().Be(RunLogSeverity.Warning);
+    }
+
+    [Fact]
+    public void WigForwardedOntoHeadgear_ListsEachNpcWithItsDetail()
+    {
+        var lines = NpcWarningReporter.FormatReport(
+        [
+            Entry(NpcWarningKind.WigForwardedOntoHeadgear, "Legate Rikke (01B13F:Skyrim.esm)",
+                "wig 'Wig01' (slot 31) was added to outfit 'GeneralTulliusOutfit', which holds " +
+                "'Imperial Officer's Helmet (ArmorImperialHelmetOfficer)' (slots 31 and 42); both use slot 31"),
+        ]).ToList();
+
+        lines.Should().ContainSingle(l => l == HeaderLine(NpcWarningKind.WigForwardedOntoHeadgear));
+        lines.Should().ContainSingle(l =>
+            l.StartsWith("  - Legate Rikke (01B13F:Skyrim.esm): wig 'Wig01' (slot 31)") &&
+            l.EndsWith("both use slot 31"));
+    }
 }

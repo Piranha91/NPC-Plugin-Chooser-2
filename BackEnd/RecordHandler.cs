@@ -365,31 +365,10 @@ public class RecordHandler
     public INpcGetter? ResolveNpcPreferringMod(FormKey npcFormKey, ModSetting? appearanceModSetting,
         HashSet<string> currentModFolderPaths, bool isFaceGenOnly)
     {
-        if (appearanceModSetting != null)
+        if (appearanceModSetting != null &&
+            ResolveNpcFromModPlugins(npcFormKey, appearanceModSetting, currentModFolderPaths) is { } modNpc)
         {
-            var link = npcFormKey.ToLink<INpcGetter>();
-
-            if (appearanceModSetting.NpcPluginDisambiguation.TryGetValue(npcFormKey, out var disambiguationKey) &&
-                TryGetRecordGetterFromMod(link, disambiguationKey, currentModFolderPaths,
-                    RecordLookupFallBack.None, out var disambiguated) &&
-                disambiguated is INpcGetter disambiguatedNpc)
-            {
-                return disambiguatedNpc;
-            }
-
-            // Iterate backwards; lowest in the list is the winner within the mod (as for the donor).
-            for (int i = appearanceModSetting.CorrespondingModKeys.Count - 1; i >= 0; i--)
-            {
-                var candidateKey = appearanceModSetting.CorrespondingModKeys[i];
-                if (appearanceModSetting.ResourceOnlyModKeys.Contains(candidateKey)) continue;
-
-                if (TryGetRecordGetterFromMod(link, candidateKey, currentModFolderPaths,
-                        RecordLookupFallBack.None, out var record) &&
-                    record is INpcGetter modNpc)
-                {
-                    return modNpc;
-                }
-            }
+            return modNpc;
         }
 
         var linkCache = _environmentStateProvider.LinkCache;
@@ -399,6 +378,44 @@ public class RecordHandler
             isFaceGenOnly ? ResolveTarget.Origin : ResolveTarget.Winner)
             ? fallback
             : null;
+    }
+
+    /// <summary>
+    /// The mod-side half of <see cref="ResolveNpcPreferringMod"/>: the NPC record as the selected
+    /// mod's own plugins carry it (per-NPC plugin disambiguation first, then the lowest plugin in
+    /// the list, resource-only plugins skipped), or null when none of them carries it. No
+    /// load-order fallback, so a caller can tell "the mod has a record for this NPC" from "the mod
+    /// only ships FaceGen for it" — the same distinction the patch loop draws before it runs
+    /// wig handling.
+    /// </summary>
+    public INpcGetter? ResolveNpcFromModPlugins(FormKey npcFormKey, ModSetting appearanceModSetting,
+        HashSet<string> currentModFolderPaths)
+    {
+        var link = npcFormKey.ToLink<INpcGetter>();
+
+        if (appearanceModSetting.NpcPluginDisambiguation.TryGetValue(npcFormKey, out var disambiguationKey) &&
+            TryGetRecordGetterFromMod(link, disambiguationKey, currentModFolderPaths,
+                RecordLookupFallBack.None, out var disambiguated) &&
+            disambiguated is INpcGetter disambiguatedNpc)
+        {
+            return disambiguatedNpc;
+        }
+
+        // Iterate backwards; lowest in the list is the winner within the mod (as for the donor).
+        for (int i = appearanceModSetting.CorrespondingModKeys.Count - 1; i >= 0; i--)
+        {
+            var candidateKey = appearanceModSetting.CorrespondingModKeys[i];
+            if (appearanceModSetting.ResourceOnlyModKeys.Contains(candidateKey)) continue;
+
+            if (TryGetRecordGetterFromMod(link, candidateKey, currentModFolderPaths,
+                    RecordLookupFallBack.None, out var record) &&
+                record is INpcGetter modNpc)
+            {
+                return modNpc;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

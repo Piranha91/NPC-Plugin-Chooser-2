@@ -450,6 +450,10 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     // republished through that distributor (otherwise it is overwritten in game).
     [Reactive] public bool PublishForwardedOutfitsToDistributors { get; set; }
 
+    // The "Clear remembered wig and headgear choices (N)" button of the Head Editing section
+    // (Settings.WigHeadgearConflictChoices): shown only while N > 0.
+    public VM_WigHeadgearChoiceReset WigHeadgearChoiceReset { get; }
+
     public ReactiveCommand<Unit, Unit> ShowOverrideHandlingModeHelpCommand { get; }
 
     // --- New EasyNPC Transfer Properties ---
@@ -619,10 +623,12 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         BatchMugshotGenerator batchMugshotGenerator,
         FaceFinderClient faceFinderClient,
         EventLogger eventLogger,
-        FaceGenAnalysisCache faceGenAnalysisCache)
+        FaceGenAnalysisCache faceGenAnalysisCache,
+        WigHeadgearChoiceCoordinator wigHeadgearChoices)
     {
         _model = settingsModel;
         _faceGenAnalysisCache = faceGenAnalysisCache;
+        WigHeadgearChoiceReset = new VM_WigHeadgearChoiceReset(wigHeadgearChoices).DisposeWith(_disposables);
 
         // Rebuilt rather than just null-coalesced: Newtonsoft deserializes the dictionary
         // with the default (ordinal) comparer, dropping the case-insensitivity the model's

@@ -598,6 +598,47 @@ public class SerializableModelsRoundTripTests
     }
 
     [Fact]
+    public void Settings_WigHeadgearConflictChoices_SurviveRoundTrip()
+    {
+        // FormKey as a dictionary KEY with an enum value: the user's per-NPC answers to the
+        // wig-and-headgear question. A broken key round-trip would silently drop every answer and
+        // ask the whole question again on the next run.
+        var settings = new Settings
+        {
+            WigHeadgearConflictChoices = new Dictionary<FormKey, WigHeadgearChoice>
+            {
+                [Npc1] = WigHeadgearChoice.Forward,
+                [Npc2] = WigHeadgearChoice.Omit,
+                [Npc3] = WigHeadgearChoice.ConvertToHeadParts,
+            },
+        };
+
+        var json = JSONhandler<Settings>.Serialize(settings, out var ok, out _);
+        ok.Should().BeTrue();
+        json.Should().Contain("\"00ABCD:Skyrim.esm\": \"Omit\"",
+            "the key is the FormKey's canonical string and the choice is written by name");
+
+        var clone = RoundTrip(settings);
+
+        clone.WigHeadgearConflictChoices.Should().HaveCount(3);
+        clone.WigHeadgearConflictChoices[Npc1].Should().Be(WigHeadgearChoice.Forward);
+        clone.WigHeadgearConflictChoices[Npc2].Should().Be(WigHeadgearChoice.Omit);
+        clone.WigHeadgearConflictChoices[Npc3].Should().Be(WigHeadgearChoice.ConvertToHeadParts);
+        clone.GetWigHeadgearChoice(Npc2).Should().Be(WigHeadgearChoice.Omit);
+    }
+
+    [Fact]
+    public void Settings_WithoutWigHeadgearConflictChoices_DeserializesToEmpty()
+    {
+        // A Settings.json written before the option existed has no such field.
+        var clone = JSONhandler<Settings>.Deserialize("{ \"OutputDirectory\": \"NPC Output\" }", out var ok, out var err);
+
+        ok.Should().BeTrue("deserialization should succeed: {0}", err);
+        clone!.WigHeadgearConflictChoices.Should().NotBeNull().And.BeEmpty();
+        clone.GetWigHeadgearChoice(Npc1).Should().BeNull();
+    }
+
+    [Fact]
     public void Settings_FavoriteFacesGroupAssignments_SurviveRoundTrip()
     {
         // The favorites group store is a List<FavoriteFaceGroupAssignment> rather than a

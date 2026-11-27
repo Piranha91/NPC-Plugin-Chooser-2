@@ -1,0 +1,133 @@
+<!-- The second pre-run validation window, shown after the invalid-selections one. Same shell as
+     InvalidSelectionsWindow (themed window style, title bar behaviour, ShowInTaskbar so a modal
+     dialog that sits open is not mistaken for a frozen main window). -->
+<Window x:Class="NPC_Plugin_Chooser_2.Views.WigHeadgearConflictWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:NPC_Plugin_Chooser_2.View_Models"
+        xmlns:themes="clr-namespace:NPC_Plugin_Chooser_2.Themes"
+        xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
+        mc:Ignorable="d"
+        d:DataContext="{d:DesignInstance Type=vm:VM_WigHeadgearConflictWindow}"
+        Title="{Binding Title}"
+        Height="620" Width="1060"
+        MinHeight="360" MinWidth="760"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="True"
+        Style="{DynamicResource ThemedWindowStyle}">
+
+    <i:Interaction.Behaviors>
+        <themes:TitleBarThemingBehavior />
+    </i:Interaction.Behaviors>
+
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- The problem, stated once. -->
+        <TextBlock Grid.Row="0" Text="{Binding Explanation}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+
+        <!-- "N NPCs in M groups" -->
+        <TextBlock Grid.Row="1" Text="{Binding TotalsText}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+
+        <!-- One flat list: a group row (the conflict, read from the records), then that group's
+             NPC rows. Flat rather than a grouped view so the ListBox keeps virtualising: a full
+             load order lists every helmeted guard. The container style removes selection
+             visuals, as the mod list in ModsView does. -->
+        <ListBox Grid.Row="2" x:Name="ConflictList"
+                 ItemsSource="{Binding Rows}"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 VirtualizingPanel.ScrollUnit="Pixel"
+                 Background="{DynamicResource SecondaryBackground}"
+                 BorderBrush="{DynamicResource BorderBrush}">
+            <ListBox.ItemContainerStyle>
+                <Style TargetType="ListBoxItem">
+                    <Setter Property="Padding" Value="0"/>
+                    <Setter Property="Margin" Value="0"/>
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Setter Property="Focusable" Value="False"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ListBoxItem">
+                                <Border Background="{TemplateBinding Background}"
+                                        Padding="{TemplateBinding Padding}"
+                                        SnapsToDevicePixels="true">
+                                    <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </ListBox.ItemContainerStyle>
+            <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <VirtualizingStackPanel Orientation="Vertical"/>
+                </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <ListBox.Resources>
+                <DataTemplate DataType="{x:Type vm:WigHeadgearConflictGroupRow}">
+                    <Border Background="{DynamicResource TertiaryBackground}"
+                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,1"
+                            Padding="8,5" Margin="0,0,0,2">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{Binding Description}" TextWrapping="Wrap"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource PrimaryForeground}"/>
+                            <TextBlock Grid.Column="1" Text="{Binding CountText}" Margin="12,0,0,0"
+                                       VerticalAlignment="Top"
+                                       Foreground="{DynamicResource SecondaryForeground}"/>
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+                <DataTemplate DataType="{x:Type vm:WigHeadgearConflictNpcRow}">
+                    <Grid Margin="24,2,8,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{Binding Display}" TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource PrimaryForeground}"/>
+                        <TextBlock Grid.Column="1" Text="{Binding ModName}" Margin="12,0,0,0"
+                                   Foreground="{DynamicResource SecondaryForeground}"/>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.Resources>
+        </ListBox>
+
+        <CheckBox Grid.Row="3" Content="Remember this choice for these NPCs"
+                  IsChecked="{Binding RememberChoice, Mode=TwoWay}"
+                  ToolTip="{Binding RememberToolTip}"
+                  Margin="0,10,0,0" HorizontalAlignment="Left"/>
+
+        <!-- One choice applies to every NPC listed. No default button: Enter must not pick for
+             the user. Esc and the title bar cancel the run. -->
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button Content="Continue (forward the wig)" Command="{Binding ForwardCommand}"
+                    Height="30" Padding="12,0"
+                    ToolTip="{Binding ForwardToolTip}"/>
+            <Button Content="Continue (omit the wig)" Command="{Binding OmitCommand}"
+                    Height="30" Padding="12,0" Margin="10,0,0,0"
+                    ToolTip="{Binding OmitToolTip}"/>
+            <Button Content="Convert to head parts" Command="{Binding ConvertCommand}"
+                    Height="30" Padding="12,0" Margin="10,0,0,0"
+                    ToolTip="{Binding ConvertToolTip}"/>
+            <Button Content="Cancel run" Command="{Binding CancelCommand}"
+                    Height="30" Padding="12,0" Margin="10,0,0,0" IsCancel="True"
+                    ToolTip="{Binding CancelToolTip}"/>
+        </StackPanel>
+    </Grid>
+</Window>

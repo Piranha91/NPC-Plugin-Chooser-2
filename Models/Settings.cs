@@ -233,6 +233,49 @@ public class Settings
     // ForwardedOutfitDistributor); with it off the NPC is only warned about.
     public bool PublishForwardedOutfitsToDistributors { get; set; } = true;
 
+    // The user's answer, per NPC, to "Forward to Outfit would add this NPC's wig to an outfit
+    // that already holds headgear on the same body slot" (see WigHeadgearChoice). Keyed by the
+    // TARGET NPC (the one being patched, not the appearance donor), because the outfit the wig
+    // would join is the target's. An NPC with no entry is forwarded as the wig mode asks and
+    // listed in the end-of-run warnings. Only consulted while the mod's effective wig mode is
+    // ForwardToOutfit; an absent field in an old Settings.json deserializes to empty.
+    public Dictionary<FormKey, WigHeadgearChoice> WigHeadgearConflictChoices { get; set; } = new();
+
+    /// <summary>The stored wig-and-headgear answer for <paramref name="targetNpcFormKey"/>, or
+    /// null when the user has not answered for that NPC.</summary>
+    public WigHeadgearChoice? GetWigHeadgearChoice(FormKey targetNpcFormKey) =>
+        WigHeadgearConflictChoices != null &&
+        WigHeadgearConflictChoices.TryGetValue(targetNpcFormKey, out var choice)
+            ? choice
+            : null;
+
+    /// <summary>Stores one wig-and-headgear answer for every NPC in
+    /// <paramref name="targetNpcFormKeys"/>, replacing any earlier answer.</summary>
+    public void SetWigHeadgearChoice(IEnumerable<FormKey> targetNpcFormKeys, WigHeadgearChoice choice)
+    {
+        WigHeadgearConflictChoices ??= new();
+        foreach (var npcFormKey in targetNpcFormKeys)
+        {
+            WigHeadgearConflictChoices[npcFormKey] = choice;
+        }
+    }
+
+    /// <summary>Forgets the stored wig-and-headgear answer of each NPC in
+    /// <paramref name="targetNpcFormKeys"/>. Returns how many answers were removed.</summary>
+    public int RemoveWigHeadgearChoices(IEnumerable<FormKey> targetNpcFormKeys)
+    {
+        if (WigHeadgearConflictChoices == null) return 0;
+        int removed = 0;
+        foreach (var npcFormKey in targetNpcFormKeys)
+        {
+            if (WigHeadgearConflictChoices.Remove(npcFormKey)) removed++;
+        }
+        return removed;
+    }
+
+    /// <summary>Forgets every stored wig-and-headgear answer.</summary>
+    public void ClearWigHeadgearChoices() => WigHeadgearConflictChoices?.Clear();
+
     /// <summary>True when wig/antler handling is active for the current output
     /// mode: Create-and-Patch record mode, or SkyPatcher output in either
     /// PatchingMode. Inert in plain Create record mode.</summary>
@@ -281,6 +324,36 @@ public class Settings
         var mode = GetEffectiveWigMode(modSetting);
         if (mode != WigHandlingMode.ForwardToOutfit) return mode;
         return OutfitFieldIsInert(writtenRecord) ? WigHandlingMode.ConvertToHeadParts : mode;
+    }
+
+    /// <summary>
+    /// <see cref="GetEffectiveWigModeForNpc(ModSetting, INpcGetter)"/> for a caller that also
+    /// knows which NPC is being patched: ForwardToOutfit additionally becomes
+    /// <see cref="WigHandlingMode.ConvertToHeadParts"/> when the user stored
+    /// <see cref="WigHeadgearChoice.ConvertToHeadParts"/> for that NPC
+    /// (<see cref="WigHeadgearConflictChoices"/>). The other two answers stay ForwardToOutfit:
+    /// the wig comes off the skin either way, and whether it is then added to the outfit is not a
+    /// different mode. An inert outfit field still converts whatever is stored.
+    ///
+    /// <para><b>What this cannot know.</b> The answer is stored for a wig-and-headgear conflict,
+    /// and the patcher acts on it only while the records still show that conflict for the NPC
+    /// (<c>WigForwarder.FindHeadgearConflicts</c>); with no conflict the wig is forwarded as the
+    /// mod's mode says. Settings holds no records, so for an NPC whose conflict has since gone
+    /// away this returns ConvertToHeadParts although the patcher forwards. The one consumer, the
+    /// output validator, uses the mode only to decide whether to leave Hair head parts out of its
+    /// comparison, so the cost of a stale answer is a less strict hair check on that NPC, never a
+    /// false mismatch.</para>
+    /// </summary>
+    /// <param name="targetNpcFormKey">The NPC being patched (the key of the selection), not the
+    /// appearance donor.</param>
+    public WigHandlingMode GetEffectiveWigModeForNpc(ModSetting? modSetting, INpcGetter? writtenRecord,
+        FormKey targetNpcFormKey)
+    {
+        var mode = GetEffectiveWigModeForNpc(modSetting, writtenRecord);
+        if (mode != WigHandlingMode.ForwardToOutfit) return mode;
+        return GetWigHeadgearChoice(targetNpcFormKey) == WigHeadgearChoice.ConvertToHeadParts
+            ? WigHandlingMode.ConvertToHeadParts
+            : mode;
     }
 
     /// <summary>

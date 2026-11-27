@@ -590,4 +590,120 @@ public class WigHandlingModeResolutionTests
         settings.OutfitFieldIsInert(null).Should().BeFalse();
         settings.GetEffectiveWigModeForNpc(ModWithWig(), null).Should().Be(WigHandlingMode.ForwardToOutfit);
     }
+
+    // ── Per-NPC refinement: the user's stored wig-and-headgear answer ──
+    //
+    // ForwardToOutfit adds the wig to the outfit the NPC wears; when that outfit already holds
+    // headgear on the same slot the user is asked, per NPC, what should happen. "Convert to head
+    // parts" changes the mode that applies to that one NPC, so it has to be visible to everything
+    // that resolves the per-NPC mode. Keyed by the TARGET NPC, never the donor.
+
+    private static readonly FormKey Target = MutagenFixtures.Fk("01B13F:Skyrim.esm");
+    private static readonly FormKey OtherNpc = MutagenFixtures.Fk("01B140:Skyrim.esm");
+
+    [Fact]
+    public void StoredConvertChoice_TurnsForwardToOutfitIntoConvertToHeadParts_ForThatNpcOnly()
+    {
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var npc = MutagenFixtures.NewNpc(mod, "Named");
+        var settings = NewSettings(PatchingMode.CreateAndPatch, globalDefault: WigHandlingMode.ForwardToOutfit);
+        settings.SetWigHeadgearChoice(new[] { Target }, WigHeadgearChoice.ConvertToHeadParts);
+
+        settings.GetEffectiveWigModeForNpc(ModWithWig(), npc, Target)
+            .Should().Be(WigHandlingMode.ConvertToHeadParts);
+        settings.GetEffectiveWigModeForNpc(ModWithWig(), npc, OtherNpc)
+            .Should().Be(WigHandlingMode.ForwardToOutfit, "the answer is stored per NPC");
+        settings.GetEffectiveWigModeForNpc(ModWithWig(), npc)
+            .Should().Be(WigHandlingMode.ForwardToOutfit,
+                "a caller that cannot name the target NPC still gets the mode without the answer");
+    }
+
+    [Fact]
+    public void NoStoredChoice_LeavesTheModeAlone()
+    {
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var npc = MutagenFixtures.NewNpc(mod, "Named");
+        var settings = NewSettings(PatchingMode.CreateAndPatch, globalDefault: WigHandlingMode.ForwardToOutfit);
+
+        settings.GetWigHeadgearChoice(Target).Should().BeNull();
+        settings.GetEffectiveWigModeForNpc(ModWithWig(), npc, Target).Should().Be(WigHandlingMode.ForwardToOutfit);
+    }
+
+    [Theory]
+    [InlineData(WigHeadgearChoice.Forward)]
+    [InlineData(WigHeadgearChoice.Omit)]
+    public void StoredForwardOrOmitChoice_KeepsForwardToOutfit(WigHeadgearChoice choice)
+    {
+        // Both are still the ForwardToOutfit route (the wig comes off the skin either way); only
+        // whether the wig is then added to the outfit differs, which is not a different mode.
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var npc = MutagenFixtures.NewNpc(mod, "Named");
+        var settings = NewSettings(PatchingMode.CreateAndPatch, globalDefault: WigHandlingMode.ForwardToOutfit);
+        settings.SetWigHeadgearChoice(new[] { Target }, choice);
+
+        settings.GetWigHeadgearChoice(Target).Should().Be(choice);
+        settings.GetEffectiveWigModeForNpc(ModWithWig(), npc, Target).Should().Be(WigHandlingMode.ForwardToOutfit);
+    }
+
+    [Theory]
+    [InlineData(WigHandlingMode.ForwardToSkin)]
+    [InlineData(WigHandlingMode.ConvertToHeadParts)]
+    [InlineData(WigHandlingMode.None)]
+    public void StoredConvertChoice_DoesNothingUnlessTheModeIsForwardToOutfit(WigHandlingMode mode)
+    {
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var npc = MutagenFixtures.NewNpc(mod, "Named");
+        var settings = NewSettings(PatchingMode.CreateAndPatch, globalDefault: mode);
+        settings.SetWigHeadgearChoice(new[] { Target }, WigHeadgearChoice.ConvertToHeadParts);
+
+        settings.GetEffectiveWigModeForNpc(ModWithWig(), npc, Target).Should().Be(mode);
+    }
+
+    [Fact]
+    public void StoredConvertChoice_IsInertInPlainCreateMode_AndForAModWithoutWigs()
+    {
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var npc = MutagenFixtures.NewNpc(mod, "Named");
+
+        var plainCreate = NewSettings(PatchingMode.Create, globalDefault: WigHandlingMode.ForwardToOutfit);
+        plainCreate.SetWigHeadgearChoice(new[] { Target }, WigHeadgearChoice.ConvertToHeadParts);
+        plainCreate.GetEffectiveWigModeForNpc(ModWithWig(), npc, Target).Should().Be(WigHandlingMode.None);
+
+        var active = NewSettings(PatchingMode.CreateAndPatch, globalDefault: WigHandlingMode.ForwardToOutfit);
+        active.SetWigHeadgearChoice(new[] { Target }, WigHeadgearChoice.ConvertToHeadParts);
+        active.GetEffectiveWigModeForNpc(new ModSetting { DisplayName = "Plain" }, npc, Target)
+            .Should().Be(WigHandlingMode.None);
+    }
+
+    [Fact]
+    public void InertOutfitField_StillConverts_WhateverTheStoredChoice()
+    {
+        // An NPC dressed by its Inventory template never wears the forwarded outfit at all, so the
+        // patcher converts before the headgear question can arise; a stale answer must not undo that.
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var npc = TemplatedNpc(mod, NpcConfiguration.TemplateFlag.Inventory);
+        var settings = NewSettings(PatchingMode.CreateAndPatch, globalDefault: WigHandlingMode.ForwardToOutfit);
+        settings.SetWigHeadgearChoice(new[] { Target }, WigHeadgearChoice.Omit);
+
+        settings.GetEffectiveWigModeForNpc(ModWithWig(), npc, Target)
+            .Should().Be(WigHandlingMode.ConvertToHeadParts);
+    }
+
+    [Fact]
+    public void WigHeadgearChoices_CanBeStoredForManyNpcs_Removed_AndCleared()
+    {
+        var settings = new Settings();
+
+        settings.SetWigHeadgearChoice(new[] { Target, OtherNpc }, WigHeadgearChoice.Omit);
+        settings.WigHeadgearConflictChoices.Should().HaveCount(2);
+        settings.SetWigHeadgearChoice(new[] { Target }, WigHeadgearChoice.Forward);
+        settings.GetWigHeadgearChoice(Target).Should().Be(WigHeadgearChoice.Forward, "a later answer replaces the earlier one");
+        settings.GetWigHeadgearChoice(OtherNpc).Should().Be(WigHeadgearChoice.Omit);
+
+        settings.RemoveWigHeadgearChoices(new[] { Target, MutagenFixtures.Fk("000007:Skyrim.esm") }).Should().Be(1);
+        settings.GetWigHeadgearChoice(Target).Should().BeNull();
+
+        settings.ClearWigHeadgearChoices();
+        settings.WigHeadgearConflictChoices.Should().BeEmpty();
+    }
 }

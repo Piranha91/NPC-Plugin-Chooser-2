@@ -631,6 +631,14 @@
                                 </ComboBox>
                             </Grid>
 
+                            <!-- Wig-and-headgear answers given with "Remember this choice for these NPCs"
+                                 in the pre-run window. Present only while there are any. -->
+                            <Button Content="{Binding WigHeadgearChoiceReset.ButtonText}"
+                                    Command="{Binding WigHeadgearChoiceReset.ClearCommand}"
+                                    ToolTip="{Binding WigHeadgearChoiceReset.ToolTip}"
+                                    HorizontalAlignment="Left" Padding="6,1" Margin="0,0,0,10"
+                                    Visibility="{Binding WigHeadgearChoiceReset.HasRememberedChoices, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
                             <Grid Margin="0,0,0,10">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" SharedSizeGroup="HeadEditLabel"/>
