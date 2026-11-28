@@ -1,0 +1,3 @@
+[{"tool":"housecarl_copy","args":{"from":"012E4C:Skyrim.esm","new_editorid":"N2B_IronHelmetAA_NordOnly","seed_paths":["Race"],"patch":"NPC2Bench_ArmaRace_Base"}},
+ {"tool":"housecarl_copy","args":{"from":"012E4D:Skyrim.esm","new_editorid":"N2B_IronHelmet","seed_paths":["Armature"],"into":"NPC2Bench_ArmaRace_Base.esp"}},
+ {"tool":"housecarl_copy","args":{"from":"05FB81:Skyrim.esm","new_editorid":"N2B_HelmetOutfit","seed_paths":["Items"],"into":"NPC2Bench_ArmaRace_Base.esp"}}]

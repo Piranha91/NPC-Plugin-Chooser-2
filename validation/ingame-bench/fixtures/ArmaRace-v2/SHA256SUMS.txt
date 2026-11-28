@@ -1,0 +1,6 @@
+531dc7a86287ae6787679df3fb79ce64f5777b81297fd41564d0baf074a00b33 *mods/NPC2Bench - ArmaRace Base/NPC2Bench_ArmaRace_Base.esp
+ca3cc6f5b6e9048169523144d93ebeb70bb77a6b306e53830df54a05933db227 *mods/NPC2Bench - ArmaRace Base/meta.ini
+89df450c215ed4211a295acbd299f45b8e1586e158b31b40d0f4677eca939f28 *mods/NPC2Bench - ArmaRace ModA/NPC2Bench_ArmaRace_ModA.esp
+4b8f25cd3de9d4cc6f6324c7bcfa7d94a7584ebbc2059c06233f5b421f5425cf *mods/NPC2Bench - ArmaRace ModA/meshes/actors/character/facegendata/facegeom/Skyrim.esm/00090738.nif
+66f2a6d3a0987f5cd270be31873cfd0cc5c910a7af9e82d5bf8eca396d380c22 *mods/NPC2Bench - ArmaRace ModA/meta.ini
+cfd5e632c7e240c92df7b08c579bc1d7ac1c0b0e63382c49543742463e549514 *mods/NPC2Bench - ArmaRace ModA/textures/actors/character/facegendata/facetint/Skyrim.esm/00090738.dds

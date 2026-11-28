@@ -1,0 +1,9 @@
+# Kept beside the harness so it runs, never committed:
+# the FaceGen of the two fixture NPCs is Bethesda's own (copied out of the game's BSAs; local use only),
+# and the game shortcut is machine-specific (absolute target, volume label and computer name inside the .lnk).
+fixtures/**/facegendata/
+harness/SKSE-NPCSelection.lnk
+__pycache__/
+# validation/.gitignore keeps generated *.json out of the repository; the bench's JSON files are its records and
+# inputs (corpus table, manifest, settings snapshot, fixture recipe), so they are committed.
+!*.json

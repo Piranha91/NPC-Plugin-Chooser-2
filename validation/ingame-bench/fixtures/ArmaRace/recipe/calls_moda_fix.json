@@ -1,0 +1,3 @@
+[{"tool":"housecarl_apply","args":{"into":"NPC2Bench_ArmaRace_ModA.esp","ops":[
+  {"formid":"000800:NPC2Bench_ArmaRace_Base.esp","field_path":"AdditionalRaces","op":"Add","value":"000019:Skyrim.esm"}]}},
+ {"tool":"housecarl_check","args":{"plugins":["NPC2Bench_ArmaRace_ModA.esp"],"findings":["errors"]}}]

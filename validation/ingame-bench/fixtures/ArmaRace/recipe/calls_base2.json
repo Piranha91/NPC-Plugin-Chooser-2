@@ -1,0 +1,7 @@
+[{"tool":"housecarl_apply","args":{"into":"NPC2Bench_ArmaRace_Base.esp","ops":[
+  {"formid":"000800:NPC2Bench_ArmaRace_Base.esp","field_path":"Race","value":"013746:Skyrim.esm"},
+  {"formid":"000800:NPC2Bench_ArmaRace_Base.esp","field_path":"AdditionalRaces","op":"ReplaceAll","values":[]},
+  {"formid":"000801:NPC2Bench_ArmaRace_Base.esp","field_path":"Armature","op":"ReplaceAll","values":["000800:NPC2Bench_ArmaRace_Base.esp"]},
+  {"formid":"000802:NPC2Bench_ArmaRace_Base.esp","field_path":"Items","op":"Add","value":"000801:NPC2Bench_ArmaRace_Base.esp"},
+  {"formid":"013479:Skyrim.esm","field_path":"DefaultOutfit","value":"000802:NPC2Bench_ArmaRace_Base.esp"},
+  {"formid":"01347D:Skyrim.esm","field_path":"DefaultOutfit","value":"000802:NPC2Bench_ArmaRace_Base.esp"}]}}]

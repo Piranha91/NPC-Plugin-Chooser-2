@@ -1,0 +1,8 @@
+0ffe9dbe470584e1b76532f876d1df8b695e9d678de61e2569f7835d0a3459c6 *mods/NPC2Bench - ArmaRace Base/NPC2Bench_ArmaRace_Base.esp
+2846ee11543ad963e14cc23ae16597f53f05511c4b5587e46fdfc585358b1a54 *mods/NPC2Bench - ArmaRace Base/meta.ini
+75092328086c0b0f434f95397302147810a4b5ef4f88f3cd6b02e220e2f82a90 *mods/NPC2Bench - ArmaRace ModA/NPC2Bench_ArmaRace_ModA.esp
+9260bae0c439b3051508c34446fbe00ed3793cb7f1f345576c5115f05ace6b20 *mods/NPC2Bench - ArmaRace ModA/meshes/actors/character/facegendata/facegeom/Skyrim.esm/00013479.nif
+b6814184e298753e21f471fc4c20b00d1eceaf35a16ff96f1519b894734e2717 *mods/NPC2Bench - ArmaRace ModA/meta.ini
+f802fa71dee3534a0ff02330f82f06429508dc8e4b1b6a097c6b63deabdfbb5a *mods/NPC2Bench - ArmaRace ModA/textures/actors/character/facegendata/facetint/Skyrim.esm/00013479.dds
+b75fcc3eb708fd23014dbb45daebb6a579dae7afce6eac2a3e774c5a4dadc9c2 *probe/NPC2Bench - ArmaRace Probe/NPC2Bench_ArmaRace_Probe.esp
+77dc0592fe5f72bea0c0cc370c4852caa40cb34c51705a27c32fbc7dfa9e559b *probe/NPC2Bench - ArmaRace Probe/meta.ini

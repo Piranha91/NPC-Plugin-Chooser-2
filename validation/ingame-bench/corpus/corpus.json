@@ -1,0 +1,1492 @@
+{
+ "frozen": "2026-11-27 13:43:18",
+ "instance": "S:\\Skyrim NPC Selection",
+ "npcs": [
+  {
+   "name": "Irileth",
+   "formKey": "013BB8:Skyrim.esm",
+   "mod": "The Ordinary Women SSE",
+   "modKey": "OW",
+   "tags": "",
+   "displayName": "Irileth",
+   "launches": [
+    "V",
+    "R1",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8",
+    "A12"
+   ]
+  },
+  {
+   "name": "Faralda",
+   "formKey": "01C197:Skyrim.esm",
+   "mod": "The Ordinary Women SSE",
+   "modKey": "OW",
+   "tags": "",
+   "displayName": "Faralda",
+   "launches": [
+    "V",
+    "R1",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8",
+    "A12"
+   ]
+  },
+  {
+   "name": "Carlotta",
+   "formKey": "013B99:Skyrim.esm",
+   "mod": "The Ordinary Women SSE",
+   "modKey": "OW",
+   "tags": "",
+   "displayName": "Carlotta Valentia",
+   "launches": [
+    "V",
+    "R1",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8",
+    "A12"
+   ]
+  },
+  {
+   "name": "Saadia",
+   "formKey": "013BA2:Skyrim.esm",
+   "mod": "The Ordinary Women SSE",
+   "modKey": "OW",
+   "tags": "",
+   "displayName": "Saadia",
+   "launches": [
+    "V",
+    "R1",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8",
+    "A12"
+   ]
+  },
+  {
+   "name": "Sybille",
+   "formKey": "0132AA:Skyrim.esm",
+   "mod": "The Ordinary Women SSE",
+   "modKey": "OW",
+   "tags": "",
+   "displayName": "Sybille Stentor",
+   "launches": [
+    "V",
+    "R1",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Danica",
+   "formKey": "013BA5:Skyrim.esm",
+   "mod": "The Ordinary Women SSE",
+   "modKey": "OW",
+   "tags": "",
+   "displayName": "Danica Pure-Spring",
+   "launches": [
+    "V",
+    "R1",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Anoriath",
+   "formKey": "013B97:Skyrim.esm",
+   "mod": "Sons of Nirn - Whiterun",
+   "modKey": "SoN",
+   "tags": "antler",
+   "displayName": "Anoriath",
+   "launches": [
+    "V",
+    "R1",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8",
+    "A9",
+    "A10",
+    "A11"
+   ]
+  },
+  {
+   "name": "Elrindir",
+   "formKey": "013B9E:Skyrim.esm",
+   "mod": "Sons of Nirn - Whiterun",
+   "modKey": "SoN",
+   "tags": "antler",
+   "displayName": "Elrindir",
+   "launches": [
+    "V",
+    "R1",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Belethor",
+   "formKey": "013BA1:Skyrim.esm",
+   "mod": "Sons of Nirn - Whiterun",
+   "modKey": "SoN",
+   "tags": "",
+   "displayName": "Belethor",
+   "launches": [
+    "V",
+    "R1",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8",
+    "A12"
+   ]
+  },
+  {
+   "name": "Nazeem",
+   "formKey": "013BBF:Skyrim.esm",
+   "mod": "Sons of Nirn - Whiterun",
+   "modKey": "SoN",
+   "tags": "",
+   "displayName": "Nazeem",
+   "launches": [
+    "V",
+    "R1",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8",
+    "A12"
+   ]
+  },
+  {
+   "name": "Farkas",
+   "formKey": "01A692:Skyrim.esm",
+   "mod": "Sons of Nirn - Whiterun",
+   "modKey": "SoN",
+   "tags": "",
+   "displayName": "Farkas",
+   "launches": [
+    "V",
+    "R1",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8",
+    "A12"
+   ]
+  },
+  {
+   "name": "Eorlund",
+   "formKey": "013B9D:Skyrim.esm",
+   "mod": "Sons of Nirn - Whiterun",
+   "modKey": "SoN",
+   "tags": "",
+   "displayName": "Eorlund Gray-Mane",
+   "launches": [
+    "V",
+    "R1",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8",
+    "A12"
+   ]
+  },
+  {
+   "name": "Dervenin",
+   "formKey": "01327C:Skyrim.esm",
+   "mod": "Children of the Green - A Bosmer NPC Overhaul",
+   "modKey": "CotG",
+   "tags": "antler",
+   "displayName": "Dervenin",
+   "launches": [
+    "V",
+    "R4",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8",
+    "A9",
+    "A10",
+    "A11"
+   ]
+  },
+  {
+   "name": "Beleval",
+   "formKey": "01541C:Dawnguard.esm",
+   "mod": "Children of the Green - A Bosmer NPC Overhaul",
+   "modKey": "CotG",
+   "tags": "antler",
+   "displayName": "Beleval",
+   "launches": [
+    "V",
+    "R4",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Nivenor",
+   "formKey": "01336F:Skyrim.esm",
+   "mod": "Children of the Green - A Bosmer NPC Overhaul",
+   "modKey": "CotG",
+   "tags": "",
+   "displayName": "Nivenor",
+   "launches": [
+    "V",
+    "R4",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Anuriel",
+   "formKey": "013349:Skyrim.esm",
+   "mod": "Children of the Green - A Bosmer NPC Overhaul",
+   "modKey": "CotG",
+   "tags": "",
+   "displayName": "Anuriel",
+   "launches": [
+    "V",
+    "R4",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Ulfric",
+   "formKey": "01414D:Skyrim.esm",
+   "mod": "High Poly NPC Overhaul - Skyrim Special Edition 2.0 (All Vanilla NPCs)",
+   "modKey": "HPNO",
+   "tags": "wig g0",
+   "displayName": "Ulfric Stormcloak",
+   "launches": [
+    "V",
+    "R2",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8",
+    "A9",
+    "A10",
+    "A11",
+    "A12"
+   ]
+  },
+  {
+   "name": "PitFan",
+   "formKey": "0558F3:Skyrim.esm",
+   "mod": "High Poly NPC Overhaul - Skyrim Special Edition 2.0 (All Vanilla NPCs)",
+   "modKey": "HPNO",
+   "tags": "wig g0",
+   "displayName": "Pit Fan",
+   "launches": [
+    "V",
+    "R2",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Cultist",
+   "formKey": "034FC5:Dragonborn.esm",
+   "mod": "High Poly NPC Overhaul - Skyrim Special Edition 2.0 (All Vanilla NPCs)",
+   "modKey": "HPNO",
+   "tags": "wig g0",
+   "displayName": "DLC2EncCultist06NordM",
+   "launches": [
+    "V",
+    "R2",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Briarheart",
+   "formKey": "044310:Skyrim.esm",
+   "mod": "High Poly NPC Overhaul - Skyrim Special Edition 2.0 (All Vanilla NPCs)",
+   "modKey": "HPNO",
+   "tags": "wig g1",
+   "displayName": "Forsworn Briarheart",
+   "launches": [
+    "V",
+    "R2",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Velehk",
+   "formKey": "075C7F:Skyrim.esm",
+   "mod": "High Poly NPC Overhaul - Skyrim Special Edition 2.0 (All Vanilla NPCs)",
+   "modKey": "HPNO",
+   "tags": "wig g1",
+   "displayName": "Velehk Sain",
+   "launches": [
+    "V",
+    "R2",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "ArnielGane",
+   "formKey": "01C19D:Skyrim.esm",
+   "mod": "High Poly NPC Overhaul - Skyrim Special Edition 2.0 (All Vanilla NPCs)",
+   "modKey": "HPNO",
+   "tags": "wig g2",
+   "displayName": "Arniel Gane",
+   "launches": [
+    "V",
+    "R2",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "ArnielShade",
+   "formKey": "06A152:Skyrim.esm",
+   "mod": "High Poly NPC Overhaul - Skyrim Special Edition 2.0 (All Vanilla NPCs)",
+   "modKey": "HPNO",
+   "tags": "wig g2",
+   "displayName": "Arniel's Shade",
+   "launches": [
+    "V",
+    "R2",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Urag",
+   "formKey": "01C193:Skyrim.esm",
+   "mod": "High Poly NPC Overhaul - Skyrim Special Edition 2.0 (All Vanilla NPCs)",
+   "modKey": "HPNO",
+   "tags": "wig g3",
+   "displayName": "Urag gro-Shub",
+   "launches": [
+    "V",
+    "R2",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8",
+    "A9",
+    "A10",
+    "A11",
+    "A12"
+   ]
+  },
+  {
+   "name": "Rikke",
+   "formKey": "0132A1:Skyrim.esm",
+   "mod": "High Poly NPC Overhaul - Skyrim Special Edition 2.0 (All Vanilla NPCs)",
+   "modKey": "HPNO",
+   "tags": "wig g3",
+   "displayName": "Legate Rikke",
+   "launches": [
+    "V",
+    "R2",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "RikkeTwin",
+   "formKey": "0D0573:Skyrim.esm",
+   "mod": "High Poly NPC Overhaul - Skyrim Special Edition 2.0 (All Vanilla NPCs)",
+   "modKey": "HPNO",
+   "tags": "wig g3",
+   "displayName": "Legate Rikke",
+   "launches": [
+    "V",
+    "R2",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Kharjo",
+   "formKey": "01B1D2:Skyrim.esm",
+   "mod": "High Poly NPC Overhaul - Skyrim Special Edition 2.0 (All Vanilla NPCs)",
+   "modKey": "HPNO",
+   "tags": "g0",
+   "displayName": "Kharjo",
+   "launches": [
+    "V",
+    "R2",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Derkeethus",
+   "formKey": "01403E:Skyrim.esm",
+   "mod": "High Poly NPC Overhaul - Skyrim Special Edition 2.0 (All Vanilla NPCs)",
+   "modKey": "HPNO",
+   "tags": "g0",
+   "displayName": "Derkeethus",
+   "launches": [
+    "V",
+    "R2",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Shahvee",
+   "formKey": "01411A:Skyrim.esm",
+   "mod": "High Poly NPC Overhaul - Skyrim Special Edition 2.0 (All Vanilla NPCs)",
+   "modKey": "HPNO",
+   "tags": "g0",
+   "displayName": "Shahvee",
+   "launches": [
+    "V",
+    "R2",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Auri",
+   "formKey": "000D63:018Auri.esp",
+   "mod": "FoxGlove - Auri Visual Overhaul - The FoxGlove - Classic Red - No Warpaint (Default)",
+   "modKey": "Fox",
+   "tags": "wig antler",
+   "displayName": "Auri",
+   "launches": [
+    "V",
+    "R1",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8",
+    "A9",
+    "A10",
+    "A11",
+    "A12"
+   ]
+  },
+  {
+   "name": "Serana",
+   "formKey": "002B6C:Dawnguard.esm",
+   "mod": "Seranaholic by rxkx22 - SSE - 1.8 - Vampire-style",
+   "modKey": "Sera",
+   "tags": "",
+   "displayName": "Serana",
+   "launches": [
+    "V",
+    "R1",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8",
+    "A12"
+   ]
+  },
+  {
+   "name": "Ysolda",
+   "formKey": "013BAB:Skyrim.esm",
+   "mod": "Nordic Faces - FaceGen - With FaceTint",
+   "modKey": "NF",
+   "tags": "",
+   "displayName": "Ysolda",
+   "launches": [
+    "V",
+    "R3",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Hadvar",
+   "formKey": "02BF9F:Skyrim.esm",
+   "mod": "Nordic Faces - FaceGen - With FaceTint",
+   "modKey": "NF",
+   "tags": "",
+   "displayName": "Hadvar",
+   "launches": [
+    "V",
+    "R3",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Olava",
+   "formKey": "013BAE:Skyrim.esm",
+   "mod": "Nordic Faces - FaceGen - With FaceTint",
+   "modKey": "NF",
+   "tags": "",
+   "displayName": "Olava the Feeble",
+   "launches": [
+    "V",
+    "R3",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Delphine",
+   "formKey": "013478:Skyrim.esm",
+   "mod": "Bijin Warmaidens",
+   "modKey": "BW",
+   "tags": "",
+   "displayName": "Delphine",
+   "launches": [
+    "V",
+    "R3",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Adelaisa",
+   "formKey": "01411D:Skyrim.esm",
+   "mod": "Bijin Warmaidens",
+   "modKey": "BW",
+   "tags": "",
+   "displayName": "Adelaisa Vendicci",
+   "launches": [
+    "V",
+    "R3",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Camilla",
+   "formKey": "01347B:Skyrim.esm",
+   "mod": "Bijin Warmaidens",
+   "modKey": "BW",
+   "tags": "guest:Delphine",
+   "displayName": null,
+   "launches": [
+    "V",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Sven",
+   "formKey": "01347F:Skyrim.esm",
+   "mod": "Bijin Warmaidens",
+   "modKey": "BW",
+   "tags": "guest:Adelaisa",
+   "displayName": null,
+   "launches": [
+    "V",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Aela",
+   "formKey": "01A696:Skyrim.esm",
+   "mod": "Bijin Warmaidens",
+   "modKey": "BW",
+   "tags": "contest",
+   "displayName": "Aela the Huntress",
+   "launches": [
+    "V",
+    "R3",
+    "R4",
+    "A9",
+    "A11"
+   ]
+  },
+  {
+   "name": "Lydia",
+   "formKey": "0A2C8E:Skyrim.esm",
+   "mod": "UBE Lydia - NPC Replacer",
+   "modKey": "UBEL",
+   "tags": "",
+   "displayName": "Lydia",
+   "launches": [
+    "V",
+    "R4",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Vilja",
+   "formKey": "000D67:EMCompViljaSkyrim.esp",
+   "mod": "Vilja Re-Imagined SSE",
+   "modKey": "ViljaRe",
+   "tags": "",
+   "displayName": "Vilja",
+   "launches": [
+    "V",
+    "R1",
+    "R4",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8"
+   ]
+  },
+  {
+   "name": "Christer",
+   "formKey": "090738:Skyrim.esm",
+   "mod": "NPC2Bench - ArmaRace ModA",
+   "modKey": "ModA",
+   "tags": "",
+   "displayName": "Christer",
+   "launches": [
+    "V",
+    "R1",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8",
+    "A9",
+    "A10",
+    "A11"
+   ]
+  },
+  {
+   "name": "Thorgar",
+   "formKey": "0AE777:Skyrim.esm",
+   "mod": null,
+   "modKey": null,
+   "tags": "observer",
+   "displayName": null,
+   "launches": [
+    "V",
+    "R1",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8",
+    "A9",
+    "A10",
+    "A11"
+   ]
+  }
+ ],
+ "mods": [
+  {
+   "role": "OW",
+   "folder": "The Ordinary Women SSE",
+   "files": 527,
+   "bytes": 810603357,
+   "prunedFiles": 0,
+   "plugins": [
+    "The Ordinary Women.esp"
+   ],
+   "version": "3.0.0.0",
+   "modid": "12376",
+   "installationFile": "The Ordinary Women SSE 3.0 CBBE-12376-3-0.7z",
+   "newestVersion": "3.0.0.0"
+  },
+  {
+   "role": "SoN",
+   "folder": "Sons of Nirn - Whiterun",
+   "files": 91,
+   "bytes": 687367965,
+   "prunedFiles": 0,
+   "plugins": [
+    "Sons of Nirn - Whiterun.esp"
+   ],
+   "version": "1.0.0.0",
+   "modid": "87325",
+   "installationFile": "Sons of Nirn - Whiterun-87325-1-1679212183.rar",
+   "newestVersion": "1.0.0.0"
+  },
+  {
+   "role": "CotG",
+   "folder": "Children of Dawn's Beauty - A Resource for Certain Mods",
+   "files": 4,
+   "bytes": 344734340,
+   "prunedFiles": 0,
+   "plugins": [
+    "CoDB_Resources.esp"
+   ],
+   "version": "2.4.0.0",
+   "modid": "122336",
+   "installationFile": "Children of Dawn's Beauty - Resource Mod-122336-2-4-1780275210.7z",
+   "newestVersion": "2.4.0.0"
+  },
+  {
+   "role": "CotG",
+   "folder": "Children of the Green - A Bosmer NPC Overhaul",
+   "files": 52,
+   "bytes": 349728269,
+   "prunedFiles": 0,
+   "plugins": [
+    "Children of the Green.esp"
+   ],
+   "version": "1.10.1.0",
+   "modid": "122164",
+   "installationFile": "Children of the Green-122164-1-11-1761758763.7z",
+   "newestVersion": "1.10.1.0"
+  },
+  {
+   "role": "HPNO",
+   "folder": "High Poly NPC Overhaul - Resources",
+   "files": 208,
+   "bytes": 292369415,
+   "prunedFiles": 0,
+   "plugins": [
+    "High Poly NPC Overhaul - Resources.esp"
+   ],
+   "version": "f2.05",
+   "modid": "42768",
+   "installationFile": "High Poly NPC Overhaul - Resources 2.05-42768-2-05-1610930233.7z",
+   "newestVersion": "f2.05"
+  },
+  {
+   "role": "HPNO",
+   "folder": "High Poly NPC Overhaul - Skyrim Special Edition 2.0 (All Vanilla NPCs)",
+   "files": 80,
+   "bytes": 234297225,
+   "prunedFiles": 5973,
+   "plugins": [
+    "High Poly NPC Overhaul - Skyrim Special Edition.esp"
+   ],
+   "version": "f2.04",
+   "modid": "44155",
+   "installationFile": "High Poly NPC Overhaul - Skyrim Special Edition - HighRes FaceTint 2.04-44155-2-04-1610760459.7z",
+   "newestVersion": "f2.04"
+  },
+  {
+   "role": "Fox",
+   "folder": "FoxGlove - Auri Visual Overhaul - Core",
+   "files": 64,
+   "bytes": 285271759,
+   "prunedFiles": 0,
+   "plugins": [
+    "FoxGlove - Auri Visual Overhaul - Core.esp"
+   ],
+   "version": "1.0",
+   "modid": "116201",
+   "installationFile": "Foxglove Auri - Visual Overhaul-116201-1-3-1733459231.zip",
+   "newestVersion": ""
+  },
+  {
+   "role": "Fox",
+   "folder": "FoxGlove - Auri Visual Overhaul - The FoxGlove - Classic Red - No Warpaint (Default)",
+   "files": 11,
+   "bytes": 80245694,
+   "prunedFiles": 0,
+   "plugins": [
+    "FoxGloveAuri.esp"
+   ],
+   "version": "1.0",
+   "modid": "116201",
+   "installationFile": "Foxglove Auri - Visual Overhaul-116201-1-3-1733459231.zip",
+   "newestVersion": ""
+  },
+  {
+   "role": "SotG",
+   "folder": "Song of the Green (Auri Follower)",
+   "files": 1666,
+   "bytes": 412154121,
+   "prunedFiles": 0,
+   "plugins": [
+    "018Auri.esp"
+   ],
+   "version": "2.2.0.0",
+   "modid": "11278",
+   "installationFile": "Song Of The Green (Auri Follower) 2.2-11278-2-2-1742989574.7z",
+   "newestVersion": "2.2.0.0"
+  },
+  {
+   "role": "Sera",
+   "folder": "Seranaholic by rxkx22 - SSE - 1.8 - Vampire-style",
+   "files": 32,
+   "bytes": 76780155,
+   "prunedFiles": 0,
+   "plugins": [
+    "Serana.esp"
+   ],
+   "version": "1.8.5.0",
+   "modid": "13027",
+   "installationFile": "Seranaholic SSE 1.8-13027-1-8-5-1642185840.7z",
+   "newestVersion": "1.8.5.0"
+  },
+  {
+   "role": "NF",
+   "folder": "Nordic Faces - FaceGen - With FaceTint",
+   "files": 79,
+   "bytes": 181563152,
+   "prunedFiles": 6065,
+   "plugins": [],
+   "version": "5.0.0.0",
+   "modid": "40658",
+   "installationFile": "Nordic Faces - FaceGen - Non-SMP-40658-5-0-1717757993.7z",
+   "newestVersion": "5.0.0.0"
+  },
+  {
+   "role": "BW",
+   "folder": "Bijin Warmaidens",
+   "files": 323,
+   "bytes": 457955729,
+   "prunedFiles": 0,
+   "plugins": [
+    "Bijin Warmaidens.esp"
+   ],
+   "version": "3.1.3.0",
+   "modid": "1825",
+   "installationFile": "Bijin Warmaidens SE v3.1.3-1825-3-1-3.7z",
+   "newestVersion": "3.1.3.0"
+  },
+  {
+   "role": "SSSP",
+   "folder": "Shields Sister Npc Replacer (Aela Njada Ria) SkyPatcher",
+   "files": 50,
+   "bytes": 141916706,
+   "prunedFiles": 0,
+   "plugins": [
+    "ShieldsSistersNPCreplacer.esp"
+   ],
+   "version": "1.5.0.0",
+   "modid": "149650",
+   "installationFile": "Shields Sister HPH Npc Replacer-149650-2-2-1748760374.zip",
+   "newestVersion": "2.0.0.0"
+  },
+  {
+   "role": "UBEL",
+   "folder": "UBE 2.0",
+   "files": 653,
+   "bytes": 2498759541,
+   "prunedFiles": 0,
+   "plugins": [
+    "3BBB UBE patch.esp",
+    "UBE_AllRace.esp",
+    "UBE_RaceMenuMorphs.esp",
+    "UBE_headparts_patch.esp"
+   ],
+   "version": "Unrelenting",
+   "modid": "92989",
+   "installationFile": "UBE 2.0 U. 0.7-92989-U-0-7-1752249424.rar",
+   "newestVersion": "U.0.7"
+  },
+  {
+   "role": "UBEL",
+   "folder": "UBE Lydia - NPC Replacer",
+   "files": 23,
+   "bytes": 186978980,
+   "prunedFiles": 0,
+   "plugins": [
+    "UBE Lydia.esp"
+   ],
+   "version": "1.0.0.0",
+   "modid": "127221",
+   "installationFile": "UBE Lydia Replacer-127221-1-0-1724166200.7z",
+   "newestVersion": "1.0.0.0"
+  },
+  {
+   "role": "ViljaRe",
+   "folder": "Vilja Re-Imagined SSE",
+   "files": 55,
+   "bytes": 131455981,
+   "prunedFiles": 0,
+   "plugins": [
+    "Vilja Re-Imagined SE.esp"
+   ],
+   "version": "2.0.0.0-CBBE",
+   "modid": "30827",
+   "installationFile": "Vilja Re-Imagined SE CBBE-30827-2-0-CBBE-1583255242.7z",
+   "newestVersion": "2.0.0.0"
+  },
+  {
+   "role": "ViljaSOGS",
+   "folder": "SOGS - Vilja Visual Overhaul",
+   "files": 115,
+   "bytes": 210860114,
+   "prunedFiles": 0,
+   "plugins": [
+    "SOGS - Vilja.esp",
+    "SOGS.esm"
+   ],
+   "version": "1.0.0.0",
+   "modid": "65051",
+   "installationFile": "SOGS - Vilja-65051-1-0-1647433275.7z",
+   "newestVersion": "1.0.0.0"
+  },
+  {
+   "role": "ViljaBase",
+   "folder": "Vilja in Skyrim",
+   "files": 15443,
+   "bytes": 2534799107,
+   "prunedFiles": 0,
+   "plugins": [
+    "EMCompViljaSkyrim.esp"
+   ],
+   "version": "4.3.0.0",
+   "modid": "6722",
+   "installationFile": "E:/Entertainment/Games/Mods - Download Repository/Skyrim SE/Vilja in Skyrim version 4.3-6722-4-3.7z",
+   "newestVersion": "4.3.0.0"
+  },
+  {
+   "role": "ModA",
+   "folder": "NPC2Bench - ArmaRace ModA",
+   "files": 4,
+   "bytes": 607524,
+   "prunedFiles": 0,
+   "plugins": [
+    "NPC2Bench_ArmaRace_ModA.esp"
+   ],
+   "version": "1.0",
+   "modid": "0",
+   "installationFile": "",
+   "newestVersion": ""
+  },
+  {
+   "role": "base",
+   "folder": "Unofficial Skyrim Special Edition Patch - Latest AE Version",
+   "files": 9,
+   "bytes": 282285964,
+   "prunedFiles": 0,
+   "plugins": [
+    "unofficial skyrim special edition patch.esp"
+   ],
+   "version": "4.3.8.0a",
+   "modid": "266",
+   "installationFile": "Unofficial Skyrim Special Edition Patch-266-4-3-8a-1774132896.7z",
+   "newestVersion": "4.3.8.0a"
+  },
+  {
+   "role": "base",
+   "folder": "RaceCompatibility with fixes for SSE",
+   "files": 88,
+   "bytes": 335704,
+   "prunedFiles": 0,
+   "plugins": [
+    "RaceCompatibility.esm",
+    "RaceCompatibilityUSKPOverride.esp"
+   ],
+   "version": "2.16.0.0",
+   "modid": "2853",
+   "installationFile": "RaceCompatibilty All-In-One Scripted Installer-2853-2-16-1682448886.zip",
+   "newestVersion": "2.16.0.0"
+  },
+  {
+   "role": "base",
+   "folder": "High Poly Head SE",
+   "files": 484,
+   "bytes": 174739841,
+   "prunedFiles": 0,
+   "plugins": [
+    "High Poly Head.esm"
+   ],
+   "version": "1.4.0.0",
+   "modid": "0",
+   "installationFile": "High Poly Head v1.4 (SE).zip",
+   "newestVersion": ""
+  },
+  {
+   "role": "base",
+   "folder": "NPC2Bench - ArmaRace Base",
+   "files": 2,
+   "bytes": 1976,
+   "prunedFiles": 0,
+   "plugins": [
+    "NPC2Bench_ArmaRace_Base.esp"
+   ],
+   "version": "1.0",
+   "modid": "0",
+   "installationFile": "",
+   "newestVersion": ""
+  },
+  {
+   "role": "environment",
+   "folder": "AI Overhaul SSE",
+   "files": 5,
+   "bytes": 2339532,
+   "prunedFiles": 0,
+   "plugins": [
+    "AI Overhaul - Scripted Addon.esp",
+    "AI Overhaul - USSEP Patch.esp",
+    "AI Overhaul.esp"
+   ],
+   "version": "1.9.5.0",
+   "modid": "21654",
+   "installationFile": "AI_Overhaul_AE_1.9.5_1.9.5_n0oTCmkUb.zip",
+   "newestVersion": "1.9.5.0"
+  },
+  {
+   "role": "contest",
+   "folder": "Spell Perk Item Distributor (SPID)",
+   "files": 3,
+   "bytes": 44983003,
+   "prunedFiles": 0,
+   "plugins": [],
+   "version": "7.3.3.0",
+   "modid": "36869",
+   "installationFile": "Spell Perk Item Distributor 36869 7.3.3 2026-08-26T21-53Z rvwm2B1Z2.7z",
+   "newestVersion": "7.3.3.0"
+  },
+  {
+   "role": "contest",
+   "folder": "DX Druid Armor - UNP",
+   "files": 132,
+   "bytes": 476394965,
+   "prunedFiles": 0,
+   "plugins": [
+    "DX Druid Armor.esp"
+   ],
+   "version": "1.1.0.0",
+   "modid": "31005",
+   "installationFile": "Druid Armor UNP SE-31005-1-1-1578863921.7z",
+   "newestVersion": "1.2.0.0"
+  },
+  {
+   "role": "contest",
+   "folder": "DX Druid Armor - SSE CBBE BodySlide (with Physics) - ESPFE",
+   "files": 2,
+   "bytes": 108332,
+   "prunedFiles": 0,
+   "plugins": [
+    "DX Druid Armor.esp"
+   ],
+   "version": "1.4.0.0",
+   "modid": "31704",
+   "installationFile": "DX Druid Armor (Standalone Themes) - ESPFE-31704-1-4-1591726951.7z",
+   "newestVersion": "1.4.0.0"
+  },
+  {
+   "role": "contest",
+   "folder": "DX Druid Armor for Auri (SPID)",
+   "files": 2,
+   "bytes": 1504,
+   "prunedFiles": 0,
+   "plugins": [
+    "DX Druid Auri.esp"
+   ]
+  },
+  {
+   "role": "tool",
+   "folder": "SKSE - RootBuilder",
+   "files": 128,
+   "bytes": 3039454,
+   "prunedFiles": 0,
+   "plugins": [],
+   "version": "d2025.2.5",
+   "modid": "0",
+   "installationFile": "<Downloads>/skse64_2_02_06.7z",
+   "newestVersion": ""
+  },
+  {
+   "role": "tool",
+   "folder": "SKSE Scripts",
+   "files": 125,
+   "bytes": 399750,
+   "prunedFiles": 0,
+   "plugins": [],
+   "version": "",
+   "modid": "0",
+   "installationFile": "",
+   "newestVersion": ""
+  },
+  {
+   "role": "tool",
+   "folder": "Address Library for SKSE Plugins",
+   "files": 25,
+   "bytes": 28910144,
+   "prunedFiles": 0,
+   "plugins": [],
+   "version": "13.0.0.0",
+   "modid": "32444",
+   "installationFile": "Address Library All in One (1.7.104.0) v13 32444 13 2026-08-27T15-29Z Ae46W7Fw2.zip",
+   "newestVersion": "13.0.0.0"
+  },
+  {
+   "role": "tool",
+   "folder": "Survival Mode Prompt Removed",
+   "files": 3,
+   "bytes": 15422,
+   "prunedFiles": 0,
+   "plugins": [],
+   "version": "1.0.0.0",
+   "modid": "59049",
+   "installationFile": "Survival Mode - Disable By Default-59049-1-0-0-1637864324.zip",
+   "newestVersion": "1.0.0.0"
+  },
+  {
+   "role": "tool",
+   "folder": "DevBench 1.39.0",
+   "files": 7,
+   "bytes": 178429389,
+   "prunedFiles": 0,
+   "plugins": [],
+   "version": "1.39.0.0",
+   "modid": "181326",
+   "installationFile": "devbench-v1.39.0.7z",
+   "newestVersion": "1.39.0.0"
+  },
+  {
+   "role": "tool",
+   "folder": "powerofthree's Tweaks",
+   "files": 5,
+   "bytes": 28976613,
+   "prunedFiles": 0,
+   "plugins": [],
+   "version": "1.17.1.0",
+   "modid": "51073",
+   "installationFile": "powerofthree's Tweaks 51073 1.17.1 2026-08-25T00-11Z zYsEpQvXg.7z",
+   "newestVersion": "1.17.1.0"
+  },
+  {
+   "role": "tool",
+   "folder": "SkyPatcher",
+   "files": 4,
+   "bytes": 42394547,
+   "prunedFiles": 0,
+   "plugins": [],
+   "version": "8.0.1.0",
+   "modid": "106659",
+   "installationFile": "SkyPatcher 106659 8.0.1 2026-11-03T19-48Z 2Bej5REVZ.zip",
+   "newestVersion": "8.0.1.0"
+  },
+  {
+   "role": "tool",
+   "folder": "Recast 1.6.3",
+   "files": 3,
+   "bytes": 1057073,
+   "prunedFiles": 0,
+   "plugins": [],
+   "version": "1.6.3",
+   "modid": "186025",
+   "installationFile": "Recast 186025 1.6.3 2026-09-01T16-31Z gbrZ4t5zc.zip",
+   "newestVersion": "1.6.3"
+  },
+  {
+   "role": "physics",
+   "folder": "Faster HDT-SMP",
+   "files": 38,
+   "bytes": 56495795,
+   "prunedFiles": 0,
+   "plugins": [
+    "FSMPM - The FSMP MCM.esp"
+   ],
+   "version": "4.1.1.0",
+   "modid": "57339",
+   "installationFile": "FSMP 4.1.1 57339 4.1.1 2026-08-26T19-57Z izKcFpr1Z.zip",
+   "newestVersion": "4.1.1.0"
+  }
+ ],
+ "appearanceMods": {
+  "OW": {
+   "displayName": "The Ordinary Women SSE",
+   "folders": [
+    "The Ordinary Women SSE"
+   ]
+  },
+  "SoN": {
+   "displayName": "Sons of Nirn - Whiterun",
+   "folders": [
+    "Sons of Nirn - Whiterun"
+   ]
+  },
+  "CotG": {
+   "displayName": "Children of the Green - A Bosmer NPC Overhaul",
+   "folders": [
+    "Children of Dawn's Beauty - A Resource for Certain Mods",
+    "Children of the Green - A Bosmer NPC Overhaul"
+   ]
+  },
+  "HPNO": {
+   "displayName": "High Poly NPC Overhaul - Skyrim Special Edition 2.0 (All Vanilla NPCs)",
+   "folders": [
+    "High Poly NPC Overhaul - Resources",
+    "High Poly NPC Overhaul - Skyrim Special Edition 2.0 (All Vanilla NPCs)"
+   ]
+  },
+  "Fox": {
+   "displayName": "FoxGlove - Auri Visual Overhaul - The FoxGlove - Classic Red - No Warpaint (Default)",
+   "folders": [
+    "FoxGlove - Auri Visual Overhaul - Core",
+    "FoxGlove - Auri Visual Overhaul - The FoxGlove - Classic Red - No Warpaint (Default)"
+   ]
+  },
+  "SotG": {
+   "displayName": "Song of the Green (Auri Follower)",
+   "folders": [
+    "Song of the Green (Auri Follower)"
+   ]
+  },
+  "Sera": {
+   "displayName": "Seranaholic by rxkx22 - SSE - 1.8 - Vampire-style",
+   "folders": [
+    "Seranaholic by rxkx22 - SSE - 1.8 - Vampire-style"
+   ]
+  },
+  "NF": {
+   "displayName": "Nordic Faces - FaceGen - With FaceTint",
+   "folders": [
+    "Nordic Faces - FaceGen - With FaceTint"
+   ]
+  },
+  "BW": {
+   "displayName": "Bijin Warmaidens",
+   "folders": [
+    "Bijin Warmaidens"
+   ]
+  },
+  "SSSP": {
+   "displayName": "Shields Sister Npc Replacer (Aela Njada Ria) SkyPatcher",
+   "folders": [
+    "Shields Sister Npc Replacer (Aela Njada Ria) SkyPatcher"
+   ]
+  },
+  "UBEL": {
+   "displayName": "UBE Lydia - NPC Replacer",
+   "folders": [
+    "UBE 2.0",
+    "UBE Lydia - NPC Replacer"
+   ]
+  },
+  "ViljaRe": {
+   "displayName": "Vilja Re-Imagined SSE",
+   "folders": [
+    "Vilja Re-Imagined SSE"
+   ]
+  },
+  "ViljaSOGS": {
+   "displayName": "SOGS - Vilja Visual Overhaul",
+   "folders": [
+    "SOGS - Vilja Visual Overhaul"
+   ]
+  },
+  "ViljaBase": {
+   "displayName": "Vilja in Skyrim",
+   "folders": [
+    "Vilja in Skyrim"
+   ]
+  },
+  "ModA": {
+   "displayName": "NPC2Bench - ArmaRace ModA",
+   "folders": [
+    "NPC2Bench - ArmaRace ModA"
+   ]
+  }
+ }
+}

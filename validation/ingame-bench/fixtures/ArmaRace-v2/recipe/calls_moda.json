@@ -1,0 +1,54 @@
+[
+ {
+  "tool": "housecarl_load_order_status",
+  "args": {
+   "filter": "NPC2Bench_ArmaRace_Base.esp"
+  }
+ },
+ {
+  "tool": "housecarl_copy",
+  "args": {
+   "from": "013746:Skyrim.esm",
+   "new_editorid": "N2B_NordCloneRace",
+   "seed_paths": [
+    "Skin"
+   ],
+   "patch": "NPC2Bench_ArmaRace_ModA"
+  }
+ },
+ {
+  "tool": "housecarl_apply",
+  "args": {
+   "into": "NPC2Bench_ArmaRace_ModA.esp",
+   "ops": [
+    {
+     "formid": "000800:NPC2Bench_ArmaRace_ModA.esp",
+     "field_path": "ArmorRace",
+     "value": "000019:Skyrim.esm"
+    },
+    {
+     "formid": "090738:Skyrim.esm",
+     "field_path": "Race",
+     "value": "000800:NPC2Bench_ArmaRace_ModA.esp"
+    },
+    {
+     "formid": "000800:NPC2Bench_ArmaRace_Base.esp",
+     "field_path": "Race",
+     "value": "000800:NPC2Bench_ArmaRace_ModA.esp"
+    }
+   ]
+  }
+ },
+ {
+  "tool": "housecarl_check",
+  "args": {
+   "plugins": [
+    "NPC2Bench_ArmaRace_Base.esp",
+    "NPC2Bench_ArmaRace_ModA.esp"
+   ],
+   "findings": [
+    "errors"
+   ]
+  }
+ }
+]

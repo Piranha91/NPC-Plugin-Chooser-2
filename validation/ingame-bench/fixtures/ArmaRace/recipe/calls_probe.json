@@ -1,0 +1,12 @@
+[{"tool":"housecarl_copy","args":{"from":"012E4C:Skyrim.esm","new_editorid":"N2B_Probe_HelmetAA_NordOnly","seed_paths":["Race"],"patch":"NPC2Bench_ArmaRace_Probe"}},
+ {"tool":"housecarl_copy","args":{"from":"012E4D:Skyrim.esm","new_editorid":"N2B_Probe_Helmet","seed_paths":["Armature"],"into":"NPC2Bench_ArmaRace_Probe.esp"}},
+ {"tool":"housecarl_copy","args":{"from":"05FB81:Skyrim.esm","new_editorid":"N2B_Probe_Outfit","seed_paths":["Items"],"into":"NPC2Bench_ArmaRace_Probe.esp"}},
+ {"tool":"housecarl_apply","args":{"into":"NPC2Bench_ArmaRace_Probe.esp","ops":[
+  {"formid":"000800:NPC2Bench_ArmaRace_Probe.esp","field_path":"Race","value":"013746:Skyrim.esm"},
+  {"formid":"000800:NPC2Bench_ArmaRace_Probe.esp","field_path":"AdditionalRaces","op":"ReplaceAll","values":[]},
+  {"formid":"000801:NPC2Bench_ArmaRace_Probe.esp","field_path":"Armature","op":"ReplaceAll","values":["000800:NPC2Bench_ArmaRace_Probe.esp"]},
+  {"formid":"000802:NPC2Bench_ArmaRace_Probe.esp","field_path":"Items","op":"Add","value":"000801:NPC2Bench_ArmaRace_Probe.esp"},
+  {"formid":"013475:Skyrim.esm","field_path":"Race","value":"000800:NPC2Bench_ArmaRace_ModA.esp"},
+  {"formid":"013475:Skyrim.esm","field_path":"DefaultOutfit","value":"000802:NPC2Bench_ArmaRace_Probe.esp"},
+  {"formid":"0CDD72:Skyrim.esm","field_path":"DefaultOutfit","value":"000802:NPC2Bench_ArmaRace_Probe.esp"}]}},
+ {"tool":"housecarl_check","args":{"plugins":["NPC2Bench_ArmaRace_Probe.esp"],"findings":["errors"]}}]

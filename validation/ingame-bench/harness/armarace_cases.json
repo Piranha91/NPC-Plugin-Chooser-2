@@ -1,0 +1,63 @@
+{
+  "about": "NPC2 bench ArmaRace fixture probe (2026-11-24). 2x2: actor race (Nord | clone) x helmet armature race (clone-only | Nord-only). Fixture: S:/Dev/NPC Plugin Chooser 2/bench-fixtures/ArmaRace/README.md",
+  "arms": {
+    "ArmaRace": {
+      "profile": "NPC2Bench-ArmaRace"
+    }
+  },
+  "required_plugins": [
+    "NPC2Bench_ArmaRace_Base.esp",
+    "NPC2Bench_ArmaRace_ModA.esp",
+    "NPC2Bench_ArmaRace_Probe.esp"
+  ],
+  "subjects": {
+    "Orgnar": {
+      "form": "013479",
+      "plugin": "Skyrim.esm",
+      "race": "clone",
+      "armature": "clone-only",
+      "expect": "helmet shows"
+    },
+    "Hod": {
+      "form": "01347D",
+      "plugin": "Skyrim.esm",
+      "race": "Nord",
+      "armature": "clone-only",
+      "expect": "helmet gone"
+    },
+    "Alvor": {
+      "form": "013475",
+      "plugin": "Skyrim.esm",
+      "race": "clone",
+      "armature": "Nord-only",
+      "expect": "helmet gone (the NPC2 Ignore case)"
+    },
+    "Sigurd": {
+      "form": "0CDD72",
+      "plugin": "Skyrim.esm",
+      "race": "Nord",
+      "armature": "Nord-only",
+      "expect": "helmet shows"
+    }
+  },
+  "cells": {
+    "A": {
+      "cell": "QASmoke",
+      "studio": [
+        -2400,
+        1600,
+        6976
+      ],
+      "park_y": 1900,
+      "park_x": [
+        -2750,
+        -1950
+      ]
+    }
+  },
+  "freeze": {
+    "Orgnar": "papyrus",
+    "Alvor": "console"
+  },
+  "freeze_note": "Launch 5: per-actor AI freeze applied right after spawn. Hod and Sigurd stay on the global tai only (controls)."
+}
