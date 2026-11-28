@@ -1,0 +1,246 @@
+# AGENTS.md
+
+This file provides guidance to coding agents working in this repository.
+Adapted from the existing `CLAUDE.md`; the project guidance below is preserved from that file.
+
+## Documentation-first workflow
+
+Start with the existing Markdown documentation and diagnostics. Inspect source code only
+when needed for the task, and limit reads to the relevant files. Do not scan the entire
+codebase just to rediscover information already documented here.
+
+Read supporting documents as needed, rather than loading them all at the start:
+
+- `README.md` — end-user features, workflow, and UI semantics.
+- `Tests/README.md` — test commands, harnesses, golden-output comparisons, memory diagnostics, and coverage gaps.
+- `validation/RUNBOOK.md` — staged in-game validation, output checks, and restoration of live settings.
+- `docs/KnownLimitations.md` — deliberate limitations and resolved issues; check each entry's latest status before treating it as an open defect.
+- `docs/OutfitRenderingAudit-2026-07.md` — outfit-rendering findings, verification, and reference regression cases.
+- `docs/FaceTintEngineTest-2026-08.md` — FaceTint engine test protocol and recorded results.
+- `docs/DarkFaceTriggerInvestigation-2026-08.md` — established findings, the completed trigger matrix, and application of the results.
+- `docs/ModIssuesImprovementPlan-2026-08.md` — Mod Issues diagnosis, proposed workstreams, guardrails, and verification plan.
+- `docs/SkyPatcher-IncludeAsNew-Outfit-Records.md` — outfit-side record delivery and asset-isolation investigation.
+
+Dated audits and plans contain historical findings and proposals, not automatic instructions
+to implement every item. Read their results and status updates before acting. Verify current
+implementation details only where the requested work depends on them.
+
+## What this is
+
+NPC Plugin Chooser 2 (N.P.C.2) is a Windows desktop utility for Skyrim mod
+users: it lets you pick which appearance mod supplies each NPC's face, then
+generates an output plugin + assets (or a SkyPatcher .ini) that applies those
+choices. It is the successor to the original NPC Plugin Chooser and overlaps in
+purpose with EasyNPC (it can import/export EasyNPC profiles). See README.md for
+the full end-user feature walkthrough and UI semantics.
+
+## Build & run
+
+- **IDE/SDK:** .NET 10 WPF app (`net10.0-windows10.0.19041.0`, `WinExe`). Solution:
+  `NPC Plugin Chooser 2.sln`; app project `NPC Plugin Chooser 2.csproj` plus the
+  test project `Tests/NPC Plugin Chooser 2.Tests.csproj`.
+- **Build:** `dotnet build "NPC Plugin Chooser 2.csproj" -c Debug`
+- **Run:** launch the built exe in `bin/Debug/net10.0-windows10.0.19041.0/`, or
+  `dotnet run`. In production it is meant to be launched *through a mod manager*
+  (MO2/Vortex).
+- **Close the app before rebuilding.** A running instance locks output DLLs
+  (notably `CharacterViewer.Rendering.dll`); MSB3027/MSB3021 copy-lock errors
+  mean the app is still open, not a compile failure.
+- **Tests:** `dotnet test "Tests/NPC Plugin Chooser 2.Tests.csproj"` (xUnit; see
+  `Tests/README.md`). Many integration tests need a resolvable Skyrim SE install
+  and, by repo convention, **print a SKIPPED note and return green without one**
+  rather than failing — so a clean run on a machine without the game proves less
+  than it looks. End-to-end behaviour against real mods is still verified
+  manually; the logs below are the primary diagnostic tool for that.
+
+### External/sibling dependencies
+- **`CharacterViewer.Rendering`** — the offscreen OpenGL 3D renderer used for
+  in-app mugshot generation. It lives in the SynthEBD repo and is published to
+  nuget.org as **`SynthEBD.CharacterViewer.Rendering`**. The csproj reference is
+  *conditional*: if the SynthEBD repo is checked out as a sibling
+  (`../../SynthEBD/CharacterViewer.Rendering`) the build uses its live source (so
+  it can be co-developed in place — it is in-scope for edits; change it directly);
+  otherwise it restores the published NuGet package, so a fresh clone builds with
+  no extra setup. When bumping the renderer, keep the csproj `PackageReference`
+  version, the CV.R `<Version>`, and `CharacterViewerRendering.Version` in sync,
+  and publish a new package (SynthEBD `publish-cvr.yml` workflow). Its GLSL
+  shaders ship embedded in the assembly (and copied beside it for local builds)
+  and must be **ASCII-only** (non-ASCII chars in comments break the compiler with
+  a misleading "unexpected $end" error).
+- **NPC Portrait Creator** native binaries (`NPCPortraitCreator.exe`, `glfw3`,
+  `libbsarch`, shaders, `lighting.json`) are copied from
+  `../../NPC Portrait Creator/out/build/x64-Release` by the csproj; the external
+  portrait renderer won't work without them.
+- **Mutagen.Bethesda** (Skyrim) is the core library for reading/writing
+  Bethesda plugins and resolving the load order. Versions are pinned to specific
+  alphas — match them when adding Mutagen calls, and verify API signatures
+  against the installed package rather than guessing.
+
+## Architecture
+
+MVVM with **ReactiveUI** (+ `ReactiveUI.Fody` `[Reactive]` properties),
+**Autofac** DI, and **Splat** for view location. `App.xaml.cs` is the
+composition root: it loads `Settings`, runs `UpdateHandler` migrations, registers
+everything, then resolves `VM_Settings` and runs the startup pipeline. Backend
+services and the primary VMs are registered `SingleInstance()`; per-item VMs
+(e.g. `VM_ModSetting`, mugshot tile VMs) are transient and created via injected
+factory delegates. Themes (`Themes/*.xaml`) are loaded from disk at runtime by
+`ThemeManager` (deliberately excluded from BAML compilation in the csproj).
+
+Layers: `Views/` (XAML) ↔ `View Models/` (`VM_*`) ↔ `BackEnd/` services ↔
+`Models/` (plain serializable state).
+
+### Central state model
+`Models/Settings.cs` is the persisted root (serialized to `Settings.json` next to
+the exe). Key pieces:
+- **`ModSettings: List<ModSetting>`** — each `ModSetting` represents one selectable
+  "mod": a `DisplayName`, the plugins it owns (`CorrespondingModKeys`), where its
+  files live (`CorrespondingFolderPaths`), its mugshot folders, and the NPCs it
+  provides (`NpcFormKeys*`). This is the spine of the whole app.
+- **`SelectedAppearanceMods`** — per-NPC FormKey → the chosen mod + source NPC.
+- Two **reserved synthetic auto-generated entries** exist by name: **"Base Game"**
+  (vanilla masters: Skyrim/Update/Dawnguard/HearthFires/Dragonborn) and
+  **"Creation Club"** (cc* plugins). They are (re)created in
+  `VM_Mods.AddBaseAndCreationClubMods`. Several subsystems look these up *by their
+  display name* — notably the mugshot BSA adapter (which registers vanilla BSAs
+  off the "Base Game" entry) and the NPC menu. If the "Base Game" entry is
+  missing or non-auto-generated, vanilla assets fail to resolve and vanilla NPCs
+  drop out of the menu, so its existence is guarded/self-healed during population.
+
+### Mod-list population & analysis (`VM_Mods`)
+`PopulateModSettingsAsync` is the load pipeline: FaceGen path caching → load mods
+from `Settings.ModSettings` → scan mugshot-only folders → scan mod folders →
+consolidate → `AddBaseAndCreationClubMods` → `AnalyzeModSettingsAsync`. Analysis
+runs `VM_ModSetting.RefreshNpcLists` per mod (loading the mod's plugins to map
+which NPCs it provides; gated on `HasModPathsAssigned || IsAutoGenerated`). An
+analysis cache (`LastKnownState` snapshot, `Models/StateSnapshot.cs`) skips
+re-analysis on a cache hit — null the snapshot to force re-analysis.
+Note the two-list pattern: **`_allModSettingsInternal`** is the full in-memory VM
+list; **`_settings.ModSettings`** is the persisted subset. `SaveModSettingsToModel`
+syncs in-memory → model (dropping entries with no keys/folders), and is guarded so
+an Invalid environment can't overwrite good persisted settings.
+
+### Environment
+`BackEnd/EnvironmentStateProvider.cs` wraps Mutagen's `GameEnvironment`
+(load order, link cache, data folder). `SetEnvironmentTarget` +
+`UpdateEnvironment` (re)resolve it from `SkyrimRelease` + game path;
+`BaseGamePlugins`/`CreationClubPlugins` derive from the version via Mutagen
+`Implicits`. Changing the release/path re-resolves the environment but must **not**
+delete the user's mod settings (only a mods-folder change does that).
+
+### Patching (`BackEnd/Patcher.cs`)
+`RunPatchingLogic` is the entry point. Three behaviors driven by `PatchingMode` /
+`UseSkyPatcherMode`: *Create* (splice selected appearances into a standalone
+plugin), *Create and Patch* (delta into the conflict-winning load order, like
+EasyNPC), and *SkyPatcher* (emit a SkyPatcher .ini instead of editing NPC
+records). Supporting services: `RecordHandler`/`RecordDeltaPatcher` (record copy
+and non-NPC override delta patching), `AssetHandler` (textures/meshes),
+`PluginProvider` (ref-counted cache of loaded plugin getters; resolves a ModKey
+to a path via the mod's folders, then falls back to the game Data folder),
+`BsaHandler`/`PluginArchiveIndex` (BSA reading), `Validator` (pre-patch screening
+of masters/races), `SkyPatcherInterface`, `EasyNpcTranslator` (profile import/export).
+
+**Override-discovery roots (`BackEnd/NpcRootFieldCatalog.cs`).** Under Include /
+Include As New the patcher searches for records the appearance mod overrides by
+walking outward from the NPC record. It roots that walk only at the NPC *fields*
+the user has ticked in the per-mod **Override Roots** dialog — defaulting to the
+appearance set (RNAM/WNAM/FTST/HCLF/PNAM/DOFT/SOFT/TPLT). **Roots, not record
+types:** a ticked field is followed to unlimited depth through any record type.
+It used to root at every link on the record, so AI packages were roots — and from
+a package the walk reaches placed references, cells, quests and other NPCs, whose
+whole ancestry then got copied in as private duplicates (a measured run repointed
+six NPCs' package links at copies of vanilla packages referencing copies of `DB01`
+and `SolitudeOpening`). The catalog is the single source of truth for both the
+dialog and the walk; `NpcRootFieldCatalogTests` asserts by reflection that every
+FormLink-bearing field of `INpcGetter` has an entry, so a missing field fails CI
+rather than silently becoming unreachable. Precedence: per-mod
+`ModSetting.OverrideTraversalRoots` ?? `Settings.DefaultOverrideTraversalRoots` ??
+catalog defaults — null at both levels (including settings files predating the
+option) resolves to the appearance set, which is how existing installs pick up the
+narrowed roots with no migration.
+
+**Orphan sweep (`Patcher.PruneAndLogOrphanedDuplicates`).** Just before the save, any output
+record nothing references — no FormLink in the plugin, no SkyPatcher directive, no generated
+SPID assignment — is dead cargo. Records **duplicated from a source** are removed (repeating to
+a fixpoint, since dropping a copy orphans the sub-records only it referenced); records this run
+**authored** and NPC records are only reported, in case a future channel delivers one by FormID.
+The population is mostly wig handling: it strips a converted ArmorAddon out of the WornArmor
+duplicate, but the appearance merge still walks the ORIGINAL WornArmor — the seeded duplicate
+mapping stops the armor itself from being copied, not the traversal of its links — so every
+superseded child is copied and then pointed at by nothing (measured: 135, of which 129
+`HighPoly_WigAA_*`). **Do not "fix" this by suppressing the walk instead**: that was tried and
+is unsafe, because the same record can still be reachable from another copy the run makes, and
+skipping it leaves that copy pointing into a donor plugin that may not be in the load order —
+Mutagen then refuses to write the plugin at all (`Route5_AntlerRemove_AllThreeSources` reproduces
+it). Judging the finished output cannot make that mistake. Pinned end-to-end by Routes 4 and 5 in
+`WigRouteTwoModeTests`.
+
+### Mugshot generation (`BackEnd/CharacterViewerHost/`)
+`InternalMugshotGenerator` / `BatchMugshotGenerator` drive the `IOffscreenRenderer`
+from `CharacterViewer.Rendering`. NPC2's services are bound behind the renderer's
+interfaces by the **`Adapters/`** (e.g. `NpcChooserBsaProviderAdapter` →
+`IBsaArchiveProvider`, `NpcChooserNpcMeshDataSourceAdapter` → `INpcMeshDataSource`,
+`NpcChooserDataFolderAdapter`, logger/settings adapters) so the renderer never
+sees Mutagen or NPC2 types directly. The renderer is a singleton (its GLFW window
++ FBO are amortized; the factory must run on the WPF UI thread).
+`PortraitCreator` is a separate path that shells out to the external
+`NPCPortraitCreator.exe`.
+
+## Diagnostics (use these first)
+The app emits several opt-in logs next to the exe — prefer reading them over
+speculating from code. The human-readable diagnostics are **self-contained HTML
+files** (shared infrastructure in `BackEnd/Logging/`: `HtmlLog` markup/theme,
+streaming `HtmlLogWriter`, buffered `HtmlLogDocument`); rows stream out with
+immediate flush, so a crashed/hung session still leaves a renderable file:
+- **`StartupLog.html`** (`StartupLogger`) — phased startup trace incl. environment
+  resolution and the full mod-population pipeline. Enable via the `LogStartup`
+  setting or a file trigger.
+- **`BsaContentsDiag.html`** (`BsaContentsDiag`) — BSA registration + per-asset
+  hit/miss for mugshot resolution. Opt-in: drop a `LogBsaDiag.txt` file next to
+  the exe. Recreated per session on first logged event (the txt era appended
+  across sessions).
+- **`AssetProvenance.csv`** (`AssetProvenanceDiag`) — per patch run, why each asset
+  file was copied into the output. One CSV row per atomic reference (columns: `DestFile,
+  Reason, Referencer, NPC, TargetFormKey, Mod, DonorFormKey, DonorEditorID, SourceKind,
+  SourcePath`) — sort/pivot in a spreadsheet to view by-file or by-NPC. `Reason` is
+  FaceGen / PluginRef / NifTexture / SmpXml / AssetLink (plus IsolatedRef / IsolatedNifTexture
+  for Include-As-New isolation copies, delivered under `meshes|textures\NPC2\<mod>\`); `Referencer` names the specific
+  referencing record for PluginRef (e.g. `HeadPart 'Hair01' [ID]`) or the source NIF/XML
+  for NifTexture/SmpXml. Unlike the other opt-in logs this is **user-facing**: the "Log
+  Asset Provenance" checkbox in Settings > Logging (`Settings.LogAssetProvenance`),
+  applied at runtime so it takes effect on the next Run. A `LogAssetProvenance.txt` file
+  next to the exe still force-enables it as a dev fallback.
+- **`RecordProvenance.csv`** (`RecordProvenanceDiag`) — per patch run, every non-NPC record
+  merged into the output plugin and the reference chain that pulled it in. One CSV row per
+  output record, first discovery wins (columns: `OutputFormKey, SourceFormKey, EditorID, Type,
+  Kind, ProvenanceHistory`). `Type` is the record type's registration name (Armor, ArmorAddon,
+  TextureSet, ...); `Kind` is MergedAsNew / BridgeParent / Override / DeltaPatchedOverride /
+  BulkOverrideImport / Generated — **MergedAsNew is a record the selected mod itself carries,
+  BridgeParent is one it does not**, copied only to keep an overridden descendant reachable
+  (the vanilla Outfit above RS Children's ArmorAddons), so that column is what tells you whether
+  a surprising record was really edited by the mod or just walked through;
+  `ProvenanceHistory` is a single cell of source-side
+  `FormKey (EditorID) -> ... -> FormKey (EditorID)` from the root NPC down to the record
+  (bulk 'Include All' imports get a placeholder — nothing was traversed). Patched NPC records
+  themselves are excluded, but an NPC pulled in as a NEW record (e.g. via a Template chain) IS
+  logged. Also **user-facing**: the "Log Record Provenance" checkbox in Settings > Logging
+  (`Settings.LogRecordProvenance`), applied at runtime; a `LogRecordProvenance.txt` file next
+  to the exe force-enables it as a dev fallback. Chain capture lives in the merge walkers
+  (`PatcherExtensions.DuplicateFromOnlyReferencedGetters`, `RecordHandler`'s override
+  traversals); the Patcher sets the per-NPC root context and flushes alongside
+  `AssetProvenanceDiag` — after the orphan sweep below, so the CSV describes the plugin that
+  was actually written.
+- **`RenderLogs/`** — per-NPC mugshot render traces (asset resolution paths).
+- **`Rejected NPCs/`** — logs why each discarded NPC was excluded from the menu.
+
+## Release Workflow
+
+- **The version-bump commit must always be the LAST commit before a release
+  upload.** Do not author further commits on top of a version bump intended for
+  release — that release would silently include the later changes under the
+  bumped version. The version is defined centrally in `App.ProgramVersion`
+  (App.xaml.cs) and mirrored into `Settings.ProgramVersion`.
+- If commits are needed after a version bump, treat the bump as stale and make a
+  fresh version-bump commit so it is again the final pre-release commit.
+- When committing on top of an existing version-bump commit, flag it to the user
+  so they can decide whether to re-bump before uploading.
